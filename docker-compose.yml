@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: skyline-postgres
+    environment:
+      POSTGRES_DB: skyline
+      POSTGRES_USER: skyline_user
+      POSTGRES_PASSWORD: skyline_pass
+    ports:
+      - "5433:5432"
+    volumes:
+      - skyline_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skyline_user -d skyline"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  skyline_pg_data:
