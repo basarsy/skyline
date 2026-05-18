@@ -323,7 +323,8 @@ This project treats SOLID as non-negotiable constraints, not aspirational guidel
 
 **Phase 1 — Core** *(current focus)*
 - [x] Project scaffolding & security config
-- [ ] Airport & Route CRUD
+- [x] JWT authentication (register, login, refresh)
+- [x] Airport & Route CRUD
 - [ ] Aircraft & Fleet management
 - [ ] Flight scheduling + status state machine
 - [ ] Reservation booking + PNR generation
@@ -341,7 +342,8 @@ This project treats SOLID as non-negotiable constraints, not aspirational guidel
 - [ ] Rate limiting on public endpoints
 - [ ] Actuator + Prometheus metrics
 - [ ] Docker Compose full stack
-- [ ] GitHub Actions CI/CD pipeline
+- [x] GitHub Actions CI pipeline
+- [ ] GitHub Actions CD pipeline
 
 ---
 

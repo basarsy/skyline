@@ -6,3 +6,8 @@ spring:
       ddl-auto: validate
   flyway:
     enabled: true
+
+jwt:
+  secret: test-secret-key-at-least-32-characters-long
+  access-token-expiry-ms: 900000
+  refresh-token-expiry-ms: 604800000
