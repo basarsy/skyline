@@ -5,4 +5,6 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface AircraftTypeRepository extends JpaRepository<AircraftType, UUID> {
+
+    boolean existsByManufacturerIgnoreCaseAndModelIgnoreCase(String manufacturer, String model);
 }

@@ -138,8 +138,12 @@ GET    /checkin/{pnr}/boarding-pass Download boarding pass [USER]
 ### Fleet
 ```
 GET    /aircraft                   List fleet              [STAFF]
+GET    /aircraft/{id}              Aircraft detail         [STAFF]
 POST   /aircraft                   Add aircraft            [ADMIN]
 PATCH  /aircraft/{id}/status       Update status           [STAFF]
+GET    /aircraft-types             List aircraft types     [STAFF]
+GET    /aircraft-types/{id}        Aircraft type detail    [STAFF]
+POST   /aircraft-types             Add aircraft type       [ADMIN]
 GET    /airports                   List airports           [PUBLIC]
 GET    /routes                     List routes             [PUBLIC]
 POST   /routes                     Create route            [ADMIN]
@@ -280,9 +284,9 @@ Test coverage targets: **≥ 80%** on service layer, **≥ 60%** overall.
 Flyway migrations live in `src/main/resources/db/migration/`.
 
 ```
-V1__init_schema.sql
-V2__add_crew_tables.sql
-V3__add_boarding_pass.sql
+V1__init.sql
+V2__seed_airports.sql
+V3__seed_aircraft_types.sql
 ```
 
 **Never edit an existing migration.** Always create a new versioned file.
@@ -325,7 +329,7 @@ This project treats SOLID as non-negotiable constraints, not aspirational guidel
 - [x] Project scaffolding & security config
 - [x] JWT authentication (register, login, refresh)
 - [x] Airport & Route CRUD
-- [ ] Aircraft & Fleet management
+- [x] Aircraft & Fleet management
 - [ ] Flight scheduling + status state machine
 - [ ] Reservation booking + PNR generation
 - [ ] Flight search endpoint
