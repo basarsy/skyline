@@ -325,16 +325,16 @@ This project treats SOLID as non-negotiable constraints, not aspirational guidel
 
 ## Project Roadmap
 
-**Phase 1 — Core** *(current focus)*
+**Phase 1 — Core**
 - [x] Project scaffolding & security config
 - [x] JWT authentication (register, login, refresh)
 - [x] Airport & Route CRUD
 - [x] Aircraft & Fleet management
-- [ ] Flight scheduling + status state machine
-- [ ] Reservation booking + PNR generation
-- [ ] Flight search endpoint
+- [x] Flight scheduling + status state machine
+- [x] Reservation booking + PNR generation
+- [x] Flight search endpoint
 
-**Phase 2 — Operations**
+**Phase 2 — Operations** *(current focus)*
 - [ ] Online check-in + boarding pass generation
 - [ ] Crew assignment + validation
 - [ ] Dynamic pricing (load factor)
