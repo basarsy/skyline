@@ -138,9 +138,7 @@ public class ReservationServiceImpl implements ReservationService {
         reservationRepository.save(reservation);
 
         // Return seat to inventory
-        Flight flight = reservation.getFlight();
-        flight.setAvailableSeats(flight.getAvailableSeats() + 1);
-        flightRepository.save(flight);
+        flightRepository.incrementSeat(reservation.getFlight().getId());
     }
 
     private Reservation getReservationEntity(UUID id) {

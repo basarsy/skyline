@@ -32,4 +32,8 @@ public interface FlightRepository extends JpaRepository<Flight, UUID> {
     @Modifying
     @Query("UPDATE Flight f SET f.availableSeats = f.availableSeats - 1 WHERE f.id = :id AND f.availableSeats > 0")
     int decrementSeat(@Param("id") UUID id);
+
+    @Modifying
+    @Query("UPDATE Flight f SET f.availableSeats = f.availableSeats + 1 WHERE f.id = :id")
+    int incrementSeat(@Param("id") UUID id);
 }
