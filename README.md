@@ -335,7 +335,7 @@ This project treats SOLID as non-negotiable constraints, not aspirational guidel
 - [x] Flight search endpoint
 
 **Phase 2 — Operations** *(current focus)*
-- [ ] Online check-in + boarding pass generation
+- [x] Online check-in + boarding pass generation
 - [ ] Crew assignment + validation
 - [ ] Dynamic pricing (load factor)
 - [ ] Cancellation cascade
