@@ -27,6 +27,12 @@ public class CrewMember extends BaseEntity {
     @Column(name = "employee_number", nullable = false, unique = true)
     private String employeeNumber;
 
+    @Column(name = "first_name", nullable = false)
+    private String firstName;
+
+    @Column(name = "last_name", nullable = false)
+    private String lastName;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private CrewRole role;

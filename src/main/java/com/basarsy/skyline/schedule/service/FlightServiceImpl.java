@@ -30,6 +30,7 @@ public class FlightServiceImpl implements FlightService {
     private final FlightRepository flightRepository;
     private final RouteRepository routeRepository;
     private final AircraftRepository aircraftRepository;
+    private final com.basarsy.skyline.crew.service.CrewService crewService;
     private final FlightMapper flightMapper;
 
     @Override
@@ -91,6 +92,11 @@ public class FlightServiceImpl implements FlightService {
         // Basic state machine validation
         if (!isValidStatusTransition(flight.getStatus(), status)) {
             throw new SkylineException("Invalid status transition from " + flight.getStatus() + " to " + status, HttpStatus.BAD_REQUEST);
+        }
+
+        // Crew validation for operational statuses
+        if (status == FlightStatus.BOARDING || status == FlightStatus.DEPARTED) {
+            crewService.validateCrewForFlight(id);
         }
 
         flight.setStatus(status);
