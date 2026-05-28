@@ -83,7 +83,7 @@ public class ReservationServiceImpl implements ReservationService {
         reservation.setStatus(ReservationStatus.PENDING);
         reservation.setBookedAt(LocalDateTime.now());
         reservation.setPnr(generatePnr());
-        reservation.setTotalPrice(calculatePrice(flight.getBasePrice(), request.cabinClass()));
+        reservation.setTotalPrice(calculatePrice(flight, request.cabinClass()));
 
         // In a real system, payment processing would happen here, and status would be CONFIRMED upon success
         // We will mock it as CONFIRMED directly for this phase
@@ -165,14 +165,25 @@ public class ReservationServiceImpl implements ReservationService {
         }
     }
 
-    private BigDecimal calculatePrice(BigDecimal basePrice, CabinClass cabinClass) {
+    private BigDecimal calculatePrice(Flight flight, CabinClass cabinClass) {
         BigDecimal multiplier = switch (cabinClass) {
             case ECONOMY -> BigDecimal.valueOf(1.0);
             case BUSINESS -> BigDecimal.valueOf(2.5);
             case FIRST -> BigDecimal.valueOf(4.0);
         };
-        // Load factor surcharge is omitted for simplicity in Phase 1, to be added in Phase 2
-        return basePrice.multiply(multiplier);
+        
+        int totalSeats = flight.getAircraft().getAircraftType().getTotalSeats();
+        int availableSeats = flight.getAvailableSeats();
+        double loadFactor = (double) (totalSeats - availableSeats) / totalSeats;
+        
+        BigDecimal loadFactorMultiplier = BigDecimal.valueOf(1.0);
+        if (loadFactor > 0.90) {
+            loadFactorMultiplier = BigDecimal.valueOf(1.30);
+        } else if (loadFactor > 0.80) {
+            loadFactorMultiplier = BigDecimal.valueOf(1.15);
+        }
+
+        return flight.getBasePrice().multiply(multiplier).multiply(loadFactorMultiplier);
     }
 
     private String generatePnr() {

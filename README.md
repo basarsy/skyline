@@ -337,7 +337,7 @@ This project treats SOLID as non-negotiable constraints, not aspirational guidel
 Phase 2 — Operations *(current focus)*
 - [x] Online check-in + boarding pass generation
 - [x] Crew assignment + validation
-- [ ] Dynamic pricing (load factor)
+- [x] Dynamic pricing (load factor)
 - [x] Cancellation cascade
 
 **Phase 3 — Production Readiness**
