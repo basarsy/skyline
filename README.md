@@ -338,7 +338,7 @@ Phase 2 — Operations *(current focus)*
 - [x] Online check-in + boarding pass generation
 - [x] Crew assignment + validation
 - [ ] Dynamic pricing (load factor)
-- [ ] Cancellation cascade
+- [x] Cancellation cascade
 
 **Phase 3 — Production Readiness**
 - [ ] Redis caching for flight search

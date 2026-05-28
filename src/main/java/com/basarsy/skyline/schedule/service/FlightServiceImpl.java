@@ -12,11 +12,13 @@ import com.basarsy.skyline.schedule.entity.Flight;
 import com.basarsy.skyline.schedule.entity.FlightStatus;
 import com.basarsy.skyline.schedule.mapper.FlightMapper;
 import com.basarsy.skyline.schedule.repository.FlightRepository;
+import com.basarsy.skyline.schedule.event.FlightCancelledEvent;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -32,6 +34,7 @@ public class FlightServiceImpl implements FlightService {
     private final AircraftRepository aircraftRepository;
     private final com.basarsy.skyline.crew.service.CrewService crewService;
     private final FlightMapper flightMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Override
     @Transactional
@@ -125,17 +128,17 @@ public class FlightServiceImpl implements FlightService {
     @Transactional
     public void cancelFlight(UUID id) {
         Flight flight = getFlightEntity(id);
-        
+
         if (flight.getStatus() == FlightStatus.CANCELLED || flight.getStatus() == FlightStatus.DEPARTED || flight.getStatus() == FlightStatus.ARRIVED) {
             throw new SkylineException("Cannot cancel flight in status: " + flight.getStatus(), HttpStatus.BAD_REQUEST);
         }
 
         flight.setStatus(FlightStatus.CANCELLED);
+        flight.setAvailableSeats(flight.getAircraft().getAircraftType().getTotalSeats());
         flightRepository.save(flight);
-        
-        // TODO: Cancellation cascade logic (Phase 2)
-    }
 
+        eventPublisher.publishEvent(new FlightCancelledEvent(id));
+    }
     private Flight getFlightEntity(UUID id) {
         return flightRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Flight not found with id: " + id));

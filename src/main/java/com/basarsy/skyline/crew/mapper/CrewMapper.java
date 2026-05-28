@@ -13,6 +13,9 @@ import org.mapstruct.MappingConstants;
 public interface CrewMapper {
 
     @Mapping(target = "user.id", source = "userId")
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "updatedAt", ignore = true)
     CrewMember toEntity(CrewMemberRequest request);
 
     @Mapping(target = "userId", source = "user.id")
