@@ -62,6 +62,7 @@ Each bounded context owns its own `entity`, `dto`, `mapper`, `repository`, `serv
 | Language | Java 21 |
 | Framework | Spring Boot 3.3 |
 | Database | PostgreSQL 16 |
+| Caching | Redis 7 |
 | ORM | Spring Data JPA / Hibernate |
 | Migrations | Flyway |
 | Auth | Spring Security |
@@ -244,6 +245,8 @@ Swagger UI: `http://localhost:8080/swagger-ui.html`
 | `DATABASE_URL` | PostgreSQL JDBC URL | `jdbc:postgresql://localhost:5432/skyline` |
 | `DATABASE_USERNAME` | DB user | `skyline_user` |
 | `DATABASE_PASSWORD` | DB password | *(secret)* |
+| `REDIS_HOST` | Redis host | `localhost` |
+| `REDIS_PORT` | Redis port | `6379` |
 | `JWT_SECRET` | HS256 signing key (min 32 chars) | *(secret)* |
 | `JWT_EXPIRY_MS` | Access token TTL in ms | `900000` |
 | `JWT_REFRESH_EXPIRY_MS` | Refresh token TTL in ms | `604800000` |
@@ -357,4 +360,4 @@ Phase 2 — Operations *(current focus)*
 
 **SKYLINE** · Airline Management System
 
-</div>
+</div>div>

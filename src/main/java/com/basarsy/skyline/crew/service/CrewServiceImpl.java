@@ -18,6 +18,7 @@ import com.basarsy.skyline.user.repository.UserRepository;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -108,7 +109,3 @@ public class CrewServiceImpl implements CrewService {
     }
 }
 
-ed", HttpStatus.BAD_REQUEST);
-        }
-    }
-}

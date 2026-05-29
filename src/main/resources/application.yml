@@ -38,6 +38,16 @@ spring:
     driver-class-name: org.postgresql.Driver
   jpa:
     show-sql: true
+  cache:
+    type: redis
+    redis:
+      time-to-live: 15m
+  data:
+    redis:
+      repositories:
+        enabled: false
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
 
 jwt:
   secret: ${JWT_SECRET:dev-only-change-me-use-at-least-32-chars}
