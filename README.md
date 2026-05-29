@@ -344,7 +344,7 @@ Phase 2 — Operations *(current focus)*
 - [x] Cancellation cascade
 
 **Phase 3 — Production Readiness**
-- [ ] Redis caching for flight search
+- [x] Redis caching for flight search and read-heavy operations
 - [ ] Async notifications (Spring Events / Kafka)
 - [ ] Rate limiting on public endpoints
 - [ ] Actuator + Prometheus metrics
@@ -360,4 +360,4 @@ Phase 2 — Operations *(current focus)*
 
 **SKYLINE** · Airline Management System
 
-</div>div>
+</div>
