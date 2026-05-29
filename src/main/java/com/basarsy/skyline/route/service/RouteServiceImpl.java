@@ -11,6 +11,8 @@ import com.basarsy.skyline.route.repository.RouteRepository;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,12 +27,14 @@ public class RouteServiceImpl implements RouteService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = "routes", key = "'all'")
     public List<RouteResponse> findAll() {
         return routeRepository.findAll().stream().map(routeMapper::toResponse).toList();
     }
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = "routes", key = "#id")
     public RouteResponse findById(UUID id) {
         return routeRepository
                 .findById(id)
@@ -40,6 +44,7 @@ public class RouteServiceImpl implements RouteService {
 
     @Override
     @Transactional
+    @CacheEvict(value = "routes", allEntries = true)
     public RouteResponse create(RouteRequest request) {
         if (request.originAirportId().equals(request.destinationAirportId())) {
             throw new SkylineException("Origin and destination must differ", HttpStatus.BAD_REQUEST);

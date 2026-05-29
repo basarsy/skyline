@@ -13,6 +13,8 @@ import com.basarsy.skyline.fleet.repository.AircraftTypeRepository;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +29,7 @@ public class AircraftServiceImpl implements AircraftService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = "aircrafts", key = "'all'")
     public List<AircraftResponse> findAll() {
         return aircraftRepository.findAllWithAircraftType().stream()
                 .map(aircraftMapper::toResponse)
@@ -35,6 +38,7 @@ public class AircraftServiceImpl implements AircraftService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = "aircrafts", key = "#id")
     public AircraftResponse findById(UUID id) {
         return aircraftRepository
                 .findByIdWithAircraftType(id)
@@ -65,6 +69,7 @@ public class AircraftServiceImpl implements AircraftService {
 
     @Override
     @Transactional
+    @CacheEvict(value = "aircrafts", allEntries = true)
     public AircraftResponse updateStatus(UUID id, UpdateAircraftStatusRequest request) {
         var aircraft = aircraftRepository
                 .findByIdWithAircraftType(id)

@@ -9,6 +9,8 @@ import com.basarsy.skyline.route.repository.AirportRepository;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,12 +24,14 @@ public class AirportServiceImpl implements AirportService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = "airports", key = "'all'")
     public List<AirportResponse> findAll() {
         return airportRepository.findAll().stream().map(airportMapper::toResponse).toList();
     }
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = "airports", key = "#id")
     public AirportResponse findById(UUID id) {
         return airportRepository
                 .findById(id)
@@ -37,6 +41,7 @@ public class AirportServiceImpl implements AirportService {
 
     @Override
     @Transactional
+    @CacheEvict(value = "airports", allEntries = true)
     public AirportResponse create(AirportRequest request) {
         if (airportRepository.existsByIataCode(request.iataCode().toUpperCase())) {
             throw new SkylineException("Airport with IATA code already exists", HttpStatus.CONFLICT);

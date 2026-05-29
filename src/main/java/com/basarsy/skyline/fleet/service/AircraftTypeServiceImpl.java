@@ -9,6 +9,8 @@ import com.basarsy.skyline.fleet.repository.AircraftTypeRepository;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +24,7 @@ public class AircraftTypeServiceImpl implements AircraftTypeService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = "aircraft-types", key = "'all'")
     public List<AircraftTypeResponse> findAll() {
         return aircraftTypeRepository.findAll().stream()
                 .map(aircraftTypeMapper::toResponse)
@@ -30,6 +33,7 @@ public class AircraftTypeServiceImpl implements AircraftTypeService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = "aircraft-types", key = "#id")
     public AircraftTypeResponse findById(UUID id) {
         return aircraftTypeRepository
                 .findById(id)
@@ -39,6 +43,7 @@ public class AircraftTypeServiceImpl implements AircraftTypeService {
 
     @Override
     @Transactional
+    @CacheEvict(value = "aircraft-types", allEntries = true)
     public AircraftTypeResponse create(AircraftTypeRequest request) {
         if (aircraftTypeRepository.existsByManufacturerIgnoreCaseAndModelIgnoreCase(
                 request.manufacturer(), request.model())) {

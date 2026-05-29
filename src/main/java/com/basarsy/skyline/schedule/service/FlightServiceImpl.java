@@ -18,6 +18,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -114,6 +115,7 @@ public class FlightServiceImpl implements FlightService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = "flightSearch", key = "#origin + '-' + #destination + '-' + #date + '-' + #pageable.pageNumber + '-' + #pageable.pageSize")
     public Page<FlightResponse> searchFlights(String origin, String destination, LocalDate date, Pageable pageable) {
         LocalDateTime startOfDay = date.atStartOfDay();
         LocalDateTime endOfDay = date.atTime(LocalTime.MAX);

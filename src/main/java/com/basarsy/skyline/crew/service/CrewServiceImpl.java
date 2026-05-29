@@ -78,6 +78,7 @@ public class CrewServiceImpl implements CrewService {
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(value = "flight-manifests", key = "#flightId")
     public List<FlightCrewResponse> getFlightManifest(UUID flightId) {
         if (!flightRepository.existsById(flightId)) {
             throw new ResourceNotFoundException("Flight not found");
@@ -103,6 +104,11 @@ public class CrewServiceImpl implements CrewService {
 
         if (!hasCaptain || !hasFirstOfficer) {
             throw new SkylineException("Flight must have at least one CAPTAIN and one FIRST_OFFICER to proceed", HttpStatus.BAD_REQUEST);
+        }
+    }
+}
+
+ed", HttpStatus.BAD_REQUEST);
         }
     }
 }
