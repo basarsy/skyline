@@ -59,7 +59,11 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
-        spring.json.trusted.packages: com.basarsy.skyline.*
+        spring.json.trusted.packages: com.basarsy.skyline.schedule.event,com.basarsy.skyline.common.notification.event
+    topic:
+      flight-cancellation:
+        partitions: ${KAFKA_TOPIC_FLIGHT_CANCEL_PARTITIONS:3}
+        replicas: ${KAFKA_TOPIC_FLIGHT_CANCEL_REPLICAS:1}
 
 jwt:
   secret: ${JWT_SECRET:dev-only-change-me-use-at-least-32-chars}

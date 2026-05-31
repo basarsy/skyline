@@ -20,7 +20,7 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
       properties:
-        spring.json.trusted.packages: com.basarsy.skyline.*
+        spring.json.trusted.packages: com.basarsy.skyline.schedule.event,com.basarsy.skyline.common.notification.event
 
 jwt:
   secret: test-secret-key-at-least-32-characters-long
