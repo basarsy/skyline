@@ -345,7 +345,7 @@ Phase 2 — Operations *(current focus)*
 
 **Phase 3 — Production Readiness**
 - [x] Redis caching for flight search and read-heavy operations
-- [ ] Async notifications (Spring Events / Kafka)
+- [x] Async notifications (Spring Events / Kafka)
 - [ ] Rate limiting on public endpoints
 - [ ] Actuator + Prometheus metrics
 - [ ] Docker Compose full stack
