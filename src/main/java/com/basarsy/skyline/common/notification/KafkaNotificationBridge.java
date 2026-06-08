@@ -4,9 +4,10 @@ import com.basarsy.skyline.common.notification.config.KafkaTopicConfig;
 import com.basarsy.skyline.schedule.event.FlightCancelledEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.event.EventListener;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 @Slf4j
 @Component
@@ -15,7 +16,7 @@ public class KafkaNotificationBridge {
 
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
-    @EventListener
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void handleFlightCancelled(FlightCancelledEvent event) {
         log.info("Bridging FlightCancelledEvent to Kafka: {}", event.flightId());
         

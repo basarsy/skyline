@@ -35,7 +35,7 @@ public class CheckInServiceImpl implements CheckInService {
 
         // Assign seat if not already assigned
         if (reservation.getSeatNumber() == null) {
-            reservation.setSeatNumber(assignRandomSeat());
+            reservation.setSeatNumber(assignAvailableSeat(reservation.getFlight().getId()));
         }
 
         reservation.setStatus(ReservationStatus.CHECKED_IN);
@@ -77,11 +77,22 @@ public class CheckInServiceImpl implements CheckInService {
         }
     }
 
-    private String assignRandomSeat() {
-        // Mock seat assignment logic: Rows 1-30, Seats A-F
-        int row = (int) (Math.random() * 30) + 1;
-        char seat = (char) ('A' + (int) (Math.random() * 6));
-        return row + String.valueOf(seat);
+    private String assignAvailableSeat(UUID flightId) {
+        java.util.List<Reservation> flightReservations = reservationRepository.findByFlight_Id(flightId);
+        java.util.Set<String> occupiedSeats = flightReservations.stream()
+                .map(Reservation::getSeatNumber)
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+
+        for (int i = 0; i < 100; i++) { // try up to 100 times
+            int row = (int) (Math.random() * 30) + 1;
+            char seat = (char) ('A' + (int) (Math.random() * 6));
+            String seatCandidate = row + String.valueOf(seat);
+            if (!occupiedSeats.contains(seatCandidate)) {
+                return seatCandidate;
+            }
+        }
+        throw new com.basarsy.skyline.common.exception.SkylineException("No available seats found", org.springframework.http.HttpStatus.CONFLICT);
     }
 
     private BoardingPass createBoardingPass(Reservation reservation) {

@@ -48,6 +48,7 @@ public class AircraftServiceImpl implements AircraftService {
 
     @Override
     @Transactional
+    @CacheEvict(value = "aircrafts", allEntries = true)
     public AircraftResponse create(AircraftRequest request) {
         var tailNumber = request.tailNumber().trim().toUpperCase();
         if (aircraftRepository.existsByTailNumberIgnoreCase(tailNumber)) {

@@ -21,14 +21,7 @@ public class FlightCancellationListener {
     public void handleFlightCancelled(FlightCancelledEvent event) {
         log.info("Handling cancellation for flight: {}", event.flightId());
 
-        var reservations = reservationRepository.findByFlight_Id(event.flightId());
-
-        reservations.stream()
-                .filter(r -> r.getStatus() != ReservationStatus.CANCELLED)
-                .forEach(r -> {
-                    r.setStatus(ReservationStatus.CANCELLED);
-                    reservationRepository.save(r);
-                    log.info("Cancelled reservation {} for cancelled flight {}", r.getPnr(), event.flightId());
-                });
+        reservationRepository.cancelReservationsForFlight(event.flightId(), ReservationStatus.CANCELLED);
+        log.info("Bulk cancelled reservations for flight {}", event.flightId());
     }
 }

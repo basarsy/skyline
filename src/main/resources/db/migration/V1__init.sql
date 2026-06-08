@@ -91,7 +91,8 @@ CREATE TABLE reservations (
     pnr          VARCHAR(6) NOT NULL UNIQUE,
     version      BIGINT NOT NULL DEFAULT 0,
     created_at   TIMESTAMP NOT NULL,
-    updated_at   TIMESTAMP NOT NULL
+    updated_at   TIMESTAMP NOT NULL,
+    CONSTRAINT uq_reservations_flight_seat UNIQUE (flight_id, seat_number)
 );
 
 CREATE TABLE boarding_passes (
