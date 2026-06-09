@@ -1,0 +1,46 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: skyline-schedule
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5436/skyline_schedule}
+    username: ${DATABASE_USERNAME:skyline_user}
+    password: ${DATABASE_PASSWORD:skyline_pass}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration/schedule
+  cache:
+    type: redis
+    redis:
+      time-to-live: 15m
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+jwt:
+  secret: ${JWT_SECRET:dev-only-change-me-use-at-least-32-chars}
+
+fleet:
+  service:
+    url: ${FLEET_SERVICE_URL:http://localhost:8081}
+
+route:
+  service:
+    url: ${ROUTE_SERVICE_URL:http://localhost:8082}
+
+crew:
+  service:
+    url: ${CREW_SERVICE_URL:http://localhost:8086}
+
+kafka:
+  topic:
+    flight-cancelled: skyline.flight.cancelled

@@ -1,21 +1,90 @@
 services:
-  postgres:
+  # Microservices Databases
+  auth-db:
     image: postgres:16-alpine
-    container_name: skyline-postgres
+    container_name: skyline-auth-db
     environment:
-      POSTGRES_DB: skyline
+      POSTGRES_DB: skyline_auth
       POSTGRES_USER: skyline_user
       POSTGRES_PASSWORD: skyline_pass
     ports:
       - "5433:5432"
     volumes:
-      - skyline_pg_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U skyline_user -d skyline"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      - auth_pg_data:/var/lib/postgresql/data
 
+  fleet-db:
+    image: postgres:16-alpine
+    container_name: skyline-fleet-db
+    environment:
+      POSTGRES_DB: skyline_fleet
+      POSTGRES_USER: skyline_user
+      POSTGRES_PASSWORD: skyline_pass
+    ports:
+      - "5434:5432"
+    volumes:
+      - fleet_pg_data:/var/lib/postgresql/data
+
+  route-db:
+    image: postgres:16-alpine
+    container_name: skyline-route-db
+    environment:
+      POSTGRES_DB: skyline_route
+      POSTGRES_USER: skyline_user
+      POSTGRES_PASSWORD: skyline_pass
+    ports:
+      - "5435:5432"
+    volumes:
+      - route_pg_data:/var/lib/postgresql/data
+
+  schedule-db:
+    image: postgres:16-alpine
+    container_name: skyline-schedule-db
+    environment:
+      POSTGRES_DB: skyline_schedule
+      POSTGRES_USER: skyline_user
+      POSTGRES_PASSWORD: skyline_pass
+    ports:
+      - "5436:5432"
+    volumes:
+      - schedule_pg_data:/var/lib/postgresql/data
+
+  reservation-db:
+    image: postgres:16-alpine
+    container_name: skyline-reservation-db
+    environment:
+      POSTGRES_DB: skyline_reservation
+      POSTGRES_USER: skyline_user
+      POSTGRES_PASSWORD: skyline_pass
+    ports:
+      - "5437:5432"
+    volumes:
+      - reservation_pg_data:/var/lib/postgresql/data
+
+  checkin-db:
+    image: postgres:16-alpine
+    container_name: skyline-checkin-db
+    environment:
+      POSTGRES_DB: skyline_checkin
+      POSTGRES_USER: skyline_user
+      POSTGRES_PASSWORD: skyline_pass
+    ports:
+      - "5438:5432"
+    volumes:
+      - checkin_pg_data:/var/lib/postgresql/data
+
+  crew-db:
+    image: postgres:16-alpine
+    container_name: skyline-crew-db
+    environment:
+      POSTGRES_DB: skyline_crew
+      POSTGRES_USER: skyline_user
+      POSTGRES_PASSWORD: skyline_pass
+    ports:
+      - "5439:5432"
+    volumes:
+      - crew_pg_data:/var/lib/postgresql/data
+
+  # Infrastructure
   redis:
     image: redis:7-alpine
     container_name: skyline-redis
@@ -48,4 +117,10 @@ services:
       KAFKA_CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
 
 volumes:
-  skyline_pg_data:
+  auth_pg_data:
+  fleet_pg_data:
+  route_pg_data:
+  schedule_pg_data:
+  reservation_pg_data:
+  checkin_pg_data:
+  crew_pg_data:
