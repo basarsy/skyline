@@ -326,34 +326,6 @@ This project treats SOLID as non-negotiable constraints, not aspirational guidel
 
 ---
 
-## Project Roadmap
-
-**Phase 1 — Core**
-- [x] Project scaffolding & security config
-- [x] JWT authentication (register, login, refresh)
-- [x] Airport & Route CRUD
-- [x] Aircraft & Fleet management
-- [x] Flight scheduling + status state machine
-- [x] Reservation booking + PNR generation
-- [x] Flight search endpoint
-
-Phase 2 — Operations *(current focus)*
-- [x] Online check-in + boarding pass generation
-- [x] Crew assignment + validation
-- [x] Dynamic pricing (load factor)
-- [x] Cancellation cascade
-
-**Phase 3 — Production Readiness**
-- [x] Redis caching for flight search and read-heavy operations
-- [x] Async notifications (Spring Events / Kafka)
-- [ ] Rate limiting on public endpoints
-- [ ] Actuator + Prometheus metrics
-- [ ] Docker Compose full stack
-- [x] GitHub Actions CI pipeline
-- [ ] GitHub Actions CD pipeline
-
----
-
 <div align="center">
 
 *Built with discipline. Designed to scale.*
