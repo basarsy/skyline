@@ -17,6 +17,7 @@ import com.basarsy.skyline.schedule.event.FlightCancelledEvent;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.Cacheable;
@@ -116,8 +117,16 @@ public class FlightServiceImpl implements FlightService {
         LocalDateTime startOfDay = date.atStartOfDay();
         LocalDateTime endOfDay = date.atTime(LocalTime.MAX);
         
+        List<UUID> matchingRouteIds = routeClient.searchRoutes(origin, destination).stream()
+                .map(RouteResponse::id)
+                .toList();
+
+        if (matchingRouteIds.isEmpty()) {
+            return Page.empty(pageable);
+        }
+        
         Page<Flight> flights = flightRepository.searchFlights(
-                origin, destination, startOfDay, endOfDay, FlightStatus.SCHEDULED, pageable);
+                matchingRouteIds, startOfDay, endOfDay, FlightStatus.SCHEDULED, pageable);
                 
         return flights.map(this::enrichFlightResponse);
     }

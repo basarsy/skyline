@@ -11,5 +11,7 @@ public interface RouteService {
 
     RouteResponse findById(UUID id);
 
+    List<RouteResponse> findByOriginAndDestination(String originIata, String destinationIata);
+
     RouteResponse create(RouteRequest request);
 }

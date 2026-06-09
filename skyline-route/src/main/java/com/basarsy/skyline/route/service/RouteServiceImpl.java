@@ -43,6 +43,15 @@ public class RouteServiceImpl implements RouteService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<RouteResponse> findByOriginAndDestination(String originIata, String destinationIata) {
+        return routeRepository.findByOrigin_IataCodeAndDestination_IataCode(originIata, destinationIata)
+                .stream()
+                .map(routeMapper::toResponse)
+                .toList();
+    }
+
+    @Override
     @Transactional
     @CacheEvict(value = "routes", allEntries = true)
     public RouteResponse create(RouteRequest request) {

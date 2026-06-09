@@ -15,15 +15,13 @@ public interface FlightRepository extends JpaRepository<Flight, UUID> {
 
     @Query("""
             SELECT f FROM Flight f
-            WHERE f.route.origin.iataCode = :origin
-              AND f.route.destination.iataCode = :destination
+            WHERE f.routeId IN :routeIds
               AND f.departureTime >= :departureStart
               AND f.departureTime < :departureEnd
               AND f.status = :status
             """)
     Page<Flight> searchFlights(
-            @Param("origin") String origin,
-            @Param("destination") String destination,
+            @Param("routeIds") java.util.List<UUID> routeIds,
             @Param("departureStart") LocalDateTime departureStart,
             @Param("departureEnd") LocalDateTime departureEnd,
             @Param("status") FlightStatus status,
