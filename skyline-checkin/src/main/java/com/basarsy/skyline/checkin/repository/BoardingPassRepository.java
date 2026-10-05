@@ -7,5 +7,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface BoardingPassRepository extends JpaRepository<BoardingPass, UUID> {
 
-    Optional<BoardingPass> findByReservationPnr(String pnr);
+    Optional<BoardingPass> findByReservationId(UUID reservationId);
 }

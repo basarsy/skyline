@@ -61,6 +61,7 @@ public class ReservationController {
     }
 
     @PutMapping("/{id}/status")
+    @PreAuthorize("hasRole('SERVICE')")
     public void updateStatus(
             @PathVariable UUID id, 
             @RequestParam com.basarsy.skyline.reservation.entity.ReservationStatus status,

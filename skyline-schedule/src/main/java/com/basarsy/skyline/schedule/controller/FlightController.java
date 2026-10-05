@@ -78,11 +78,13 @@ public class FlightController {
     }
 
     @PutMapping("/{id}/inventory/decrement")
+    @PreAuthorize("hasRole('SERVICE')")
     public void decrementSeat(@PathVariable UUID id) {
         flightService.decrementSeat(id);
     }
 
     @PutMapping("/{id}/inventory/increment")
+    @PreAuthorize("hasRole('SERVICE')")
     public void incrementSeat(@PathVariable UUID id) {
         flightService.incrementSeat(id);
     }

@@ -52,10 +52,10 @@ public class CheckInServiceImpl implements CheckInService {
     @Override
     @Transactional(readOnly = true)
     public BoardingPassResponse getBoardingPass(String pnr) {
-        BoardingPass boardingPass = boardingPassRepository.findByReservationPnr(pnr)
+        ReservationResponse reservation = reservationClient.getReservationByPnr(pnr);
+        BoardingPass boardingPass = boardingPassRepository.findByReservationId(reservation.id())
                 .orElseThrow(() -> new ResourceNotFoundException("Boarding pass not found for PNR: " + pnr));
         
-        ReservationResponse reservation = reservationClient.getReservation(boardingPass.getReservationId());
         return enrichBoardingPassResponse(boardingPass, reservation);
     }
 

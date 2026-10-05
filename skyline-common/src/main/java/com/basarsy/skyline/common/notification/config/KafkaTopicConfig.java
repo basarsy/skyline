@@ -9,7 +9,7 @@ import org.springframework.kafka.config.TopicBuilder;
 @Configuration
 public class KafkaTopicConfig {
 
-    public static final String FLIGHT_CANCELLED_TOPIC = "skyline.flights.cancellation";
+    public static final String FLIGHT_CANCELLED_TOPIC = "skyline.flight.cancelled";
 
     @Value("${spring.kafka.topic.flight-cancellation.partitions:3}")
     private int partitions;

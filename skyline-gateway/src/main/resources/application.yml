@@ -30,7 +30,7 @@ spring:
         - id: crew-service
           uri: http://localhost:8086
           predicates:
-            - Path=/api/v1/crew/**
+            - Path=/api/v1/crew/**, /api/v1/flights/*/crew, /api/v1/flights/*/crew/**
         - id: schedule-service
           uri: http://localhost:8080
           predicates:

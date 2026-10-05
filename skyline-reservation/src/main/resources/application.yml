@@ -24,3 +24,22 @@ jwt:
 fleet:
   service:
     url: ${FLEET_SERVICE_URL:http://localhost:8081}
+
+schedule:
+  service:
+    url: ${SCHEDULE_SERVICE_URL:http://localhost:8080}
+
+kafka:
+  topic:
+    flight-cancelled: skyline.flight.cancelled
+
+spring:
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: reservation-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "*"

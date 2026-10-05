@@ -55,4 +55,11 @@ public class CrewController {
         crewService.removeCrewFromFlight(flightId, crewMemberId);
         return ApiResponse.success("Crew member removed from flight successfully", null);
     }
+
+    @GetMapping("/crew/flight/{flightId}/validate")
+    @PreAuthorize("hasRole('SERVICE')")
+    public ApiResponse<Void> validateCrewForFlight(@PathVariable UUID flightId) {
+        crewService.validateCrewForFlight(flightId);
+        return ApiResponse.success("Crew validated successfully", null);
+    }
 }

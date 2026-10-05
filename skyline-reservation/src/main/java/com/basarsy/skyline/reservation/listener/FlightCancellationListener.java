@@ -17,7 +17,7 @@ public class FlightCancellationListener {
     private final ReservationRepository reservationRepository;
 
     @Transactional
-    @KafkaListener(topics = "${kafka.topic.flight-cancelled}", groupId = "reservation-service")
+    @KafkaListener(topics = "${kafka.topic.flight-cancelled:skyline.flight.cancelled}", groupId = "reservation-service")
     public void handleFlightCancelled(FlightCancelledEvent event) {
         log.info("Handling flight cancellation event for flight: {}", event.flightId());
         

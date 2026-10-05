@@ -56,35 +56,41 @@ public class ReservationServiceImpl implements ReservationService {
         // Decrement seat via client
         scheduleClient.decrementSeat(flight.getId());
 
-        UUID currentUserId = getCurrentUserId();
+        try {
+            UUID currentUserId = getCurrentUserId();
 
-        // Check if passenger exists for this user, if not create one, else update
-        Passenger passenger = passengerRepository.findByUserId(currentUserId)
-                .orElseGet(() -> {
-                    Passenger newPassenger = passengerMapper.toEntity(request.passenger());
-                    newPassenger.setUserId(currentUserId);
-                    return newPassenger;
-                });
+            // Check if passenger exists for this user, if not create one, else update
+            Passenger passenger = passengerRepository.findByUserId(currentUserId)
+                    .orElseGet(() -> {
+                        Passenger newPassenger = passengerMapper.toEntity(request.passenger());
+                        newPassenger.setUserId(currentUserId);
+                        return newPassenger;
+                    });
 
-        // Always update passenger details to the latest provided in the request
-        if (passenger.getId() != null) {
-             passengerMapper.updateEntity(passenger, request.passenger());
+            // Always update passenger details to the latest provided in the request
+            if (passenger.getId() != null) {
+                 passengerMapper.updateEntity(passenger, request.passenger());
+            }
+            passenger = passengerRepository.save(passenger);
+
+            Reservation reservation = reservationMapper.toEntity(request);
+            reservation.setFlightId(flight.getId());
+            reservation.setPassenger(passenger);
+            reservation.setStatus(ReservationStatus.PENDING);
+            reservation.setBookedAt(LocalDateTime.now());
+            reservation.setPnr(generatePnr());
+            reservation.setTotalPrice(calculatePrice(flight, request.cabinClass()));
+
+            // In a real system, payment processing would happen here, and status would be CONFIRMED upon success
+            reservation.setStatus(ReservationStatus.CONFIRMED);
+
+            Reservation savedReservation = reservationRepository.save(reservation);
+            return enrichReservationResponse(savedReservation, flight);
+        } catch (Exception ex) {
+            // Compensate: return the seat since the booking failed
+            scheduleClient.incrementSeat(flight.getId());
+            throw ex;
         }
-        passenger = passengerRepository.save(passenger);
-
-        Reservation reservation = reservationMapper.toEntity(request);
-        reservation.setFlightId(flight.getId());
-        reservation.setPassenger(passenger);
-        reservation.setStatus(ReservationStatus.PENDING);
-        reservation.setBookedAt(LocalDateTime.now());
-        reservation.setPnr(generatePnr());
-        reservation.setTotalPrice(calculatePrice(flight, request.cabinClass()));
-
-        // In a real system, payment processing would happen here, and status would be CONFIRMED upon success
-        reservation.setStatus(ReservationStatus.CONFIRMED);
-
-        Reservation savedReservation = reservationRepository.save(reservation);
-        return enrichReservationResponse(savedReservation, flight);
     }
 
     @Override
@@ -193,13 +199,12 @@ public class ReservationServiceImpl implements ReservationService {
         };
         
         AircraftResponse aircraft = flight.getAircraft();
-        if (aircraft == null) {
-             aircraft = fleetClient.getAircraft(flight.getAircraft().id()); // Should be id from flight
-        }
-        // Simplified: use flight's aircraft data if available
-        int totalSeats = aircraft.aircraftType().totalSeats();
+        int totalSeats = (aircraft != null && aircraft.aircraftType() != null)
+                ? aircraft.aircraftType().totalSeats()
+                : Math.max(flight.getAvailableSeats(), 180); // Default to standard capacity if aircraft not enriched
+        
         int availableSeats = flight.getAvailableSeats();
-        double loadFactor = (double) (totalSeats - availableSeats) / totalSeats;
+        double loadFactor = totalSeats > 0 ? (double) (totalSeats - availableSeats) / totalSeats : 0.0;
         
         BigDecimal loadFactorMultiplier = BigDecimal.valueOf(1.0);
         if (loadFactor > 0.90) {

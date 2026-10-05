@@ -1,5 +1,7 @@
 package com.basarsy.skyline.common.config;
 
+import com.basarsy.skyline.common.security.InternalServiceAuthenticationFilter;
+import com.basarsy.skyline.common.security.InternalServiceProperties;
 import com.basarsy.skyline.common.security.JwtAccessDeniedHandler;
 import com.basarsy.skyline.common.security.JwtAuthenticationEntryPoint;
 import com.basarsy.skyline.common.security.JwtAuthenticationFilter;
@@ -24,11 +26,12 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
-@EnableConfigurationProperties(JwtProperties.class)
+@EnableConfigurationProperties({JwtProperties.class, InternalServiceProperties.class})
 @RequiredArgsConstructor
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final InternalServiceAuthenticationFilter internalServiceAuthenticationFilter;
     private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
     private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
 
@@ -53,7 +56,8 @@ public class SecurityConfig {
                         .permitAll()
                         .anyRequest()
                         .authenticated())
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(internalServiceAuthenticationFilter, JwtAuthenticationFilter.class);
         return http.build();
     }
 
