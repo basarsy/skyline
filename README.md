@@ -17,7 +17,7 @@
 
 ![Java](https://img.shields.io/badge/Java-21-000000?style=flat-square&logo=openjdk&logoColor=white)
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.5-000000?style=flat-square&logo=springboot&logoColor=white)
-![Spring Cloud](https://img.shields.io/badge/Spring_Cloud-2024.0-000000?style=flat-square&logo=spring&logoColor=white)
+![Spring Cloud](https://img.shields.io/badge/Spring_Cloud-2025.0-000000?style=flat-square&logo=spring&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-000000?style=flat-square&logo=postgresql&logoColor=white)
 ![Apache Kafka](https://img.shields.io/badge/Kafka-7.6-000000?style=flat-square&logo=apachekafka&logoColor=white)
 ![Status](https://img.shields.io/badge/Status-In_Development-555555?style=flat-square)
@@ -82,7 +82,7 @@ Each service owns its own `entity`, `dto`, `mapper`, `repository`, `service`, an
 |---|---|
 | Language | Java 21 |
 | Framework | Spring Boot 3.5 |
-| Cloud | Spring Cloud 2024.0 (Gateway, OpenFeign) |
+| Cloud | Spring Cloud 2025.0 (Gateway, OpenFeign) |
 | Database | PostgreSQL 16 (one instance per service) |
 | Messaging | Apache Kafka (Confluent 7.6, KRaft mode) |
 | Caching | Redis 7 |
@@ -255,15 +255,32 @@ All endpoints return a consistent `ApiResponse<T>`:
 - Maven 3.9+
 - Docker & Docker Compose (for PostgreSQL, Redis, Kafka)
 
-### Run Locally
+### Run with Docker (full system)
 
 ```bash
 # Clone the repository
 git clone https://github.com/your-org/skyline.git
 cd skyline
 
-# Start infrastructure (7× PostgreSQL, Redis, Kafka)
-docker compose up -d
+# Create your environment file
+cp .env.example .env
+# Edit .env and set a strong JWT_SECRET (min 32 characters)
+
+# Build and start everything (infrastructure + all services)
+docker compose up --build
+```
+
+The API Gateway will be available at `http://localhost:8000`.
+
+### Run Locally (services on bare metal, infrastructure in Docker)
+
+```bash
+# Clone the repository
+git clone https://github.com/your-org/skyline.git
+cd skyline
+
+# Start infrastructure only (7× PostgreSQL, Redis, Kafka)
+docker compose up -d auth-db fleet-db route-db schedule-db reservation-db checkin-db crew-db redis kafka
 
 # Build all modules
 ./mvnw -B install -DskipTests

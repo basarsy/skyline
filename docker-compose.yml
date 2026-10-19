@@ -1,5 +1,7 @@
 services:
+  # ──────────────────────────────────────────────────────────────
   # Microservices Databases
+  # ──────────────────────────────────────────────────────────────
   auth-db:
     image: postgres:16-alpine
     container_name: skyline-auth-db
@@ -11,6 +13,11 @@ services:
       - "5433:5432"
     volumes:
       - auth_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skyline_user -d skyline_auth"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   fleet-db:
     image: postgres:16-alpine
@@ -23,6 +30,11 @@ services:
       - "5434:5432"
     volumes:
       - fleet_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skyline_user -d skyline_fleet"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   route-db:
     image: postgres:16-alpine
@@ -35,6 +47,11 @@ services:
       - "5435:5432"
     volumes:
       - route_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skyline_user -d skyline_route"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   schedule-db:
     image: postgres:16-alpine
@@ -47,6 +64,11 @@ services:
       - "5436:5432"
     volumes:
       - schedule_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skyline_user -d skyline_schedule"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   reservation-db:
     image: postgres:16-alpine
@@ -59,6 +81,11 @@ services:
       - "5437:5432"
     volumes:
       - reservation_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skyline_user -d skyline_reservation"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   checkin-db:
     image: postgres:16-alpine
@@ -71,6 +98,11 @@ services:
       - "5438:5432"
     volumes:
       - checkin_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skyline_user -d skyline_checkin"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   crew-db:
     image: postgres:16-alpine
@@ -83,8 +115,15 @@ services:
       - "5439:5432"
     volumes:
       - crew_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skyline_user -d skyline_crew"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
+  # ──────────────────────────────────────────────────────────────
   # Infrastructure
+  # ──────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: skyline-redis
@@ -114,7 +153,199 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
-      KAFKA_CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+      CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:29092 --list || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # ──────────────────────────────────────────────────────────────
+  # Application Services
+  # ──────────────────────────────────────────────────────────────
+  auth-service:
+    build:
+      context: .
+      args:
+        MODULE: skyline-auth
+        APP_PORT: 8083
+    container_name: skyline-auth-service
+    ports:
+      - "8083:8083"
+    environment:
+      DATABASE_URL: jdbc:postgresql://auth-db:5432/skyline_auth
+      DATABASE_USERNAME: skyline_user
+      DATABASE_PASSWORD: skyline_pass
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — copy .env.example to .env and set a value}
+    depends_on:
+      auth-db:
+        condition: service_healthy
+
+  fleet-service:
+    build:
+      context: .
+      args:
+        MODULE: skyline-fleet
+        APP_PORT: 8081
+    container_name: skyline-fleet-service
+    ports:
+      - "8081:8081"
+    environment:
+      DATABASE_URL: jdbc:postgresql://fleet-db:5432/skyline_fleet
+      DATABASE_USERNAME: skyline_user
+      DATABASE_PASSWORD: skyline_pass
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — copy .env.example to .env and set a value}
+      REDIS_HOST: redis
+      SPRING_DATA_REDIS_HOST: redis
+    depends_on:
+      fleet-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  route-service:
+    build:
+      context: .
+      args:
+        MODULE: skyline-route
+        APP_PORT: 8082
+    container_name: skyline-route-service
+    ports:
+      - "8082:8082"
+    environment:
+      DATABASE_URL: jdbc:postgresql://route-db:5432/skyline_route
+      DATABASE_USERNAME: skyline_user
+      DATABASE_PASSWORD: skyline_pass
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — copy .env.example to .env and set a value}
+      REDIS_HOST: redis
+      SPRING_DATA_REDIS_HOST: redis
+    depends_on:
+      route-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  schedule-service:
+    build:
+      context: .
+      args:
+        MODULE: skyline-schedule
+        APP_PORT: 8080
+    container_name: skyline-schedule-service
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: jdbc:postgresql://schedule-db:5432/skyline_schedule
+      DATABASE_USERNAME: skyline_user
+      DATABASE_PASSWORD: skyline_pass
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — copy .env.example to .env and set a value}
+      REDIS_HOST: redis
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      FLEET_SERVICE_URL: http://fleet-service:8081
+      ROUTE_SERVICE_URL: http://route-service:8082
+      CREW_SERVICE_URL: http://crew-service:8086
+    depends_on:
+      schedule-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  reservation-service:
+    build:
+      context: .
+      args:
+        MODULE: skyline-reservation
+        APP_PORT: 8084
+    container_name: skyline-reservation-service
+    ports:
+      - "8084:8084"
+    environment:
+      DATABASE_URL: jdbc:postgresql://reservation-db:5432/skyline_reservation
+      DATABASE_USERNAME: skyline_user
+      DATABASE_PASSWORD: skyline_pass
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — copy .env.example to .env and set a value}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      FLEET_SERVICE_URL: http://fleet-service:8081
+      SCHEDULE_SERVICE_URL: http://schedule-service:8080
+    depends_on:
+      reservation-db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  checkin-service:
+    build:
+      context: .
+      args:
+        MODULE: skyline-checkin
+        APP_PORT: 8085
+    container_name: skyline-checkin-service
+    ports:
+      - "8085:8085"
+    environment:
+      DATABASE_URL: jdbc:postgresql://checkin-db:5432/skyline_checkin
+      DATABASE_USERNAME: skyline_user
+      DATABASE_PASSWORD: skyline_pass
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — copy .env.example to .env and set a value}
+      RESERVATION_SERVICE_URL: http://reservation-service:8084
+      ROUTE_SERVICE_URL: http://route-service:8082
+    depends_on:
+      checkin-db:
+        condition: service_healthy
+
+  crew-service:
+    build:
+      context: .
+      args:
+        MODULE: skyline-crew
+        APP_PORT: 8086
+    container_name: skyline-crew-service
+    ports:
+      - "8086:8086"
+    environment:
+      DATABASE_URL: jdbc:postgresql://crew-db:5432/skyline_crew
+      DATABASE_USERNAME: skyline_user
+      DATABASE_PASSWORD: skyline_pass
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — copy .env.example to .env and set a value}
+      SCHEDULE_SERVICE_URL: http://schedule-service:8080
+      SPRING_DATA_REDIS_HOST: redis
+      REDIS_HOST: redis
+    depends_on:
+      crew-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  gateway-service:
+    build:
+      context: .
+      args:
+        MODULE: skyline-gateway
+        APP_PORT: 8000
+    container_name: skyline-gateway-service
+    ports:
+      - "8000:8000"
+    environment:
+      FLEET_SERVICE_URL: http://fleet-service:8081
+      ROUTE_SERVICE_URL: http://route-service:8082
+      AUTH_SERVICE_URL: http://auth-service:8083
+      RESERVATION_SERVICE_URL: http://reservation-service:8084
+      CHECKIN_SERVICE_URL: http://checkin-service:8085
+      CREW_SERVICE_URL: http://crew-service:8086
+      SCHEDULE_SERVICE_URL: http://schedule-service:8080
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — copy .env.example to .env and set a value}
+    depends_on:
+      - auth-service
+      - fleet-service
+      - route-service
+      - schedule-service
+      - reservation-service
+      - checkin-service
+      - crew-service
 
 volumes:
   auth_pg_data:
