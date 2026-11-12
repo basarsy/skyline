@@ -23,9 +23,14 @@ spring:
       group-id: reservation-service
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      # ErrorHandlingDeserializer turns malformed records into handled errors instead of
+      # an endless poison-pill loop; JsonDeserializer is the delegate.
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
       properties:
-        spring.json.trusted.packages: "*"
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        spring.json.use.type.headers: false
+        spring.json.value.default.type: com.basarsy.skyline.reservation.client.dto.FlightCancelledEvent
+        spring.json.trusted.packages: com.basarsy.skyline.reservation.client.dto
 
 jwt:
   secret: ${JWT_SECRET:dev-only-change-me-use-at-least-32-chars}
