@@ -27,5 +27,9 @@ spring:
       repositories:
         enabled: false
 
+skyline:
+  internal:
+    api-key: ${SKYLINE_INTERNAL_API_KEY}
+
 jwt:
-  secret: ${JWT_SECRET:dev-only-change-me-use-at-least-32-chars}
+  secret: ${JWT_SECRET}

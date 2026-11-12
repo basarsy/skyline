@@ -6,44 +6,38 @@ spring:
     name: skyline-gateway
   cloud:
     gateway:
-      routes:
-        - id: fleet-service
-          uri: ${FLEET_SERVICE_URL:http://localhost:8081}
-          predicates:
-            - Path=/api/v1/aircraft/**, /api/v1/aircraft-types/**
-        - id: route-service
-          uri: ${ROUTE_SERVICE_URL:http://localhost:8082}
-          predicates:
-            - Path=/api/v1/airports/**, /api/v1/routes/**
-        - id: auth-service
-          uri: ${AUTH_SERVICE_URL:http://localhost:8083}
-          predicates:
-            - Path=/api/v1/auth/**
-        - id: reservation-service
-          uri: ${RESERVATION_SERVICE_URL:http://localhost:8084}
-          predicates:
-            - Path=/api/v1/reservations/**
-        - id: checkin-service
-          uri: ${CHECKIN_SERVICE_URL:http://localhost:8085}
-          predicates:
-            - Path=/api/v1/checkin/**
-        - id: crew-service
-          uri: ${CREW_SERVICE_URL:http://localhost:8086}
-          predicates:
-            - Path=/api/v1/crew/**, /api/v1/flights/*/crew, /api/v1/flights/*/crew/**
-        - id: schedule-service
-          uri: ${SCHEDULE_SERVICE_URL:http://localhost:8080}
-          predicates:
-            - Path=/api/v1/**
-          filters:
-            - PreserveHostHeader
-
-jwt:
-  secret: ${JWT_SECRET:dev-only-change-me-use-at-least-32-chars}
-
-logging:
-  level:
-    org.springframework.cloud.gateway: TRACE
-    org.springframework.http.server.reactive: DEBUG
-    org.springframework.web.reactive: DEBUG
-    reactor.netty: DEBUG
+      server:
+        webflux:
+          default-filters:
+            # The internal service key grants ROLE_SERVICE downstream. It must only ever be set by
+            # services calling each other directly, never by external clients via the gateway.
+            - RemoveRequestHeader=X-Skyline-Internal-Key
+          routes:
+            - id: fleet-service
+              uri: ${FLEET_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - Path=/api/v1/aircraft/**, /api/v1/aircraft-types/**
+            - id: route-service
+              uri: ${ROUTE_SERVICE_URL:http://localhost:8082}
+              predicates:
+                - Path=/api/v1/airports/**, /api/v1/routes/**
+            - id: auth-service
+              uri: ${AUTH_SERVICE_URL:http://localhost:8083}
+              predicates:
+                - Path=/api/v1/auth/**
+            - id: reservation-service
+              uri: ${RESERVATION_SERVICE_URL:http://localhost:8084}
+              predicates:
+                - Path=/api/v1/reservations/**
+            - id: checkin-service
+              uri: ${CHECKIN_SERVICE_URL:http://localhost:8085}
+              predicates:
+                - Path=/api/v1/checkin/**
+            - id: crew-service
+              uri: ${CREW_SERVICE_URL:http://localhost:8086}
+              predicates:
+                - Path=/api/v1/crew/**, /api/v1/flights/*/crew, /api/v1/flights/*/crew/**
+            - id: schedule-service
+              uri: ${SCHEDULE_SERVICE_URL:http://localhost:8080}
+              predicates:
+                - Path=/api/v1/flights/**

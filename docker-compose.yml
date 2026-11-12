@@ -178,6 +178,9 @@ services:
       DATABASE_USERNAME: skyline_user
       DATABASE_PASSWORD: skyline_pass
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — copy .env.example to .env and set a value}
+      SKYLINE_INTERNAL_API_KEY: ${SKYLINE_INTERNAL_API_KEY:?SKYLINE_INTERNAL_API_KEY is required — copy .env.example to .env and set a value}
+      SKYLINE_ADMIN_EMAIL: ${SKYLINE_ADMIN_EMAIL:-}
+      SKYLINE_ADMIN_PASSWORD: ${SKYLINE_ADMIN_PASSWORD:-}
     depends_on:
       auth-db:
         condition: service_healthy
@@ -196,6 +199,7 @@ services:
       DATABASE_USERNAME: skyline_user
       DATABASE_PASSWORD: skyline_pass
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — copy .env.example to .env and set a value}
+      SKYLINE_INTERNAL_API_KEY: ${SKYLINE_INTERNAL_API_KEY:?SKYLINE_INTERNAL_API_KEY is required — copy .env.example to .env and set a value}
       REDIS_HOST: redis
       SPRING_DATA_REDIS_HOST: redis
     depends_on:
@@ -218,6 +222,7 @@ services:
       DATABASE_USERNAME: skyline_user
       DATABASE_PASSWORD: skyline_pass
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — copy .env.example to .env and set a value}
+      SKYLINE_INTERNAL_API_KEY: ${SKYLINE_INTERNAL_API_KEY:?SKYLINE_INTERNAL_API_KEY is required — copy .env.example to .env and set a value}
       REDIS_HOST: redis
       SPRING_DATA_REDIS_HOST: redis
     depends_on:
@@ -240,6 +245,7 @@ services:
       DATABASE_USERNAME: skyline_user
       DATABASE_PASSWORD: skyline_pass
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — copy .env.example to .env and set a value}
+      SKYLINE_INTERNAL_API_KEY: ${SKYLINE_INTERNAL_API_KEY:?SKYLINE_INTERNAL_API_KEY is required — copy .env.example to .env and set a value}
       REDIS_HOST: redis
       SPRING_DATA_REDIS_HOST: redis
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
@@ -268,6 +274,7 @@ services:
       DATABASE_USERNAME: skyline_user
       DATABASE_PASSWORD: skyline_pass
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — copy .env.example to .env and set a value}
+      SKYLINE_INTERNAL_API_KEY: ${SKYLINE_INTERNAL_API_KEY:?SKYLINE_INTERNAL_API_KEY is required — copy .env.example to .env and set a value}
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       FLEET_SERVICE_URL: http://fleet-service:8081
       SCHEDULE_SERVICE_URL: http://schedule-service:8080
@@ -291,6 +298,7 @@ services:
       DATABASE_USERNAME: skyline_user
       DATABASE_PASSWORD: skyline_pass
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — copy .env.example to .env and set a value}
+      SKYLINE_INTERNAL_API_KEY: ${SKYLINE_INTERNAL_API_KEY:?SKYLINE_INTERNAL_API_KEY is required — copy .env.example to .env and set a value}
       RESERVATION_SERVICE_URL: http://reservation-service:8084
       ROUTE_SERVICE_URL: http://route-service:8082
     depends_on:
@@ -311,6 +319,7 @@ services:
       DATABASE_USERNAME: skyline_user
       DATABASE_PASSWORD: skyline_pass
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — copy .env.example to .env and set a value}
+      SKYLINE_INTERNAL_API_KEY: ${SKYLINE_INTERNAL_API_KEY:?SKYLINE_INTERNAL_API_KEY is required — copy .env.example to .env and set a value}
       SCHEDULE_SERVICE_URL: http://schedule-service:8080
       SPRING_DATA_REDIS_HOST: redis
       REDIS_HOST: redis
@@ -337,7 +346,6 @@ services:
       CHECKIN_SERVICE_URL: http://checkin-service:8085
       CREW_SERVICE_URL: http://crew-service:8086
       SCHEDULE_SERVICE_URL: http://schedule-service:8080
-      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — copy .env.example to .env and set a value}
     depends_on:
       - auth-service
       - fleet-service

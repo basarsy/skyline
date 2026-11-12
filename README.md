@@ -179,11 +179,11 @@ POST   /routes                     Create route                [ADMIN]
 
 ### Reservations (skyline-reservation · :8084)
 ```
-POST   /reservations               Book a flight               [USER]
-GET    /reservations/{id}          Reservation detail          [USER, STAFF, ADMIN]
+POST   /reservations               Book a flight               [PASSENGER]
+GET    /reservations/{id}          Reservation detail          [PASSENGER, STAFF, ADMIN]
 GET    /reservations/pnr/{pnr}     Look up by PNR              [PUBLIC]
-GET    /reservations/my            My bookings                 [USER]
-DELETE /reservations/{id}          Cancel reservation          [USER, STAFF, ADMIN]
+GET    /reservations/my            My bookings                 [PASSENGER]
+DELETE /reservations/{id}          Cancel reservation          [PASSENGER, STAFF, ADMIN]
 ```
 
 ### Check-In (skyline-checkin · :8085)
@@ -264,7 +264,7 @@ cd skyline
 
 # Create your environment file
 cp .env.example .env
-# Edit .env and set a strong JWT_SECRET (min 32 characters)
+# Edit .env and set JWT_SECRET and SKYLINE_INTERNAL_API_KEY (min 32 bytes each)
 
 # Build and start everything (infrastructure + all services)
 docker compose up --build
@@ -281,6 +281,10 @@ cd skyline
 
 # Start infrastructure only (7× PostgreSQL, Redis, Kafka)
 docker compose up -d auth-db fleet-db route-db schedule-db reservation-db checkin-db crew-db redis kafka
+
+# Configure secrets (see .env.example) and export them in each terminal
+cp .env.example .env   # then fill in JWT_SECRET and SKYLINE_INTERNAL_API_KEY
+set -a; source .env; set +a
 
 # Build all modules
 ./mvnw -B install -DskipTests
@@ -318,7 +322,7 @@ Swagger UI (checkin service): `http://localhost:8085/swagger-ui.html`
 
 ### Environment Variables
 
-Each service reads configuration from its own `application.yml` with sensible defaults for local development. Override via environment variables when needed:
+Each service reads configuration from its own `application.yml`. Infrastructure settings have local-development defaults; **secrets do not**, and services refuse to start without them:
 
 | Variable | Description | Default |
 |---|---|---|
@@ -327,12 +331,18 @@ Each service reads configuration from its own `application.yml` with sensible de
 | `DATABASE_PASSWORD` | DB password | `skyline_pass` |
 | `REDIS_HOST` | Redis host | `localhost` |
 | `REDIS_PORT` | Redis port | `6379` |
-| `JWT_SECRET` | HS256 signing key (min 32 chars) | dev-only placeholder |
+| `JWT_SECRET` | **Required.** HS256 signing key, min 32 bytes, identical across services | — (startup fails) |
+| `SKYLINE_INTERNAL_API_KEY` | **Required.** Shared service-to-service key (grants `ROLE_SERVICE`), min 32 bytes | — (startup fails) |
+| `KAFKA_BOOTSTRAP_SERVERS` | Kafka brokers | `localhost:9092` |
 | `JWT_EXPIRY_MS` | Access token TTL in ms | `900000` |
 | `JWT_REFRESH_EXPIRY_MS` | Refresh token TTL in ms | `604800000` |
 | `FLEET_SERVICE_URL` | Fleet service base URL | `http://localhost:8081` |
 | `ROUTE_SERVICE_URL` | Route service base URL | `http://localhost:8082` |
 | `CREW_SERVICE_URL` | Crew service base URL | `http://localhost:8086` |
+| `SKYLINE_ADMIN_EMAIL` | (auth) Email of the initial ADMIN account, created on startup if missing | — (skipped) |
+| `SKYLINE_ADMIN_PASSWORD` | (auth) Password for the initial ADMIN account (min 12 chars) | — (skipped) |
+
+> Public registration always creates `PASSENGER` accounts. Set `SKYLINE_ADMIN_EMAIL` / `SKYLINE_ADMIN_PASSWORD` on the auth service to bootstrap the first `ADMIN`.
 
 ---
 
