@@ -15,7 +15,7 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
 
     Optional<Reservation> findByPnr(String pnr);
 
-    Page<Reservation> findByPassenger_Id(UUID passengerId, Pageable pageable);
+    Page<Reservation> findByPassenger_UserId(UUID userId, Pageable pageable);
 
     java.util.List<Reservation> findByFlightId(UUID flightId);
 

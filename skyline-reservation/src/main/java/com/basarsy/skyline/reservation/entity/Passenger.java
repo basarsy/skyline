@@ -15,7 +15,7 @@ import lombok.Setter;
 @Table(name = "passengers")
 public class Passenger extends BaseEntity {
 
-    @Column(name = "user_id", unique = true)
+    @Column(name = "user_id")
     private UUID userId;
 
     @Column(name = "first_name", nullable = false)

@@ -59,18 +59,10 @@ public class ReservationServiceImpl implements ReservationService {
         try {
             UUID currentUserId = getCurrentUserId();
 
-            // Check if passenger exists for this user, if not create one, else update
-            Passenger passenger = passengerRepository.findByUserId(currentUserId)
-                    .orElseGet(() -> {
-                        Passenger newPassenger = passengerMapper.toEntity(request.passenger());
-                        newPassenger.setUserId(currentUserId);
-                        return newPassenger;
-                    });
-
-            // Always update passenger details to the latest provided in the request
-            if (passenger.getId() != null) {
-                 passengerMapper.updateEntity(passenger, request.passenger());
-            }
+            // Each booking gets its own passenger snapshot. Reusing one passenger per user meant that
+            // booking for someone else rewrote the name/passport on all of the user's past reservations.
+            Passenger passenger = passengerMapper.toEntity(request.passenger());
+            passenger.setUserId(currentUserId);
             passenger = passengerRepository.save(passenger);
 
             Reservation reservation = reservationMapper.toEntity(request);
@@ -112,11 +104,8 @@ public class ReservationServiceImpl implements ReservationService {
     @Override
     @Transactional(readOnly = true)
     public Page<ReservationResponse> getMyReservations(Pageable pageable) {
-        UUID currentUserId = getCurrentUserId();
-        Passenger passenger = passengerRepository.findByUserId(currentUserId)
-                .orElseThrow(() -> new ResourceNotFoundException("Passenger profile not found"));
-        
-        return reservationRepository.findByPassenger_Id(passenger.getId(), pageable)
+        // A user with no bookings yet gets an empty page, not a 404.
+        return reservationRepository.findByPassenger_UserId(getCurrentUserId(), pageable)
                 .map(r -> enrichReservationResponse(r, null));
     }
 
