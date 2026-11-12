@@ -147,6 +147,73 @@ class ReservationServiceImplTest {
         verify(scheduleClient, never()).incrementSeat(any());
     }
 
+    @Test
+    void pnrLookupWithoutCredentialsOrLastNameLooksLikeUnknownPnr() {
+        Reservation reservation = existingReservation(UUID.randomUUID());
+        when(reservationRepository.findByPnr("ABC234")).thenReturn(Optional.of(reservation));
+        SecurityContextHolder.clearContext();
+
+        assertThatThrownBy(() -> service.getReservationByPnr("abc234", null))
+                .isInstanceOf(com.basarsy.skyline.common.exception.ResourceNotFoundException.class)
+                .hasMessage("Reservation not found");
+        assertThatThrownBy(() -> service.getReservationByPnr("abc234", "Wrong"))
+                .isInstanceOf(com.basarsy.skyline.common.exception.ResourceNotFoundException.class)
+                .hasMessage("Reservation not found");
+    }
+
+    @Test
+    void pnrLookupWithMatchingLastNameIsRedacted() {
+        Reservation reservation = existingReservation(UUID.randomUUID());
+        when(reservationRepository.findByPnr("ABC234")).thenReturn(Optional.of(reservation));
+        when(reservationMapper.toResponse(reservation)).thenReturn(responseWithPassenger(reservation));
+        SecurityContextHolder.clearContext();
+
+        var response = service.getReservationByPnr("ABC234", "  lovelace ");
+
+        assertThat(response.getPassenger().passportNumber()).isEqualTo("******789");
+        assertThat(response.getPassenger().dateOfBirth()).isNull();
+        assertThat(response.getPassenger().userId()).isNull();
+    }
+
+    @Test
+    void pnrLookupByOwnerIsNotRedacted() {
+        Reservation reservation = existingReservation(USER_ID);
+        when(reservationRepository.findByPnr("ABC234")).thenReturn(Optional.of(reservation));
+        when(reservationMapper.toResponse(reservation)).thenReturn(responseWithPassenger(reservation));
+
+        var response = service.getReservationByPnr("ABC234", null);
+
+        assertThat(response.getPassenger().passportNumber()).isEqualTo("P12345789");
+    }
+
+    @Test
+    void pnrLookupByInternalServiceIsNotRedacted() {
+        Reservation reservation = existingReservation(UUID.randomUUID());
+        when(reservationRepository.findByPnr("ABC234")).thenReturn(Optional.of(reservation));
+        when(reservationMapper.toResponse(reservation)).thenReturn(responseWithPassenger(reservation));
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                "internal-service", null, List.of(new SimpleGrantedAuthority("ROLE_SERVICE"))));
+
+        var response = service.getReservationByPnr("ABC234", null);
+
+        assertThat(response.getPassenger().passportNumber()).isEqualTo("P12345789");
+        assertThat(response.getPassenger().userId()).isEqualTo(reservation.getPassenger().getUserId());
+    }
+
+    private static Reservation existingReservation(UUID ownerId) {
+        Reservation reservation = existingReservation();
+        reservation.getPassenger().setUserId(ownerId);
+        reservation.getPassenger().setLastName("Lovelace");
+        return reservation;
+    }
+
+    private static com.basarsy.skyline.reservation.dto.ReservationResponse responseWithPassenger(Reservation reservation) {
+        var response = new com.basarsy.skyline.reservation.dto.ReservationResponse();
+        response.setPassenger(new com.basarsy.skyline.reservation.dto.PassengerResponse(UUID.randomUUID(),
+                reservation.getPassenger().getUserId(), "Ada", "Lovelace", "P12345789", LocalDate.of(1990, 1, 1), "TR"));
+        return response;
+    }
+
     private static ReservationRequest request() {
         return new ReservationRequest(FLIGHT_ID,
                 new PassengerRequest("Ada", "Lovelace", "P123", LocalDate.of(1990, 1, 1), "TR"), CabinClass.ECONOMY);

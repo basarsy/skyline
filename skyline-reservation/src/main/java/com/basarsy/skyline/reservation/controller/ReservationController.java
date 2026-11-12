@@ -42,9 +42,11 @@ public class ReservationController {
         return ApiResponse.success("Reservation retrieved successfully", reservationService.getReservation(id));
     }
 
+    /** Public "manage booking": owner/staff/services see everything; others need ?lastName= and get a redacted view. */
     @GetMapping("/pnr/{pnr}")
-    public ApiResponse<ReservationResponse> getReservationByPnr(@PathVariable String pnr) {
-        return ApiResponse.success("Reservation retrieved successfully", reservationService.getReservationByPnr(pnr));
+    public ApiResponse<ReservationResponse> getReservationByPnr(
+            @PathVariable String pnr, @RequestParam(required = false) String lastName) {
+        return ApiResponse.success("Reservation retrieved successfully", reservationService.getReservationByPnr(pnr, lastName));
     }
 
     @GetMapping("/my")

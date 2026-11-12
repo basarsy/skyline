@@ -7,6 +7,7 @@ import com.basarsy.skyline.reservation.client.ScheduleClient;
 import com.basarsy.skyline.reservation.client.dto.AircraftResponse;
 import com.basarsy.skyline.reservation.client.dto.FlightResponse;
 import com.basarsy.skyline.reservation.client.dto.FlightStatus;
+import com.basarsy.skyline.reservation.dto.PassengerResponse;
 import com.basarsy.skyline.reservation.dto.ReservationRequest;
 import com.basarsy.skyline.reservation.dto.ReservationResponse;
 import com.basarsy.skyline.reservation.entity.CabinClass;
@@ -42,6 +43,7 @@ public class ReservationServiceImpl implements ReservationService {
     private static final int PNR_LENGTH = 6;
     private static final int PNR_MAX_ATTEMPTS = 5;
     private static final SecureRandom PNR_RANDOM = new SecureRandom();
+    private static final java.util.Set<String> PRIVILEGED_ROLES = java.util.Set.of("ROLE_STAFF", "ROLE_ADMIN", "ROLE_SERVICE");
 
     private final ReservationRepository reservationRepository;
     private final PassengerRepository passengerRepository;
@@ -101,10 +103,24 @@ public class ReservationServiceImpl implements ReservationService {
 
     @Override
     @Transactional(readOnly = true)
-    public ReservationResponse getReservationByPnr(String pnr) {
-        Reservation reservation = reservationRepository.findByPnr(pnr)
-                .orElseThrow(() -> new ResourceNotFoundException("Reservation not found with PNR: " + pnr));
-        return enrichReservationResponse(reservation, null);
+    public ReservationResponse getReservationByPnr(String pnr, String lastName) {
+        Reservation reservation = reservationRepository.findByPnr(pnr.trim().toUpperCase())
+                .orElseThrow(ReservationServiceImpl::pnrNotFound);
+
+        // Staff, internal services and the booking owner see the full reservation.
+        if (isPrivilegedCaller() || isOwner(reservation)) {
+            return enrichReservationResponse(reservation, null);
+        }
+
+        // Anyone else needs PNR + last name ("manage booking") and gets a view without sensitive
+        // identity data. A wrong last name is indistinguishable from a non-existent PNR, so the
+        // endpoint cannot be used to confirm which PNRs exist.
+        if (lastName != null && lastName.trim().equalsIgnoreCase(reservation.getPassenger().getLastName().trim())) {
+            ReservationResponse response = enrichReservationResponse(reservation, null);
+            response.setPassenger(redacted(response.getPassenger()));
+            return response;
+        }
+        throw pnrNotFound();
     }
 
     @Override
@@ -185,6 +201,37 @@ public class ReservationServiceImpl implements ReservationService {
         if (!isStaffOrAdmin && !currentUserId.equals(reservation.getPassenger().getUserId())) {
             throw new SkylineException("You do not have permission to access this reservation", HttpStatus.FORBIDDEN);
         }
+    }
+
+    private static boolean isPrivilegedCaller() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(a -> PRIVILEGED_ROLES.contains(a.getAuthority()));
+    }
+
+    private static boolean isOwner(Reservation reservation) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication != null
+                && authentication.getPrincipal() instanceof com.basarsy.skyline.common.security.SkylineUserDetails user
+                && user.getId() != null
+                && user.getId().equals(reservation.getPassenger().getUserId());
+    }
+
+    private static ResourceNotFoundException pnrNotFound() {
+        return new ResourceNotFoundException("Reservation not found");
+    }
+
+    /** Passenger view for unauthenticated PNR + last name lookups: no DOB, no owner id, masked passport. */
+    static PassengerResponse redacted(PassengerResponse passenger) {
+        if (passenger == null) {
+            return null;
+        }
+        String passport = passenger.passportNumber();
+        String masked = passport == null || passport.length() <= 3
+                ? "***"
+                : "*".repeat(passport.length() - 3) + passport.substring(passport.length() - 3);
+        return new PassengerResponse(passenger.id(), null, passenger.firstName(), passenger.lastName(), masked,
+                null, passenger.nationality());
     }
 
     private BigDecimal calculatePrice(FlightResponse flight, CabinClass cabinClass) {
