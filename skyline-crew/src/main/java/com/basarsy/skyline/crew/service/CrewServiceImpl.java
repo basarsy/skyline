@@ -16,6 +16,7 @@ import com.basarsy.skyline.crew.repository.FlightCrewRepository;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -42,6 +43,7 @@ public class CrewServiceImpl implements CrewService {
 
     @Override
     @Transactional
+    @CacheEvict(value = "flight-manifests", key = "#flightId")
     public FlightCrewResponse assignCrewToFlight(UUID flightId, FlightCrewAssignmentRequest request) {
         FlightResponse flight = scheduleClient.getFlight(flightId);
 
@@ -86,6 +88,7 @@ public class CrewServiceImpl implements CrewService {
 
     @Override
     @Transactional
+    @CacheEvict(value = "flight-manifests", key = "#flightId")
     public void removeCrewFromFlight(UUID flightId, UUID crewMemberId) {
         flightCrewRepository.deleteByFlightIdAndCrewMemberId(flightId, crewMemberId);
     }
