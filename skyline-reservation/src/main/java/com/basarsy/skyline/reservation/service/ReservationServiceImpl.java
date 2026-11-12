@@ -18,9 +18,11 @@ import com.basarsy.skyline.reservation.mapper.ReservationMapper;
 import com.basarsy.skyline.reservation.repository.PassengerRepository;
 import com.basarsy.skyline.reservation.repository.ReservationRepository;
 import java.math.BigDecimal;
+import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -28,10 +30,18 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ReservationServiceImpl implements ReservationService {
+
+    private static final String PNR_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    private static final int PNR_LENGTH = 6;
+    private static final int PNR_MAX_ATTEMPTS = 5;
+    private static final SecureRandom PNR_RANDOM = new SecureRandom();
 
     private final ReservationRepository reservationRepository;
     private final PassengerRepository passengerRepository;
@@ -53,36 +63,32 @@ public class ReservationServiceImpl implements ReservationService {
             throw new SkylineException("Flight is fully booked", HttpStatus.BAD_REQUEST);
         }
 
-        // Decrement seat via client
+        UUID currentUserId = getCurrentUserId();
+
+        // The seat lives in the schedule service, so it can't join this transaction. Hold it remotely,
+        // then give it back if this transaction does not commit for ANY reason, including failures at
+        // commit time (e.g. a constraint violation on flush), which a try/catch here can never see.
         scheduleClient.decrementSeat(flight.getId());
+        releaseSeatUnlessCommitted(flight.getId());
 
-        try {
-            UUID currentUserId = getCurrentUserId();
+        // Each booking gets its own passenger snapshot. Reusing one passenger per user meant that
+        // booking for someone else rewrote the name/passport on all of the user's past reservations.
+        Passenger passenger = passengerMapper.toEntity(request.passenger());
+        passenger.setUserId(currentUserId);
+        passenger = passengerRepository.save(passenger);
 
-            // Each booking gets its own passenger snapshot. Reusing one passenger per user meant that
-            // booking for someone else rewrote the name/passport on all of the user's past reservations.
-            Passenger passenger = passengerMapper.toEntity(request.passenger());
-            passenger.setUserId(currentUserId);
-            passenger = passengerRepository.save(passenger);
+        Reservation reservation = reservationMapper.toEntity(request);
+        reservation.setFlightId(flight.getId());
+        reservation.setPassenger(passenger);
+        reservation.setBookedAt(LocalDateTime.now());
+        reservation.setPnr(generateUniquePnr());
+        reservation.setTotalPrice(calculatePrice(flight, request.cabinClass()));
 
-            Reservation reservation = reservationMapper.toEntity(request);
-            reservation.setFlightId(flight.getId());
-            reservation.setPassenger(passenger);
-            reservation.setStatus(ReservationStatus.PENDING);
-            reservation.setBookedAt(LocalDateTime.now());
-            reservation.setPnr(generatePnr());
-            reservation.setTotalPrice(calculatePrice(flight, request.cabinClass()));
+        // In a real system, payment processing would happen here, and status would be CONFIRMED upon success
+        reservation.setStatus(ReservationStatus.CONFIRMED);
 
-            // In a real system, payment processing would happen here, and status would be CONFIRMED upon success
-            reservation.setStatus(ReservationStatus.CONFIRMED);
-
-            Reservation savedReservation = reservationRepository.save(reservation);
-            return enrichReservationResponse(savedReservation, flight);
-        } catch (Exception ex) {
-            // Compensate: return the seat since the booking failed
-            scheduleClient.incrementSeat(flight.getId());
-            throw ex;
-        }
+        Reservation savedReservation = reservationRepository.saveAndFlush(reservation);
+        return enrichReservationResponse(savedReservation, flight);
     }
 
     @Override
@@ -127,8 +133,9 @@ public class ReservationServiceImpl implements ReservationService {
         reservation.setStatus(ReservationStatus.CANCELLED);
         reservationRepository.save(reservation);
 
-        // Return seat to inventory
-        scheduleClient.incrementSeat(reservation.getFlightId());
+        // Return the seat only once the cancellation is durable. Releasing it before commit could
+        // oversell the flight if the commit then failed.
+        releaseSeatAfterCommit(reservation.getFlightId());
     }
 
     @Override
@@ -205,8 +212,52 @@ public class ReservationServiceImpl implements ReservationService {
         return flight.getBasePrice().multiply(multiplier).multiply(loadFactorMultiplier);
     }
 
-    private String generatePnr() {
-        String uuid = UUID.randomUUID().toString().replace("-", "").toUpperCase();
-        return uuid.substring(0, 6);
+    private void releaseSeatUnlessCommitted(UUID flightId) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status != STATUS_COMMITTED) {
+                    releaseSeat(flightId, "booking transaction did not commit");
+                }
+            }
+        });
+    }
+
+    private void releaseSeatAfterCommit(UUID flightId) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                releaseSeat(flightId, "reservation cancelled");
+            }
+        });
+    }
+
+    private void releaseSeat(UUID flightId, String reason) {
+        try {
+            scheduleClient.incrementSeat(flightId);
+        } catch (Exception ex) {
+            // Runs after the transaction finished, so there is nothing left to roll back. Log loudly with a
+            // stable marker so the seat count can be reconciled (alerting / a retry job can key off it).
+            log.error("SEAT_RELEASE_FAILED flightId={} reason={}: seat inventory needs reconciliation",
+                    flightId, reason, ex);
+        }
+    }
+
+    /**
+     * 6-character PNR from SecureRandom over 32 unambiguous characters (no 0/O, 1/I): about 1.07 billion
+     * values instead of 16.7 million hex values from a non-cryptographic source, with a collision check.
+     */
+    private String generateUniquePnr() {
+        for (int attempt = 0; attempt < PNR_MAX_ATTEMPTS; attempt++) {
+            StringBuilder pnr = new StringBuilder(PNR_LENGTH);
+            for (int i = 0; i < PNR_LENGTH; i++) {
+                pnr.append(PNR_ALPHABET.charAt(PNR_RANDOM.nextInt(PNR_ALPHABET.length())));
+            }
+            String candidate = pnr.toString();
+            if (!reservationRepository.existsByPnr(candidate)) {
+                return candidate;
+            }
+        }
+        throw new SkylineException("Could not allocate a booking reference, please retry", HttpStatus.SERVICE_UNAVAILABLE);
     }
 }
