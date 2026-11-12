@@ -28,7 +28,3 @@ jwt:
 reservation:
   service:
     url: ${RESERVATION_SERVICE_URL:http://localhost:8084}
-
-route:
-  service:
-    url: ${ROUTE_SERVICE_URL:http://localhost:8082}

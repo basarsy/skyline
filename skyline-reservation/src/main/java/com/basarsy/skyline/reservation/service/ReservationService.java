@@ -14,5 +14,4 @@ public interface ReservationService {
 
     void cancelReservation(UUID id);
 
-    void updateStatus(UUID id, com.basarsy.skyline.reservation.entity.ReservationStatus status, String seatNumber);
     }

@@ -156,17 +156,6 @@ public class ReservationServiceImpl implements ReservationService {
         releaseSeatAfterCommit(reservation.getFlightId());
     }
 
-    @Override
-    @Transactional
-    public void updateStatus(UUID id, ReservationStatus status, String seatNumber) {
-        Reservation reservation = getReservationEntity(id);
-        reservation.setStatus(status);
-        if (seatNumber != null) {
-            reservation.setSeatNumber(seatNumber);
-        }
-        reservationRepository.save(reservation);
-    }
-
     private ReservationResponse enrichReservationResponse(Reservation reservation, FlightResponse flight) {
         ReservationResponse response = reservationMapper.toResponse(reservation);
         if (flight == null) {
