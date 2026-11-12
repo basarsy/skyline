@@ -147,6 +147,8 @@ public class ReservationServiceImpl implements ReservationService {
         }
 
         reservation.setStatus(ReservationStatus.CANCELLED);
+        // Free the seat number so it can be assigned again ((flight_id, seat_number) is unique).
+        reservation.setSeatNumber(null);
         reservationRepository.save(reservation);
 
         // Return the seat only once the cancellation is durable. Releasing it before commit could

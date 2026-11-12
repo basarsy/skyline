@@ -28,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ReservationController {
 
     private final ReservationService reservationService;
+    private final com.basarsy.skyline.reservation.service.ReservationCheckInService checkInService;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -60,6 +61,13 @@ public class ReservationController {
     public ApiResponse<Void> cancelReservation(@PathVariable UUID id) {
         reservationService.cancelReservation(id);
         return ApiResponse.success("Reservation cancelled successfully", null);
+    }
+
+    /** Internal: atomically assigns a seat and marks the reservation CHECKED_IN. Idempotent. */
+    @PostMapping("/{id}/check-in")
+    @PreAuthorize("hasRole('SERVICE')")
+    public ApiResponse<ReservationResponse> checkIn(@PathVariable UUID id) {
+        return ApiResponse.success("Reservation checked in", checkInService.checkIn(id));
     }
 
     @PutMapping("/{id}/status")
