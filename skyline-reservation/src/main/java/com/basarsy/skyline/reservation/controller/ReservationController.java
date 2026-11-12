@@ -31,13 +31,13 @@ public class ReservationController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasRole('PASSENGER')")
     public ApiResponse<ReservationResponse> bookFlight(@Valid @RequestBody ReservationRequest request) {
         return ApiResponse.success("Flight booked successfully", reservationService.bookFlight(request));
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('USER', 'STAFF', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('PASSENGER', 'STAFF', 'ADMIN')")
     public ApiResponse<ReservationResponse> getReservation(@PathVariable UUID id) {
         return ApiResponse.success("Reservation retrieved successfully", reservationService.getReservation(id));
     }
@@ -48,13 +48,13 @@ public class ReservationController {
     }
 
     @GetMapping("/my")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasRole('PASSENGER')")
     public ApiResponse<Page<ReservationResponse>> getMyReservations(Pageable pageable) {
         return ApiResponse.success("Reservations retrieved successfully", reservationService.getMyReservations(pageable));
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('USER', 'STAFF', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('PASSENGER', 'STAFF', 'ADMIN')")
     public ApiResponse<Void> cancelReservation(@PathVariable UUID id) {
         reservationService.cancelReservation(id);
         return ApiResponse.success("Reservation cancelled successfully", null);
