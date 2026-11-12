@@ -1,0 +1,38 @@
+# Build artifacts
+target/
+**/target/
+
+# Git
+.git
+.gitignore
+
+# IDE
+.idea/
+*.iws
+*.iml
+*.ipr
+.vscode/
+.project
+.classpath
+.settings/
+.factorypath
+
+# Docker
+docker-compose.yml
+docker-compose.override.yml
+.dockerignore
+Dockerfile
+
+# CI / docs
+.github/
+README.md
+HELP.md
+*.md
+
+# Environment
+.env
+.env.example
+
+# OS
+.DS_Store
+Thumbs.db
