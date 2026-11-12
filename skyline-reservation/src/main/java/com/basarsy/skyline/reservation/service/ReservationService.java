@@ -9,10 +9,9 @@ import org.springframework.data.domain.Pageable;
 public interface ReservationService {
     ReservationResponse bookFlight(ReservationRequest request);
     ReservationResponse getReservation(UUID id);
-    ReservationResponse getReservationByPnr(String pnr);
+    ReservationResponse getReservationByPnr(String pnr, String lastName);
     Page<ReservationResponse> getMyReservations(Pageable pageable);
 
     void cancelReservation(UUID id);
 
-    void updateStatus(UUID id, com.basarsy.skyline.reservation.entity.ReservationStatus status, String seatNumber);
     }

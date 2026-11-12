@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -25,6 +26,7 @@ public class CheckInController {
     private final CheckInService checkInService;
 
     @PostMapping
+    @PreAuthorize("hasAnyRole('PASSENGER', 'STAFF', 'ADMIN')")
     @Operation(summary = "Perform online check-in")
     public ResponseEntity<ApiResponse<BoardingPassResponse>> checkIn(@Valid @RequestBody CheckInRequest request) {
         BoardingPassResponse response = checkInService.performCheckIn(request);
@@ -32,6 +34,7 @@ public class CheckInController {
     }
 
     @GetMapping("/{pnr}/boarding-pass")
+    @PreAuthorize("hasAnyRole('PASSENGER', 'STAFF', 'ADMIN')")
     @Operation(summary = "Get boarding pass by PNR")
     public ResponseEntity<ApiResponse<BoardingPassResponse>> getBoardingPass(@PathVariable String pnr) {
         BoardingPassResponse response = checkInService.getBoardingPass(pnr);

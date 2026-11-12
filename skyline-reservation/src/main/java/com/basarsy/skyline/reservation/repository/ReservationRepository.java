@@ -15,11 +15,17 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
 
     Optional<Reservation> findByPnr(String pnr);
 
-    Page<Reservation> findByPassenger_Id(UUID passengerId, Pageable pageable);
+    boolean existsByPnr(String pnr);
+
+    @Query("SELECT r.seatNumber FROM Reservation r WHERE r.flightId = :flightId AND r.seatNumber IS NOT NULL")
+    java.util.Set<String> findAssignedSeats(@Param("flightId") UUID flightId);
+
+    Page<Reservation> findByPassenger_UserId(UUID userId, Pageable pageable);
 
     java.util.List<Reservation> findByFlightId(UUID flightId);
 
     @Modifying
-    @Query("UPDATE Reservation r SET r.status = :newStatus WHERE r.flightId = :flightId AND r.status != :newStatus")
+    // Also frees the seat: (flight_id, seat_number) is unique, so a cancelled booking must not keep holding it.
+    @Query("UPDATE Reservation r SET r.status = :newStatus, r.seatNumber = null WHERE r.flightId = :flightId AND r.status != :newStatus")
     int updateStatusByFlightId(@Param("flightId") UUID flightId, @Param("newStatus") ReservationStatus newStatus);
 }

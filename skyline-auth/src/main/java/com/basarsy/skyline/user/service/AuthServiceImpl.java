@@ -15,7 +15,7 @@ import com.basarsy.skyline.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -56,7 +56,9 @@ public class AuthServiceImpl implements AuthService {
         try {
             authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(email, request.password()));
-        } catch (BadCredentialsException ex) {
+        } catch (AuthenticationException ex) {
+            // Bad password, unknown user and disabled account all get the same answer (no account enumeration).
+            // BadCredentialsException alone let DisabledException escape.
             throw new SkylineException("Invalid email or password", HttpStatus.UNAUTHORIZED);
         }
 
@@ -77,6 +79,10 @@ public class AuthServiceImpl implements AuthService {
                 throw new SkylineException("Invalid refresh token", HttpStatus.UNAUTHORIZED);
             }
             var userDetails = userDetailsService.loadUserByUsername(username);
+            if (!userDetails.isEnabled()) {
+                // A disabled account must not be able to mint new access tokens with an old refresh token.
+                throw new SkylineException("Invalid refresh token", HttpStatus.UNAUTHORIZED);
+            }
 
             return buildAuthResponse(userDetails);
         } catch (InvalidTokenException ex) {

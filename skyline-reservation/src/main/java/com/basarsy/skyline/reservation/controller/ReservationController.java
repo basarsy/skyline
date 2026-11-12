@@ -15,7 +15,6 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -28,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ReservationController {
 
     private final ReservationService reservationService;
+    private final com.basarsy.skyline.reservation.service.ReservationCheckInService checkInService;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -42,9 +42,11 @@ public class ReservationController {
         return ApiResponse.success("Reservation retrieved successfully", reservationService.getReservation(id));
     }
 
+    /** Public "manage booking": owner/staff/services see everything; others need ?lastName= and get a redacted view. */
     @GetMapping("/pnr/{pnr}")
-    public ApiResponse<ReservationResponse> getReservationByPnr(@PathVariable String pnr) {
-        return ApiResponse.success("Reservation retrieved successfully", reservationService.getReservationByPnr(pnr));
+    public ApiResponse<ReservationResponse> getReservationByPnr(
+            @PathVariable String pnr, @RequestParam(required = false) String lastName) {
+        return ApiResponse.success("Reservation retrieved successfully", reservationService.getReservationByPnr(pnr, lastName));
     }
 
     @GetMapping("/my")
@@ -60,12 +62,11 @@ public class ReservationController {
         return ApiResponse.success("Reservation cancelled successfully", null);
     }
 
-    @PutMapping("/{id}/status")
+    /** Internal: atomically assigns a seat and marks the reservation CHECKED_IN. Idempotent. */
+    @PostMapping("/{id}/check-in")
     @PreAuthorize("hasRole('SERVICE')")
-    public void updateStatus(
-            @PathVariable UUID id, 
-            @RequestParam com.basarsy.skyline.reservation.entity.ReservationStatus status,
-            @RequestParam(required = false) String seatNumber) {
-        reservationService.updateStatus(id, status, seatNumber);
+    public ApiResponse<ReservationResponse> checkIn(@PathVariable UUID id) {
+        return ApiResponse.success("Reservation checked in", checkInService.checkIn(id));
     }
+
 }

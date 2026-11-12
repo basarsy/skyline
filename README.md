@@ -181,7 +181,7 @@ POST   /routes                     Create route                [ADMIN]
 ```
 POST   /reservations               Book a flight               [PASSENGER]
 GET    /reservations/{id}          Reservation detail          [PASSENGER, STAFF, ADMIN]
-GET    /reservations/pnr/{pnr}     Look up by PNR              [PUBLIC]
+GET    /reservations/pnr/{pnr}     Look up by PNR              [PUBLIC: ?lastName= required, redacted view; owner/STAFF/ADMIN: full]
 GET    /reservations/my            My bookings                 [PASSENGER]
 DELETE /reservations/{id}          Cancel reservation          [PASSENGER, STAFF, ADMIN]
 ```
