@@ -179,11 +179,11 @@ POST   /routes                     Create route                [ADMIN]
 
 ### Reservations (skyline-reservation · :8084)
 ```
-POST   /reservations               Book a flight               [USER]
-GET    /reservations/{id}          Reservation detail          [USER, STAFF, ADMIN]
+POST   /reservations               Book a flight               [PASSENGER]
+GET    /reservations/{id}          Reservation detail          [PASSENGER, STAFF, ADMIN]
 GET    /reservations/pnr/{pnr}     Look up by PNR              [PUBLIC]
-GET    /reservations/my            My bookings                 [USER]
-DELETE /reservations/{id}          Cancel reservation          [USER, STAFF, ADMIN]
+GET    /reservations/my            My bookings                 [PASSENGER]
+DELETE /reservations/{id}          Cancel reservation          [PASSENGER, STAFF, ADMIN]
 ```
 
 ### Check-In (skyline-checkin · :8085)
@@ -316,6 +316,10 @@ Each service reads configuration from its own `application.yml` with sensible de
 | `FLEET_SERVICE_URL` | Fleet service base URL | `http://localhost:8081` |
 | `ROUTE_SERVICE_URL` | Route service base URL | `http://localhost:8082` |
 | `CREW_SERVICE_URL` | Crew service base URL | `http://localhost:8086` |
+| `SKYLINE_ADMIN_EMAIL` | (auth) Email of the initial ADMIN account, created on startup if missing | — (skipped) |
+| `SKYLINE_ADMIN_PASSWORD` | (auth) Password for the initial ADMIN account (min 12 chars) | — (skipped) |
+
+> Public registration always creates `PASSENGER` accounts. Set `SKYLINE_ADMIN_EMAIL` / `SKYLINE_ADMIN_PASSWORD` on the auth service to bootstrap the first `ADMIN`.
 
 ---
 

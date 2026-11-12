@@ -18,6 +18,12 @@ spring:
     enabled: true
     locations: classpath:db/migration/auth
 
+skyline:
+  bootstrap:
+    admin:
+      email: ${SKYLINE_ADMIN_EMAIL:}
+      password: ${SKYLINE_ADMIN_PASSWORD:}
+
 jwt:
   secret: ${JWT_SECRET:dev-only-change-me-use-at-least-32-chars}
   access-token-expiry-ms: ${JWT_EXPIRY_MS:900000}
