@@ -34,7 +34,7 @@ public class AircraftController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN', 'SERVICE')")
     public ResponseEntity<ApiResponse<AircraftResponse>> findById(@PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.success(aircraftService.findById(id)));
     }

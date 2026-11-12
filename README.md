@@ -265,6 +265,10 @@ cd skyline
 # Start infrastructure (7× PostgreSQL, Redis, Kafka)
 docker compose up -d
 
+# Configure secrets (see .env.example) and export them in each terminal
+cp .env.example .env   # then fill in JWT_SECRET and SKYLINE_INTERNAL_API_KEY
+set -a; source .env; set +a
+
 # Build all modules
 ./mvnw -B install -DskipTests
 
@@ -301,7 +305,7 @@ Swagger UI (checkin service): `http://localhost:8085/swagger-ui.html`
 
 ### Environment Variables
 
-Each service reads configuration from its own `application.yml` with sensible defaults for local development. Override via environment variables when needed:
+Each service reads configuration from its own `application.yml`. Infrastructure settings have local-development defaults; **secrets do not**, and services refuse to start without them:
 
 | Variable | Description | Default |
 |---|---|---|
@@ -310,7 +314,9 @@ Each service reads configuration from its own `application.yml` with sensible de
 | `DATABASE_PASSWORD` | DB password | `skyline_pass` |
 | `REDIS_HOST` | Redis host | `localhost` |
 | `REDIS_PORT` | Redis port | `6379` |
-| `JWT_SECRET` | HS256 signing key (min 32 chars) | dev-only placeholder |
+| `JWT_SECRET` | **Required.** HS256 signing key, min 32 bytes, identical across services | — (startup fails) |
+| `SKYLINE_INTERNAL_API_KEY` | **Required.** Shared service-to-service key (grants `ROLE_SERVICE`), min 32 bytes | — (startup fails) |
+| `KAFKA_BOOTSTRAP_SERVERS` | Kafka brokers | `localhost:9092` |
 | `JWT_EXPIRY_MS` | Access token TTL in ms | `900000` |
 | `JWT_REFRESH_EXPIRY_MS` | Refresh token TTL in ms | `604800000` |
 | `FLEET_SERVICE_URL` | Fleet service base URL | `http://localhost:8081` |
