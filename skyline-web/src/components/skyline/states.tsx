@@ -1,5 +1,5 @@
 import type * as React from 'react'
-import { motion, useReducedMotion } from 'motion/react'
+import * as m from 'motion/react-m'
 import { CloudOff, Lock, RotateCw, SearchX } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router'
 
@@ -8,6 +8,7 @@ import { logout } from '@/auth/session'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/cn'
+import { usePrefersReducedMotion } from '@/lib/hooks'
 
 interface StateProps {
   icon?: React.ReactNode
@@ -145,9 +146,9 @@ export function Stagger({
   children: React.ReactNode
   className?: string
 }) {
-  const reduce = useReducedMotion()
+  const reduce = usePrefersReducedMotion()
   return (
-    <motion.div
+    <m.div
       className={className}
       // Reduced motion: no fade, no slide; render the final state.
       initial={reduce ? false : { opacity: 0, y: 8 }}
@@ -155,6 +156,6 @@ export function Stagger({
       transition={{ type: 'spring', stiffness: 420, damping: 36, delay: Math.min(index, 10) * 0.04 }}
     >
       {children}
-    </motion.div>
+    </m.div>
   )
 }

@@ -1,6 +1,5 @@
 import * as React from 'react'
 import { Outlet, ScrollRestoration, useLocation, useNavigate } from 'react-router'
-import { toast } from 'sonner'
 
 import { onSessionExpired } from '@/auth/auth-store'
 import { queryClient } from './query-client'
@@ -23,7 +22,7 @@ export function RootLayout() {
       onSessionExpired(() => {
         queryClient.clear()
         const { pathname, search } = locationRef.current
-        toast('Your session has ended. Please log in again.')
+        void import('sonner').then(({ toast }) => toast('Your session has ended. Please log in again.'))
         navigate(`/login?next=${encodeURIComponent(`${pathname}${search}`)}`, { replace: true })
       }),
     [navigate],

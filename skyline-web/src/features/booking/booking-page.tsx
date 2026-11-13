@@ -1,7 +1,8 @@
 import * as React from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { AnimatePresence } from 'motion/react'
+import * as m from 'motion/react-m'
 import { ArrowLeft, ArrowRight, Check } from 'lucide-react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
@@ -24,7 +25,7 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/cn'
 import { isBookable } from '@/lib/flight-status'
 import { formatLocalDate, isoFromLocalDate } from '@/lib/format'
-import { useDocumentTitle } from '@/lib/hooks'
+import { useDocumentTitle, usePrefersReducedMotion } from '@/lib/hooks'
 import { cabinLabel, CABINS } from '@/lib/labels'
 import { cabinMultiplierCopy, estimatePrice } from '@/lib/pricing'
 import { useFlight } from '@/features/search/queries'
@@ -210,7 +211,7 @@ export function Component() {
     },
   })
   const { errors, submitCount } = form.formState
-  const reduceMotion = useReducedMotion()
+  const reduceMotion = usePrefersReducedMotion()
   const values = useWatch({ control: form.control }) as PassengerValues
 
   const book = useMutation({
@@ -337,7 +338,7 @@ export function Component() {
       <div className="grid gap-8 lg:grid-cols-[1fr_360px]">
         <div ref={headingRef} className="min-w-0">
           <AnimatePresence mode="wait" initial={false}>
-            <motion.div
+            <m.div
               key={step}
               initial={reduceMotion ? false : { opacity: 0, x: 16 }}
               animate={{ opacity: 1, x: 0 }}
@@ -449,7 +450,7 @@ export function Component() {
                   )}
                 </section>
               )}
-            </motion.div>
+            </m.div>
           </AnimatePresence>
 
           <div className="mt-8 hidden items-center justify-between gap-3 md:flex">

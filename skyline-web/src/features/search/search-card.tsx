@@ -1,9 +1,7 @@
 import * as React from 'react'
-import { zodResolver } from '@hookform/resolvers/zod'
 import { ArrowLeftRight, Search } from 'lucide-react'
-import { Controller, useForm } from 'react-hook-form'
+import { Controller, useForm, type Resolver } from 'react-hook-form'
 import { useNavigate } from 'react-router'
-import { z } from 'zod'
 
 import type { CabinClass } from '@/api/types'
 import { FormErrorSummary, FormField } from '@/components/skyline/form'
@@ -14,22 +12,15 @@ import { cn } from '@/lib/cn'
 import { toUtcDay } from '@/lib/format'
 import { cabinLabel, CABINS } from '@/lib/labels'
 
-export const searchSchema = z
-  .object({
-    from: z.string({ error: 'Choose where you’re flying from' }).min(1, 'Choose where you’re flying from'),
-    to: z.string({ error: 'Choose where you’re flying to' }).min(1, 'Choose where you’re flying to'),
-    date: z
-      .string({ error: 'Choose a date' })
-      .min(1, 'Choose a date')
-      .refine((value) => value >= toUtcDay(new Date(Date.now() - 86_400_000)), 'Choose a date that isn’t in the past'),
-    cabin: z.enum(['ECONOMY', 'BUSINESS', 'FIRST']),
-  })
-  .refine((values) => values.from !== values.to, {
-    path: ['to'],
-    message: 'Choose a destination different from the origin',
-  })
+import type { SearchValues } from './search-schema'
 
-export type SearchValues = z.infer<typeof searchSchema>
+export type { SearchValues }
+
+/** Validation is loaded on demand: zod (and the schema) only download when the form is first validated. */
+const lazyResolver: Resolver<SearchValues> = async (values, context, options) => {
+  const { searchResolver } = await import('./search-schema')
+  return searchResolver(values, context, options)
+}
 
 export function searchUrl(values: SearchValues) {
   const params = new URLSearchParams({ from: values.from, to: values.to, date: values.date, cabin: values.cabin })
@@ -54,7 +45,7 @@ export function SearchCard({
     date: initial?.date ?? toUtcDay(new Date(Date.now() + 86_400_000)),
     cabin: (initial?.cabin as CabinClass | undefined) ?? 'ECONOMY',
   }))
-  const form = useForm<SearchValues>({ resolver: zodResolver(searchSchema), defaultValues })
+  const form = useForm<SearchValues>({ resolver: lazyResolver, defaultValues })
   const { errors, submitCount } = form.formState
 
   const onSubmit = form.handleSubmit((values) => navigate(searchUrl(values)))
