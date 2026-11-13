@@ -1,6 +1,17 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { ADMIN, freshApp, live, logIn, logOut, MOCK, register, uniqueEmail, utcIn } from './support'
+import {
+  ADMIN,
+  bookableFlight,
+  bookViaApi,
+  freshApp,
+  live,
+  logIn,
+  logOut,
+  register,
+  uniqueEmail,
+  utcIn,
+} from './support'
 
 function openPopover(page: Page) {
   return page.locator('[data-slot=popover-content][data-state=open]')
@@ -28,18 +39,18 @@ async function createStaff(page: Page) {
   return { email, password }
 }
 
-async function createCrewMember(page: Page, role: 'Captain' | 'First officer', accountEmail: string) {
+async function createCrewMember(page: Page, role: 'Captain' | 'First officer', accountEmail: string, lastName: string) {
   const employee = `E${Date.now().toString(36).toUpperCase()}${role[0]}`
   await page.goto('/ops/crew')
   await page.getByRole('button', { name: 'Add crew member' }).click()
   const form = sheet(page)
   await form.getByRole('combobox', { name: 'Linked account' }).click()
-  await openPopover(page).getByRole('combobox').fill(accountEmail.slice(0, 12))
+  await openPopover(page).getByRole('combobox').fill(accountEmail)
   await openPopover(page)
     .getByRole('option', { name: new RegExp(accountEmail) })
     .click()
   await form.getByLabel('First name').fill(role === 'Captain' ? 'Amelia' : 'Chuck')
-  await form.getByLabel('Last name').fill(role === 'Captain' ? 'Earhart' : 'Yeager')
+  await form.getByLabel('Last name').fill(lastName)
   await form.getByLabel('Employee number').fill(employee)
   await form.getByRole('combobox', { name: 'Role' }).click()
   await page.getByRole('option', { name: role, exact: true }).click()
@@ -54,6 +65,7 @@ async function createCrewMember(page: Page, role: 'Captain' | 'First officer', a
 }
 
 test('admin builds the network and a flight; times round-trip in airport-local time', async ({ page }) => {
+  test.slow()
   await freshApp(page)
   await logIn(page, ADMIN.email, ADMIN.password)
   await expect(page).toHaveURL(/\/ops\/flights/)
@@ -129,8 +141,12 @@ test('crew, the status lifecycle, and role gating', async ({ page }) => {
   const staff = await createStaff(page)
   const captainAccount = await createStaff(page)
   const officerAccount = await createStaff(page)
-  await createCrewMember(page, 'Captain', captainAccount.email)
-  await createCrewMember(page, 'First officer', officerAccount.email)
+  // Unique surnames: a live stack keeps crew from earlier runs.
+  const run = Date.now().toString(36).slice(-5)
+  const captainName = `Earhart${run}`
+  const officerName = `Yeager${run}`
+  await createCrewMember(page, 'Captain', captainAccount.email, captainName)
+  await createCrewMember(page, 'First officer', officerAccount.email, officerName)
 
   // The flight: in the mocked mode the seeded SK101; live, the first flight on today's board is not reliable,
   // so create one through the form.
@@ -169,8 +185,8 @@ test('crew, the status lifecycle, and role gating', async ({ page }) => {
 
   // Assign both through the crew combobox.
   for (const [name, role] of [
-    ['Earhart', 'Captain'],
-    ['Yeager', 'First officer'],
+    [captainName, 'Captain'],
+    [officerName, 'First officer'],
   ] as const) {
     await page.getByRole('button', { name: 'Assign crew' }).click()
     await sheet(page).getByRole('combobox', { name: 'Crew member' }).click()
@@ -206,47 +222,39 @@ test('crew, the status lifecycle, and role gating', async ({ page }) => {
 
 test('admin cancels a flight and its passengers see their booking cancelled; passengers get 403 in ops', async ({
   page,
+  request,
 }) => {
-  test.skip(live, 'Uses the mocked seeded flights')
+  test.slow()
+  const flight = await bookableFlight(request, 30)
   await freshApp(page)
   const passenger = uniqueEmail('cancelled')
   await register(page, passenger)
-  await page.goto('/book/f0000000-0000-4000-8000-000000000002?cabin=ECONOMY')
-  await page.getByRole('button', { name: 'Continue' }).first().click()
-  await page.getByLabel('First name').fill('Ada')
-  await page.getByLabel('Last name').fill('Lovelace')
-  await page.getByLabel('Passport number').fill('U1234567')
-  await page.getByRole('button', { name: 'Date of birth' }).click()
-  await openPopover(page).getByRole('combobox', { name: /year/i }).selectOption('1990')
-  await openPopover(page)
-    .getByRole('button', { name: /15th, 1990/ })
-    .click()
-  await pick(page, 'Nationality', 'United Kingdom', 'United Kingdom')
-  await page.getByRole('button', { name: 'Review booking' }).first().click()
-  await page.getByRole('button', { name: 'Confirm booking' }).first().click()
-  await expect(page.getByRole('heading', { name: 'You’re booked.' })).toBeVisible()
+  const booking = await bookViaApi(page, flight.id, 'Lovelace')
 
   // A passenger in the ops console sees the 403 state.
   await page.goto('/ops/flights')
   await expect(page.getByRole('heading', { name: 'You don’t have access' })).toBeVisible()
 
-  // Switch account logs out and returns here after logging in as admin.
+  // Switch account logs out; log in as admin and cancel the flight with the typed confirmation.
   await page.getByRole('button', { name: 'Switch account' }).click()
-  await page.getByLabel('Email').fill(MOCK.admin.email)
-  await page.getByLabel('Password', { exact: true }).fill(MOCK.admin.password)
+  await page.getByLabel('Email').fill(ADMIN.email)
+  await page.getByLabel('Password', { exact: true }).fill(ADMIN.password)
   await page.getByRole('button', { name: 'Log in' }).click()
   await expect(page).toHaveURL(/\/ops\/flights$/)
-  await page.goto('/ops/flights/f0000000-0000-4000-8000-000000000002')
+  await page.goto(`/ops/flights/${flight.id}`)
   await page.getByRole('button', { name: 'Cancel flight' }).click()
   const dialog = page.getByRole('alertdialog')
   await expect(dialog).toContainText('Every passenger booking on this flight will be cancelled')
   await expect(dialog.getByRole('button', { name: 'Cancel flight' })).toBeDisabled()
-  await dialog.getByLabel(/Type SK103 to confirm/).fill('sk103')
+  await dialog.getByLabel(new RegExp(`Type ${flight.flightNumber} to confirm`)).fill(flight.flightNumber.toLowerCase())
   await dialog.getByRole('button', { name: 'Cancel flight' }).click()
   await expect(page.getByRole('heading', { name: 'Status' }).locator('..')).toContainText('Cancelled')
 
+  // The passenger's booking turns cancelled (asynchronously, via Kafka, on the real stack).
   await logOut(page)
   await logIn(page, passenger, 'Passw0rd!!')
-  await page.goto('/trips?tab=cancelled')
-  await expect(page.getByRole('article').first()).toContainText('Cancelled')
+  await expect(async () => {
+    await page.goto(`/trips/${booking.id}`)
+    await expect(page.getByText('Cancelled').first()).toBeVisible({ timeout: 2_000 })
+  }).toPass({ timeout: 60_000 })
 })

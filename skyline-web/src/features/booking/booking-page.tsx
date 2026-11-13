@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { AnimatePresence, motion } from 'motion/react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { ArrowLeft, ArrowRight, Check } from 'lucide-react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
@@ -210,6 +210,7 @@ export function Component() {
     },
   })
   const { errors, submitCount } = form.formState
+  const reduceMotion = useReducedMotion()
   const values = useWatch({ control: form.control }) as PassengerValues
 
   const book = useMutation({
@@ -338,9 +339,9 @@ export function Component() {
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={step}
-              initial={{ opacity: 0, x: 16 }}
+              initial={reduceMotion ? false : { opacity: 0, x: 16 }}
               animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -16 }}
+              exit={reduceMotion ? undefined : { opacity: 0, x: -16 }}
               transition={{ type: 'spring', stiffness: 420, damping: 38 }}
             >
               {step === 0 && <CabinStep flight={flight} cabin={cabin} onChange={setCabin} />}

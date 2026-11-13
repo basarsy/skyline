@@ -1,4 +1,4 @@
-import { motion } from 'motion/react'
+import { motion, useReducedMotion } from 'motion/react'
 import { CalendarPlus, Clock3 } from 'lucide-react'
 import { Link, useParams } from 'react-router'
 
@@ -17,12 +17,13 @@ import { useReservation } from '@/features/trips/queries'
 
 /** A drawn check mark; with reduced motion it simply appears. */
 function SuccessMark() {
+  const reduce = useReducedMotion()
   return (
     <motion.svg
       viewBox="0 0 72 72"
       className="size-[72px] text-foreground"
       aria-hidden
-      initial={{ scale: 0.8, opacity: 0 }}
+      initial={reduce ? false : { scale: 0.8, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       transition={{ type: 'spring', stiffness: 320, damping: 22 }}
     >
@@ -34,7 +35,7 @@ function SuccessMark() {
         strokeWidth="4"
         strokeLinecap="round"
         strokeLinejoin="round"
-        initial={{ pathLength: 0 }}
+        initial={reduce ? false : { pathLength: 0 }}
         animate={{ pathLength: 1 }}
         transition={{ duration: 0.45, delay: 0.15, ease: 'easeOut' }}
       />

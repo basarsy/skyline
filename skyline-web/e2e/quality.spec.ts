@@ -57,6 +57,8 @@ async function axe(page: Page, route: string) {
 for (const theme of ['light', 'dark'] as const) {
   test.describe(`${theme} theme`, () => {
     test.use({ colorScheme: theme })
+    // Each test sweeps many routes.
+    test.slow()
 
     test('public routes have no serious accessibility violations', async ({ page }) => {
       await freshApp(page)

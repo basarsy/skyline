@@ -1,5 +1,5 @@
 import type * as React from 'react'
-import { motion } from 'motion/react'
+import { motion, useReducedMotion } from 'motion/react'
 import { CloudOff, Lock, RotateCw, SearchX } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router'
 
@@ -145,10 +145,12 @@ export function Stagger({
   children: React.ReactNode
   className?: string
 }) {
+  const reduce = useReducedMotion()
   return (
     <motion.div
       className={className}
-      initial={{ opacity: 0, y: 8 }}
+      // Reduced motion: no fade, no slide; render the final state.
+      initial={reduce ? false : { opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: 'spring', stiffness: 420, damping: 36, delay: Math.min(index, 10) * 0.04 }}
     >

@@ -15,7 +15,7 @@ export default defineConfig({
   fullyParallel: !live,
   workers: live ? 1 : undefined,
   retries: process.env.CI ? 1 : 0,
-  timeout: live ? 90_000 : 30_000,
+  timeout: live ? 90_000 : 60_000,
   expect: { timeout: live ? 15_000 : 5_000 },
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {

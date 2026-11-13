@@ -22,7 +22,7 @@ export function uniqueEmail(prefix: string) {
 
 /** Opens the app with a fresh mocked back-end (no-op against the live stack). */
 export async function freshApp(page: Page, path = '/') {
-  await page.goto(path)
+  await gotoStable(page, path)
   if (!live) {
     await page.evaluate(() => {
       ;(window as unknown as { __skylineResetMocks?: () => void }).__skylineResetMocks?.()
@@ -37,7 +37,8 @@ export async function gotoStable(page: Page, path: string) {
   try {
     await page.goto(path)
   } catch (error) {
-    if (!String(error).includes('ERR_ABORTED')) throw error
+    if (!/ERR_ABORTED|interrupted by another navigation/.test(String(error))) throw error
+    await page.waitForLoadState()
     await page.goto(path)
   }
 }
