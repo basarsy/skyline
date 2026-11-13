@@ -1,0 +1,210 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+/* Class strategy: <html class="dark">, set before first paint by the inline script in index.html. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Monochrome fintech tokens. Hierarchy comes from lightness, weight and size; the only hues are the two
+ * functional ones (destructive, success), used on small text, icons and badge dots, always next to a label.
+ * Components reference the semantic tokens only (bg-card, text-muted-foreground, ...). Raw colors live here.
+ */
+:root {
+  --background: oklch(0.985 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --elevated: oklch(0.97 0 0);
+  --primary: oklch(0.145 0 0);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.94 0 0);
+  --secondary-foreground: oklch(0.145 0 0);
+  --muted-foreground: oklch(0.5 0 0);
+  --border: oklch(0.92 0 0);
+  --ring: oklch(0.145 0 0);
+  --destructive: oklch(0.55 0.16 25);
+  --success: oklch(0.55 0.1 155);
+
+  /* Aliases the shadcn primitives expect, mapped onto the palette above. */
+  --popover: var(--card);
+  --popover-foreground: var(--card-foreground);
+  --muted: var(--elevated);
+  --accent: var(--elevated);
+  --accent-foreground: var(--foreground);
+  --input: oklch(0.88 0 0);
+  --overlay: oklch(0 0 0 / 0.4);
+
+  --shadow-float: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px rgb(0 0 0 / 0.06);
+  --chrome: oklch(0.985 0 0 / 0.72);
+}
+
+.dark {
+  --background: oklch(0.13 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.18 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --elevated: oklch(0.22 0 0);
+  --primary: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.13 0 0);
+  --secondary: oklch(0.26 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted-foreground: oklch(0.68 0 0);
+  --border: oklch(1 0 0 / 0.08);
+  --ring: oklch(0.985 0 0);
+  --destructive: oklch(0.7 0.15 25);
+  --success: oklch(0.75 0.1 155);
+
+  --input: oklch(1 0 0 / 0.14);
+  --overlay: oklch(0 0 0 / 0.6);
+  /* Dark mode separates layers by lightness steps and hairlines, never by shadow. */
+  --shadow-float: 0 0 0 0 transparent;
+  --chrome: oklch(0.13 0 0 / 0.72);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-elevated: var(--elevated);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-chrome: var(--chrome);
+  --color-overlay: var(--overlay);
+
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Inter Tight Variable', 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SFMono-Regular', monospace;
+
+  /* Type scale (rem at 16px). Caption is for metadata only. */
+  --text-display: 3.5rem;
+  --text-display--line-height: 1.1;
+  --text-display-sm: 2.75rem;
+  --text-display-sm--line-height: 1.1;
+  --text-h1: 2.25rem;
+  --text-h1--line-height: 1.15;
+  --text-h2: 1.75rem;
+  --text-h2--line-height: 1.2;
+  --text-h3: 1.25rem;
+  --text-h3--line-height: 1.3;
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1.4;
+
+  --radius-card: 24px;
+  --radius-input: 14px;
+
+  --shadow-float: var(--shadow-float);
+  --breakpoint-xl: 1440px;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+    line-height: 1.5;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-display text-balance;
+    letter-spacing: -0.02em;
+  }
+
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  a[href],
+  summary,
+  label[for],
+  select {
+    cursor: pointer;
+  }
+
+  /* One focus treatment everywhere: 2px ring in the primary color, 2px offset. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
+}
+
+/* Focus ring as a utility, for primitives that reset outlines (outline-none) in their normal state. */
+@utility focus-ring {
+  &:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+/* The most important figure on a screen: price, departure time, PNR. */
+@utility hero-number {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* Uppercase field-group labels such as FROM, TO, DEPARTS. */
+@utility micro-label {
+  font-size: var(--text-xs);
+  line-height: 1rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Frosted chrome for the sticky header and the mobile tab bar. */
+@utility frosted {
+  background-color: var(--chrome);
+  backdrop-filter: saturate(180%) blur(24px);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
