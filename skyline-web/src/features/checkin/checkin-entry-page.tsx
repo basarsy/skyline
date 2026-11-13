@@ -1,11 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { ArrowRight, TicketCheck } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 import { Controller, useForm } from 'react-hook-form'
 import { Link, useNavigate } from 'react-router'
 import { z } from 'zod'
 
 import { useAuth } from '@/auth/use-auth'
-import { SkyPage } from '@/components/layout/app-shell'
+import { BandPage } from '@/components/layout/app-shell'
 import { CountdownTimer } from '@/components/skyline/countdown'
 import { flightTimes, RouteLabel } from '@/components/skyline/flight'
 import { FormErrorSummary, FormField } from '@/components/skyline/form'
@@ -82,8 +82,7 @@ export function Component() {
   const onSubmit = form.handleSubmit(({ pnr }) => navigate(`/checkin/${pnr}`))
 
   return (
-    <SkyPage
-      icon={<TicketCheck strokeWidth={1.75} aria-hidden />}
+    <BandPage
       title="Online check-in"
       subtitle="Opens 48 hours and closes 1 hour before departure. Your seat is assigned when you check in."
     >
@@ -117,6 +116,6 @@ export function Component() {
         </Button>
       </form>
       {isPassenger && <UpcomingTrips />}
-    </SkyPage>
+    </BandPage>
   )
 }

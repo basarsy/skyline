@@ -1,10 +1,9 @@
-import { Ticket } from 'lucide-react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Controller, useForm } from 'react-hook-form'
 import { useLocation, useNavigate } from 'react-router'
 import { z } from 'zod'
 
-import { SkyPage } from '@/components/layout/app-shell'
+import { BandPage } from '@/components/layout/app-shell'
 import { FormErrorSummary, FormField } from '@/components/skyline/form'
 import { PnrInput } from '@/components/skyline/pnr'
 import { Button } from '@/components/ui/button'
@@ -48,8 +47,7 @@ export function Component() {
   })
 
   return (
-    <SkyPage
-      icon={<Ticket strokeWidth={1.75} aria-hidden />}
+    <BandPage
       title="Manage booking"
       subtitle="Find your trip with the booking reference and the passenger’s last name."
     >
@@ -98,6 +96,6 @@ export function Component() {
           Find booking
         </Button>
       </form>
-    </SkyPage>
+    </BandPage>
   )
 }

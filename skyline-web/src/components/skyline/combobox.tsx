@@ -36,10 +36,10 @@ export interface ComboboxProps {
   variant?: 'field' | 'pill'
 }
 
-export function triggerClass(variant: ComboboxProps['variant'], extra?: string) {
+export function triggerClass(_variant: ComboboxProps['variant'], extra?: string) {
   return cn(
     'flex h-12 w-full min-w-0 cursor-pointer items-center justify-between gap-2 border border-transparent bg-elevated px-4 text-left text-base focus-ring transition-colors outline-none hover:border-border disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive',
-    variant === 'pill' ? 'rounded-full' : 'rounded-input',
+    'rounded-input',
     extra,
   )
 }

@@ -153,10 +153,10 @@ export interface DatePickerProps extends ControlAria {
   toYear?: number
 }
 
-export function dateTriggerClass(variant: DatePickerProps['variant']) {
+export function dateTriggerClass(_variant: DatePickerProps['variant']) {
   return cn(
     'flex h-12 w-full cursor-pointer items-center gap-3 border border-transparent bg-elevated px-4 text-left text-base focus-ring transition-colors outline-none hover:border-border data-[invalid=true]:border-destructive',
-    variant === 'pill' ? 'rounded-full' : 'rounded-input',
+    'rounded-input',
   )
 }
 

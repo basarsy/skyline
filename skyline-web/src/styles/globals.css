@@ -34,14 +34,16 @@
   /* Warm accent, decorative only (dots, highlights in illustrations), never text on a light surface. */
   --spark: oklch(0.72 0.16 42);
 
-  /* The "night sky" hero band, identical in both themes so the headline contrast never changes. */
-  --sky-1: oklch(0.24 0.09 268);
-  --sky-2: oklch(0.36 0.15 272);
-  --sky-glow: oklch(0.6 0.2 285 / 0.55);
-  --sky-glow-2: oklch(0.7 0.14 220 / 0.35);
-  --sky-foreground: oklch(0.985 0 0);
-  --sky-muted: oklch(0.84 0.04 266);
-  --sky-line: oklch(1 0 0 / 0.14);
+  /* The brand band (header, results and task-page headers): solid royal blue, the same in both themes. */
+  --band: oklch(0.36 0.15 266);
+  --band-foreground: oklch(0.985 0 0);
+  --band-muted: oklch(0.86 0.04 266);
+  --band-line: oklch(1 0 0 / 0.16);
+  /* Footer and the scrim over the hero photo. */
+  --footer: oklch(0.22 0.05 266);
+  --footer-foreground: oklch(0.97 0 0);
+  --footer-muted: oklch(0.78 0.03 266);
+  --scrim: oklch(0.2 0.07 266);
 
   /* Route-card artwork gradients, picked by a hash of the route. */
   --dest-0a: oklch(0.55 0.19 266);
@@ -97,10 +99,7 @@
   --brand-soft: oklch(0.28 0.06 266);
   --brand-line: oklch(0.4 0.09 266);
 
-  --sky-1: oklch(0.19 0.06 268);
-  --sky-2: oklch(0.3 0.12 272);
-  --sky-glow: oklch(0.55 0.2 285 / 0.4);
-  --sky-glow-2: oklch(0.65 0.14 220 / 0.25);
+  --band: oklch(0.3 0.12 266);
 
   --input: oklch(1 0 0 / 0.14);
   --overlay: oklch(0.05 0.02 265 / 0.65);
@@ -137,9 +136,14 @@
   --color-brand-soft: var(--brand-soft);
   --color-brand-line: var(--brand-line);
   --color-spark: var(--spark);
-  --color-sky-foreground: var(--sky-foreground);
-  --color-sky-muted: var(--sky-muted);
-  --color-sky-line: var(--sky-line);
+  --color-band: var(--band);
+  --color-band-foreground: var(--band-foreground);
+  --color-band-muted: var(--band-muted);
+  --color-band-line: var(--band-line);
+  --color-footer: var(--footer);
+  --color-footer-foreground: var(--footer-foreground);
+  --color-footer-muted: var(--footer-muted);
+  --color-scrim: var(--scrim);
 
   /* The boarding pass is always dark on white, in either theme, like a real pass. */
   --color-pass: var(--pass);
@@ -165,8 +169,11 @@
   --text-caption: 0.75rem;
   --text-caption--line-height: 1.4;
 
-  --radius-card: 24px;
-  --radius-input: 14px;
+  --radius-card: 10px;
+  --radius-input: 6px;
+  --radius-xl: 8px;
+  --radius-2xl: 10px;
+  --radius-3xl: 12px;
 
   --shadow-float: var(--shadow-float);
   --shadow-card: var(--shadow-card);
@@ -199,7 +206,7 @@
   h3,
   h4 {
     @apply font-display text-balance;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.01em;
   }
 
   button:not(:disabled),
@@ -305,14 +312,10 @@
   }
 }
 
-/* The "night sky" band behind the home hero and the results header: deep indigo with two soft glows. */
-@utility sky-band {
-  color: var(--sky-foreground);
-  background-color: var(--sky-1);
-  background-image:
-    radial-gradient(60% 80% at 85% 0%, var(--sky-glow), transparent 70%),
-    radial-gradient(45% 60% at 0% 100%, var(--sky-glow-2), transparent 70%),
-    linear-gradient(160deg, var(--sky-1) 20%, var(--sky-2));
+/* The brand band: a solid royal-blue strip behind page headers, with light text. */
+@utility brand-band {
+  color: var(--band-foreground);
+  background-color: var(--band);
 }
 
 /* Route-card artwork: a two-stop gradient with a soft highlight, picked per route (dest-art-0 ... dest-art-5). */
@@ -350,4 +353,50 @@
   background-image:
     radial-gradient(80% 90% at 100% 0%, oklch(1 0 0 / 0.22), transparent 60%),
     linear-gradient(135deg, var(--dest-5a), var(--dest-5b));
+}
+
+/* Inside a brand band or the header: remap the semantic tokens so ordinary components read light-on-blue. */
+@utility on-band {
+  --foreground: var(--band-foreground);
+  --muted-foreground: var(--band-muted);
+  --border: var(--band-line);
+  --elevated: var(--band-line);
+  --secondary: var(--band-line);
+  --secondary-foreground: var(--band-foreground);
+  --brand-soft: var(--band-line);
+  --primary: var(--band-foreground);
+  --primary-foreground: var(--band);
+  --ring: var(--band-foreground);
+  color: var(--band-foreground);
+}
+
+/* The dark footer: the same remapping onto the footer palette. */
+@utility on-footer {
+  --foreground: var(--footer-foreground);
+  --muted-foreground: var(--footer-muted);
+  --border: var(--band-line);
+  --ring: var(--footer-foreground);
+  --primary: var(--footer-foreground);
+  --primary-foreground: var(--footer);
+  color: var(--footer-foreground);
+  background-color: var(--footer);
+}
+
+/* Darkens the hero photo behind the headline: from the left on wide screens, from the top on phones. */
+@utility hero-scrim {
+  background-image: linear-gradient(
+    180deg,
+    oklch(0.2 0.07 266 / 0.8) 0%,
+    oklch(0.2 0.07 266 / 0.55) 55%,
+    oklch(0.2 0.07 266 / 0.2) 100%
+  );
+
+  @media (width >= 48rem) {
+    background-image: linear-gradient(
+      90deg,
+      oklch(0.2 0.07 266 / 0.82) 0%,
+      oklch(0.2 0.07 266 / 0.62) 42%,
+      oklch(0.2 0.07 266 / 0) 72%
+    );
+  }
 }

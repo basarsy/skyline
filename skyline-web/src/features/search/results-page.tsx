@@ -137,12 +137,12 @@ export function Component() {
 
   return (
     <>
-      <section aria-label="Your search" className="sky-band">
+      <section aria-label="Your search" className="brand-band on-band">
         <div className="mx-auto flex max-w-[1200px] flex-col gap-5 px-4 pt-8 pb-16 sm:px-6 sm:pt-10 sm:pb-20">
-          <p className="font-display text-h3 font-semibold tracking-[-0.02em]">
+          <p className="font-display text-h3 font-bold">
             {valid ? (
               <>
-                {from} <span className="text-sky-muted">to</span> {to}
+                {from} <span className="font-medium text-muted-foreground">to</span> {to}
               </>
             ) : (
               'Find your flight'

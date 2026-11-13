@@ -1,174 +1,252 @@
 import * as React from 'react'
-import { ArrowRight, Armchair, Clock3, Search, Smartphone, Ticket, TicketCheck, Zap } from 'lucide-react'
+import { ArrowRight, CircleUser, Clock3, Luggage, Plane, Smartphone, Ticket, TicketCheck } from 'lucide-react'
+import { Tabs } from 'radix-ui'
 import { Link, useSearchParams } from 'react-router'
 
-import type { RouteResponse } from '@/api/types'
-import { PlaneGlyph } from '@/components/skyline/brand'
+import type { AirportResponse, RouteResponse } from '@/api/types'
+import { useAirports } from '@/components/skyline/pickers'
 import { Stagger } from '@/components/skyline/states'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/cn'
 import { formatDuration } from '@/lib/format'
 import { useDocumentTitle } from '@/lib/hooks'
+import heroPhoto from '@/assets/photos/hero-wing.webp'
+import istanbulPhoto from '@/assets/photos/istanbul.webp'
+import londonPhoto from '@/assets/photos/london.webp'
+import newYorkPhoto from '@/assets/photos/new-york.webp'
 import { useRoutes } from './queries'
 import { SearchCard, type SearchValues } from './search-card'
 
-/** Stars and dashed flight arcs over the sky band; the dashes drift slowly (static with reduced motion). */
-function SkyArt() {
+/** The Manage booking and Check-in tabs load the first time they're opened (they bring zod with them). */
+const ManageQuickForm = React.lazy(() =>
+  import('./home-quick-forms').then((module) => ({ default: module.ManageQuickForm })),
+)
+const CheckinQuickForm = React.lazy(() =>
+  import('./home-quick-forms').then((module) => ({ default: module.CheckinQuickForm })),
+)
+
+/** Destination photos by IATA code (Unsplash, see README "Photo credits"); other airports get a gradient. */
+const DESTINATION_PHOTOS: Record<string, string> = {
+  IST: istanbulPhoto,
+  LHR: londonPhoto,
+  JFK: newYorkPhoto,
+}
+
+type BookingTab = 'flights' | 'manage' | 'checkin'
+
+const tabTrigger = cn(
+  'relative inline-flex h-12 shrink-0 cursor-pointer items-center gap-2 px-3 text-sm font-semibold text-muted-foreground focus-ring transition-colors duration-200 outline-none hover:text-foreground sm:px-5',
+  "after:absolute after:inset-x-3 after:bottom-0 after:h-[3px] after:rounded-t-sm after:content-[''] data-[state=active]:text-primary data-[state=active]:after:bg-primary",
+)
+
+function FormFallback() {
+  return <Skeleton className="h-[136px] rounded-xl" />
+}
+
+/** The booking box: flight search, booking lookup and check-in, as tabs. */
+function BookingBox({
+  prefill,
+  formKey,
+  tab,
+  onTabChange,
+}: {
+  prefill: Partial<SearchValues>
+  formKey: number
+  tab: BookingTab
+  onTabChange: (tab: BookingTab) => void
+}) {
+  const iconProps = { className: 'size-4', strokeWidth: 2, 'aria-hidden': true } as const
   return (
-    <svg
-      aria-hidden
-      viewBox="0 0 1200 560"
-      preserveAspectRatio="xMidYMid slice"
-      className="pointer-events-none absolute inset-0 -z-10 h-full w-full text-sky-line"
+    <Tabs.Root
+      value={tab}
+      onValueChange={(value) => onTabChange(value as BookingTab)}
+      className="overflow-hidden rounded-card border border-border bg-card shadow-float"
     >
-      <defs>
-        <pattern id="stars" width="56" height="56" patternUnits="userSpaceOnUse">
-          <circle cx="6" cy="8" r="1" fill="currentColor" />
-          <circle cx="34" cy="30" r="0.75" fill="currentColor" />
-          <circle cx="18" cy="46" r="0.5" fill="currentColor" />
-        </pattern>
-      </defs>
-      <rect width="1200" height="560" fill="url(#stars)" />
-      {[
-        'M-40 470 C 260 110, 640 60, 1240 330',
-        'M140 560 C 380 240, 820 150, 1240 150',
-        'M-60 290 C 300 150, 700 290, 1260 70',
-      ].map((d, index) => (
-        <path
-          key={d}
-          d={d}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeDasharray="2 10"
-          strokeLinecap="round"
-          className="motion-safe:animate-[arc-drift_24s_linear_infinite]"
-          style={{ animationDelay: `${index * -6}s` }}
-        />
-      ))}
-      <circle cx="1040" cy="118" r="4" className="fill-spark" />
-      <circle cx="1040" cy="118" r="12" className="fill-spark opacity-25" />
-    </svg>
+      <Tabs.List
+        aria-label="What do you want to do?"
+        className="flex overflow-x-auto border-b border-border px-1 sm:px-2"
+      >
+        <Tabs.Trigger value="flights" className={tabTrigger}>
+          <Plane {...iconProps} />
+          Flights
+        </Tabs.Trigger>
+        <Tabs.Trigger value="manage" className={tabTrigger}>
+          <Ticket {...iconProps} />
+          Manage<span className="hidden sm:inline">&nbsp;booking</span>
+        </Tabs.Trigger>
+        <Tabs.Trigger value="checkin" className={tabTrigger}>
+          <TicketCheck {...iconProps} />
+          Check-in
+        </Tabs.Trigger>
+      </Tabs.List>
+      <Tabs.Content value="flights" className="outline-none">
+        <SearchCard key={formKey} initial={prefill} className="rounded-none border-0 bg-transparent shadow-none" />
+      </Tabs.Content>
+      <Tabs.Content value="manage" className="p-5 outline-none sm:p-6">
+        <React.Suspense fallback={<FormFallback />}>
+          <ManageQuickForm />
+        </React.Suspense>
+      </Tabs.Content>
+      <Tabs.Content value="checkin" className="p-5 outline-none sm:p-6">
+        <React.Suspense fallback={<FormFallback />}>
+          <CheckinQuickForm />
+        </React.Suspense>
+      </Tabs.Content>
+    </Tabs.Root>
   )
 }
 
-const PERKS = [
-  { icon: Zap, label: 'Book in a minute' },
-  { icon: Smartphone, label: 'Boarding pass on your phone' },
-  { icon: Armchair, label: 'Seat assigned at check-in' },
-]
-
 function Hero() {
   return (
-    <section className="relative isolate overflow-hidden sky-band">
-      <SkyArt />
-      <div className="mx-auto flex max-w-[1200px] flex-col gap-8 px-4 pt-14 pb-36 sm:px-6 sm:pt-24 sm:pb-44">
-        <div className="flex max-w-3xl flex-col gap-5">
-          <span className="inline-flex w-fit items-center gap-2 rounded-full border border-sky-line px-3 py-1.5 text-xs font-medium text-sky-muted">
-            <span className="size-1.5 rounded-full bg-spark" aria-hidden />
-            Fares in real time, straight from the schedule
-          </span>
-          <h1 className="text-display-sm font-semibold tracking-[-0.035em] sm:text-display lg:text-[4.5rem] lg:leading-[1.02]">
-            Fly somewhere
-            <br />
-            worth it.
-          </h1>
-          <p className="max-w-lg text-lg text-sky-muted">
-            Search our network, book in a minute, and check in from your phone.
-          </p>
-        </div>
-        <ul className="flex flex-wrap gap-x-6 gap-y-3 text-sm text-sky-muted">
-          {PERKS.map(({ icon: Icon, label }) => (
-            <li key={label} className="inline-flex items-center gap-2">
-              <Icon className="size-4 text-sky-foreground" strokeWidth={1.75} aria-hidden />
-              {label}
-            </li>
-          ))}
-        </ul>
+    <section className="relative isolate overflow-hidden bg-scrim">
+      <img
+        src={heroPhoto}
+        alt=""
+        width={1920}
+        height={1280}
+        fetchPriority="high"
+        decoding="async"
+        className="absolute inset-0 -z-20 h-full w-full object-cover object-[65%_60%]"
+      />
+      <div className="absolute inset-0 -z-10 hero-scrim" aria-hidden />
+      <div className="mx-auto flex max-w-[1200px] flex-col gap-3 px-4 pt-14 pb-40 text-band-foreground sm:px-6 sm:pt-24 sm:pb-56">
+        <h1 className="max-w-xl text-[2.25rem] leading-[1.1] font-bold tracking-[-0.015em] sm:text-[3rem]">
+          Find your next flight
+        </h1>
+        <p className="max-w-md text-lg text-band-foreground">
+          Book direct, manage your trip and check in online from 48 hours before departure.
+        </p>
       </div>
     </section>
   )
 }
 
-/** A stable artwork for a route, so the same route always gets the same colors. */
-function artFor(route: RouteResponse) {
-  const key = route.origin.iataCode + route.destination.iataCode
+const SHORTCUTS = [
+  { to: '/trips', icon: Luggage, label: 'My trips' },
+  { to: '/checkin', icon: TicketCheck, label: 'Online check-in' },
+  { to: '/manage', icon: Ticket, label: 'Manage booking' },
+  { to: '/register', icon: CircleUser, label: 'Create an account' },
+]
+
+function Shortcuts() {
+  return (
+    <nav
+      aria-label="Shortcuts"
+      className="grid grid-cols-2 overflow-hidden rounded-card border border-border bg-card sm:grid-cols-4"
+    >
+      {SHORTCUTS.map(({ to, icon: Icon, label }, index) => (
+        <Link
+          key={to}
+          to={to}
+          className={cn(
+            'flex flex-col items-center justify-center gap-2 px-3 py-5 text-center text-sm font-medium focus-ring transition-colors duration-200 hover:bg-elevated hover:text-primary',
+            index % 2 === 1 && 'border-l border-border',
+            index > 1 && 'border-t border-border sm:border-t-0',
+            index === 2 && 'sm:border-l',
+          )}
+        >
+          <Icon className="size-6 text-primary" strokeWidth={1.75} aria-hidden />
+          {label}
+        </Link>
+      ))}
+    </nav>
+  )
+}
+
+/** A stable fallback gradient for a destination without a photo. */
+function artFor(key: string) {
   let hash = 0
   for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) % 997
   return ['dest-art-0', 'dest-art-1', 'dest-art-2', 'dest-art-3', 'dest-art-4', 'dest-art-5'][hash % 6]
 }
 
-function RouteCard({ route, onPick }: { route: RouteResponse; onPick: (route: RouteResponse) => void }) {
+interface Destination {
+  airport: AirportResponse
+  /** Direct routes into this airport. */
+  inbound: RouteResponse[]
+}
+
+function destinationDetail({ airport, inbound }: Destination) {
+  const first = inbound[0]
+  if (!first) return airport.name
+  if (inbound.length === 1)
+    return `Direct from ${first.origin.city} · ${formatDuration(first.estimatedDurationMinutes)}`
+  return `Direct from ${inbound.map((route) => route.origin.city).join(', ')}`
+}
+
+function DestinationCard({ destination, onPick }: { destination: Destination; onPick: (d: Destination) => void }) {
+  const { airport } = destination
+  const photo = DESTINATION_PHOTOS[airport.iataCode]
   return (
     <button
       type="button"
-      onClick={() => onPick(route)}
-      className="group flex h-full w-full cursor-pointer flex-col overflow-hidden rounded-card border border-border bg-card text-left shadow-card focus-ring transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-float active:scale-[0.98] motion-reduce:hover:translate-y-0"
+      onClick={() => onPick(destination)}
+      className="group flex h-full w-full cursor-pointer flex-col overflow-hidden rounded-card border border-border bg-card text-left shadow-card focus-ring transition-shadow duration-200 hover:shadow-float"
     >
-      <div className={cn('relative flex h-36 flex-col justify-between p-5 text-sky-foreground', artFor(route))}>
-        <span className="font-mono text-sm font-medium opacity-90">
-          {route.origin.iataCode} → {route.destination.iataCode}
-        </span>
-        <PlaneGlyph className="absolute top-5 right-5 size-6 rotate-45 opacity-80 transition-transform duration-300 group-hover:translate-x-1 group-hover:-translate-y-1" />
-        <span className="font-display text-[1.75rem] leading-none font-semibold tracking-[-0.03em]">
-          {route.destination.city}
-        </span>
+      <div className={cn('relative aspect-[3/2] w-full overflow-hidden', !photo && artFor(airport.iataCode))}>
+        {photo && (
+          <img
+            src={photo}
+            alt=""
+            width={800}
+            height={533}
+            loading="lazy"
+            decoding="async"
+            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03] motion-reduce:group-hover:scale-100"
+          />
+        )}
       </div>
-      <div className="flex flex-1 items-center justify-between gap-4 p-5">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-sm font-medium">From {route.origin.city}</span>
-          <span className="text-sm text-muted-foreground tabular">
-            {formatDuration(route.estimatedDurationMinutes)} · {route.distanceKm.toLocaleString()} km
+      <div className="flex flex-1 items-end justify-between gap-4 p-4 sm:p-5">
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className="text-h3 font-bold">
+            {airport.city}{' '}
+            <span className="font-mono text-sm font-medium text-muted-foreground">{airport.iataCode}</span>
           </span>
+          <span className="truncate text-sm text-muted-foreground">{destinationDetail(destination)}</span>
         </div>
-        <span className="grid size-10 shrink-0 place-items-center rounded-full bg-brand-soft text-primary transition-colors duration-200 group-hover:bg-primary group-hover:text-primary-foreground">
-          <ArrowRight className="size-4" strokeWidth={2} aria-hidden />
+        <span className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-primary">
+          Search
+          <ArrowRight
+            className="size-4 transition-transform duration-200 group-hover:translate-x-0.5"
+            strokeWidth={2}
+            aria-hidden
+          />
         </span>
       </div>
     </button>
   )
 }
 
-function SectionHeading({
-  id,
-  eyebrow,
-  title,
-  children,
-}: {
-  id: string
-  eyebrow: string
-  title: string
-  children?: React.ReactNode
-}) {
-  return (
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-      <div className="flex flex-col gap-2">
-        <span className="text-sm font-semibold text-primary">{eyebrow}</span>
-        <h2 id={id} className="text-h2 font-semibold tracking-[-0.025em]">
-          {title}
-        </h2>
-      </div>
-      {children}
-    </div>
+/** Every airport we serve, with its photo and the direct routes into it. */
+function Destinations({ onPick }: { onPick: (d: Destination) => void }) {
+  const airports = useAirports()
+  const routes = useRoutes()
+  if (airports.isError || (!airports.isLoading && !airports.data?.length)) return null
+  const destinations: Destination[] = (airports.data ?? []).map((airport) => ({
+    airport,
+    inbound: (routes.data ?? []).filter((route) => route.destination.iataCode === airport.iataCode),
+  }))
+  // Airports with direct routes first, then alphabetically.
+  destinations.sort(
+    (a, b) =>
+      Number(b.inbound.length > 0) - Number(a.inbound.length > 0) || a.airport.city.localeCompare(b.airport.city),
   )
-}
-
-function PopularRoutes({ onPick }: { onPick: (route: RouteResponse) => void }) {
-  const { data, isLoading, isError } = useRoutes()
-  if (isError || (!isLoading && !data?.length)) return null
   return (
-    <section aria-labelledby="popular-routes" className="flex flex-col gap-6">
-      <SectionHeading id="popular-routes" eyebrow="Where to next" title="Popular routes">
-        <p className="max-w-sm text-sm text-muted-foreground">Pick a route and we’ll fill in the search for you.</p>
-      </SectionHeading>
+    <section aria-labelledby="destinations" className="flex flex-col gap-5">
+      <div className="flex flex-col gap-1">
+        <h2 id="destinations" className="text-h2 font-bold">
+          Where we fly
+        </h2>
+        <p className="text-muted-foreground">Pick a destination to start your search.</p>
+      </div>
       <div className="-mx-4 flex snap-x gap-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-2 sm:px-0 lg:grid-cols-3">
-        {isLoading
+        {airports.isLoading
           ? Array.from({ length: 3 }, (_, i) => (
-              <Skeleton key={i} className="h-[232px] w-72 shrink-0 rounded-card sm:w-auto" />
+              <Skeleton key={i} className="aspect-[4/3] w-72 shrink-0 rounded-card sm:w-auto" />
             ))
-          : data?.slice(0, 6).map((route, index) => (
-              <Stagger key={route.id} index={index} className="w-72 shrink-0 snap-start sm:w-auto">
-                <RouteCard route={route} onPick={onPick} />
+          : destinations.slice(0, 6).map((destination, index) => (
+              <Stagger key={destination.airport.id} index={index} className="w-72 shrink-0 snap-start sm:w-auto">
+                <DestinationCard destination={destination} onPick={onPick} />
               </Stagger>
             ))}
       </div>
@@ -176,99 +254,43 @@ function PopularRoutes({ onPick }: { onPick: (route: RouteResponse) => void }) {
   )
 }
 
-const STEPS = [
-  { icon: Search, title: 'Search', body: 'Choose where you’re going and when. Prices show for every cabin.' },
-  { icon: Ticket, title: 'Book', body: 'Add the passenger and confirm. Your booking reference arrives instantly.' },
+const GOOD_TO_KNOW = [
+  {
+    icon: Clock3,
+    title: 'Check-in times',
+    body: 'Online check-in opens 48 hours before departure and closes 1 hour before.',
+  },
   {
     icon: TicketCheck,
-    title: 'Check in',
-    body: 'From 48 hours before take-off. Your seat and boarding pass come with it.',
+    title: 'Seats',
+    body: 'Your seat is assigned when you check in, at no extra cost.',
+  },
+  {
+    icon: Smartphone,
+    title: 'Boarding pass',
+    body: 'Show it on your phone, print it, or save it as an image.',
   },
 ]
 
-function HowItWorks() {
+function GoodToKnow() {
   return (
-    <section aria-labelledby="how-it-works" className="flex flex-col gap-6">
-      <SectionHeading id="how-it-works" eyebrow="How it works" title="From search to seat in three steps" />
-      <ol className="grid gap-4 md:grid-cols-3">
-        {STEPS.map(({ icon: Icon, title, body }, index) => (
-          <li
+    <section aria-labelledby="good-to-know" className="flex flex-col gap-5">
+      <h2 id="good-to-know" className="text-h2 font-bold">
+        Good to know before you fly
+      </h2>
+      <div className="grid overflow-hidden rounded-card border border-border bg-card md:grid-cols-3">
+        {GOOD_TO_KNOW.map(({ icon: Icon, title, body }, index) => (
+          <div
             key={title}
-            className="relative flex flex-col gap-4 rounded-card border border-border bg-card p-6 shadow-card"
+            className={cn('flex gap-4 p-5 sm:p-6', index > 0 && 'border-t border-border md:border-t-0 md:border-l')}
           >
-            <div className="flex items-center justify-between">
-              <span className="grid size-12 place-items-center rounded-2xl bg-brand-soft text-primary">
-                <Icon className="size-[22px]" strokeWidth={1.75} aria-hidden />
-              </span>
-              <span className="rounded-full bg-brand-soft px-3 py-1 text-xs font-semibold text-primary">
-                Step {index + 1}
-              </span>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <h3 className="text-h3 font-semibold">{title}</h3>
+            <Icon className="mt-0.5 size-6 shrink-0 text-primary" strokeWidth={1.75} aria-hidden />
+            <div className="flex flex-col gap-1">
+              <h3 className="font-semibold">{title}</h3>
               <p className="text-sm text-muted-foreground">{body}</p>
             </div>
-          </li>
+          </div>
         ))}
-      </ol>
-    </section>
-  )
-}
-
-function ServiceLink({ icon, title, body, to }: { icon: React.ReactNode; title: string; body: string; to: string }) {
-  return (
-    <Link
-      to={to}
-      className="group flex items-center gap-4 rounded-2xl bg-card p-4 shadow-card focus-ring transition-colors duration-200 hover:bg-elevated sm:p-5"
-    >
-      <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-brand-soft text-primary [&_svg]:size-[22px]">
-        {icon}
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="font-display font-semibold">{title}</span>
-        <span className="text-sm text-muted-foreground">{body}</span>
-      </span>
-      <ArrowRight
-        className="size-5 shrink-0 text-muted-foreground transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-foreground"
-        strokeWidth={1.75}
-        aria-hidden
-      />
-    </Link>
-  )
-}
-
-function AlreadyBooked() {
-  return (
-    <section
-      aria-labelledby="already-booked"
-      className="grid gap-8 overflow-hidden rounded-[28px] border border-border bg-elevated p-6 sm:p-10 lg:grid-cols-[1fr_1.1fr] lg:items-center"
-    >
-      <div className="flex flex-col gap-4">
-        <span className="text-sm font-semibold text-primary">Already booked?</span>
-        <h2 id="already-booked" className="text-h2 font-semibold tracking-[-0.025em]">
-          Your trip, in your pocket
-        </h2>
-        <p className="max-w-md text-muted-foreground">
-          Look up any booking with its reference and last name, and check in online when the window opens.
-        </p>
-        <p className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-          <Clock3 className="size-4 text-primary" strokeWidth={1.75} aria-hidden />
-          Check-in opens 48h before departure and closes 1h before.
-        </p>
-      </div>
-      <div className="flex flex-col gap-3">
-        <ServiceLink
-          to="/manage"
-          icon={<Ticket strokeWidth={1.75} aria-hidden />}
-          title="Manage booking"
-          body="Find your trip with your booking reference and last name."
-        />
-        <ServiceLink
-          to="/checkin"
-          icon={<TicketCheck strokeWidth={1.75} aria-hidden />}
-          title="Online check-in"
-          body="Get your seat and a boarding pass on your phone."
-        />
       </div>
     </section>
   )
@@ -282,27 +304,33 @@ export function Component() {
     to: params.get('to') ?? undefined,
   }))
   const [formKey, setFormKey] = React.useState(0)
-  const cardRef = React.useRef<HTMLDivElement>(null)
+  const [tab, setTab] = React.useState<BookingTab>('flights')
+  const boxRef = React.useRef<HTMLDivElement>(null)
 
-  function pickRoute(route: RouteResponse) {
-    setPrefill((current) => ({ ...current, from: route.origin.iataCode, to: route.destination.iataCode }))
+  function pickDestination({ airport, inbound }: Destination) {
+    setPrefill((current) => ({
+      ...current,
+      from: inbound[0]?.origin.iataCode ?? (current.from === airport.iataCode ? undefined : current.from),
+      to: airport.iataCode,
+    }))
     setFormKey((key) => key + 1)
-    cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    requestAnimationFrame(() => cardRef.current?.querySelector<HTMLElement>('[role="combobox"]')?.focus())
+    setTab('flights')
+    boxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    requestAnimationFrame(() => boxRef.current?.querySelector<HTMLElement>('[role="combobox"]')?.focus())
   }
 
   return (
     <>
       <Hero />
-      {/* The search card overlaps the bottom of the sky band. */}
-      <div ref={cardRef} className="relative z-10 mx-auto -mt-28 max-w-[1200px] px-4 sm:-mt-32 sm:px-6">
-        <SearchCard key={formKey} initial={prefill} />
+      {/* The booking box overlaps the bottom of the photo. */}
+      <div ref={boxRef} className="relative z-10 mx-auto -mt-32 max-w-[1200px] px-4 sm:-mt-36 sm:px-6">
+        <BookingBox prefill={prefill} formKey={formKey} tab={tab} onTabChange={setTab} />
       </div>
 
-      <div className="mx-auto flex max-w-[1200px] flex-col gap-20 px-4 pt-16 pb-20 sm:gap-28 sm:px-6 sm:pt-24 sm:pb-28">
-        <PopularRoutes onPick={pickRoute} />
-        <HowItWorks />
-        <AlreadyBooked />
+      <div className="mx-auto flex max-w-[1200px] flex-col gap-14 px-4 pt-6 pb-20 sm:gap-20 sm:px-6 sm:pb-24">
+        <Shortcuts />
+        <Destinations onPick={pickDestination} />
+        <GoodToKnow />
       </div>
     </>
   )
