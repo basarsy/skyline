@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.basarsy.skyline.common.exception.SkylineException;
+import com.basarsy.skyline.common.pricing.PricingProperties;
 import com.basarsy.skyline.schedule.client.CrewClient;
 import com.basarsy.skyline.schedule.client.FleetClient;
 import com.basarsy.skyline.schedule.client.RouteClient;
@@ -62,7 +63,8 @@ class FlightServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new FlightServiceImpl(repository, fleetClient, routeClient, crewClient, mapper, events);
+        service = new FlightServiceImpl(repository, fleetClient, routeClient, crewClient, mapper, events,
+                new PricingProperties("EUR"));
         when(routeClient.getRoute(ROUTE_ID)).thenReturn(route());
         when(fleetClient.getAircraft(AIRCRAFT_ID)).thenReturn(aircraft(AIRCRAFT_ID, AircraftStatus.ACTIVE));
         when(repository.save(any(Flight.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -194,6 +196,7 @@ class FlightServiceImplTest {
 
         assertThat(response.getStatus()).isEqualTo(FlightStatus.SCHEDULED);
         assertThat(response.getAvailableSeats()).isEqualTo(180);
+        assertThat(response.getCurrency()).isEqualTo("EUR");
     }
 
     @Test

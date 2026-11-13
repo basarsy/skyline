@@ -9,6 +9,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.basarsy.skyline.common.pricing.PricingProperties;
 import com.basarsy.skyline.common.security.SkylineUserDetails;
 import com.basarsy.skyline.reservation.client.FleetClient;
 import com.basarsy.skyline.reservation.client.ScheduleClient;
@@ -56,7 +57,7 @@ class ReservationServiceImplTest {
 
     private final ReservationServiceImpl service = new ReservationServiceImpl(
             reservationRepository, passengerRepository, scheduleClient, mock(FleetClient.class),
-            reservationMapper, passengerMapper);
+            reservationMapper, passengerMapper, new PricingProperties("EUR"));
 
     @BeforeEach
     void setUp() {
@@ -108,6 +109,14 @@ class ReservationServiceImplTest {
 
         verify(scheduleClient).decrementSeat(FLIGHT_ID);
         verify(scheduleClient, never()).incrementSeat(any());
+    }
+
+    @Test
+    void bookingResponseCarriesTheConfiguredCurrency() {
+        when(reservationRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(reservationMapper.toResponse(any())).thenReturn(new com.basarsy.skyline.reservation.dto.ReservationResponse());
+
+        assertThat(service.bookFlight(request()).getCurrency()).isEqualTo("EUR");
     }
 
     @Test

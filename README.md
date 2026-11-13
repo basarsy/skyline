@@ -228,6 +228,10 @@ DELETE /flights/{flightId}/crew/{crewMemberId}  Remove from flight [STAFF, ADMIN
 - `LocalDate` values (`dateOfBirth`, `licenseExpiryDate`) have no zone. The flight search `date` is a **UTC calendar day**.
 - The check-in window (48h → 1h before departure) is evaluated against a UTC clock.
 
+### Money
+
+Prices (`basePrice` on a flight, `totalPrice` on a reservation) are JSON numbers, and every response that carries one also carries `currency`, the ISO 4217 code configured with `SKYLINE_CURRENCY` (default `EUR`).
+
 ### Response Envelope
 
 All endpoints return a consistent `ApiResponse<T>`:
@@ -370,6 +374,7 @@ Each service reads configuration from its own `application.yml`. Infrastructure 
 | `SKYLINE_ADMIN_EMAIL` | (auth) Email of the initial ADMIN account, created on startup if missing | — (skipped) |
 | `SKYLINE_ADMIN_PASSWORD` | (auth) Password for the initial ADMIN account (min 12 chars) | — (skipped) |
 | `SKYLINE_CORS_ALLOWED_ORIGINS` | (gateway) Comma-separated browser origins allowed by CORS | `http://localhost:5173` |
+| `SKYLINE_CURRENCY` | (schedule, reservation) ISO 4217 currency of every price, returned as `currency`; validated at startup. Set the same value on both | `EUR` |
 
 > Public registration always creates `PASSENGER` accounts. Set `SKYLINE_ADMIN_EMAIL` / `SKYLINE_ADMIN_PASSWORD` on the auth service to bootstrap the first `ADMIN`, who can then create further `STAFF` and `ADMIN` accounts with `POST /users`.
 

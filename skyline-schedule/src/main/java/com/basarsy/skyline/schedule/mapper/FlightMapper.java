@@ -22,6 +22,7 @@ public interface FlightMapper {
 
     @Mapping(target = "route", ignore = true)
     @Mapping(target = "aircraft", ignore = true)
+    @Mapping(target = "currency", ignore = true)
     FlightResponse toResponse(Flight flight);
 
     @Mapping(target = "id", ignore = true)

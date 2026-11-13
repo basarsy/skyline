@@ -2,6 +2,7 @@ package com.basarsy.skyline.schedule.service;
 
 import com.basarsy.skyline.common.exception.ResourceNotFoundException;
 import com.basarsy.skyline.common.exception.SkylineException;
+import com.basarsy.skyline.common.pricing.PricingProperties;
 import com.basarsy.skyline.schedule.client.FleetClient;
 import com.basarsy.skyline.schedule.client.RouteClient;
 import com.basarsy.skyline.schedule.client.CrewClient;
@@ -52,6 +53,7 @@ public class FlightServiceImpl implements FlightService {
     private final CrewClient crewClient;
     private final FlightMapper flightMapper;
     private final ApplicationEventPublisher eventPublisher;
+    private final PricingProperties pricing;
 
     @Override
     @Transactional
@@ -175,6 +177,7 @@ public class FlightServiceImpl implements FlightService {
     private FlightResponse enrich(Flight flight, Function<UUID, RouteResponse> routes,
             Function<UUID, AircraftResponse> aircraft) {
         FlightResponse res = flightMapper.toResponse(flight);
+        res.setCurrency(pricing.currency());
         // Null when the other service is unreachable: clients render a fallback rather than failing the read.
         res.setRoute(routes.apply(flight.getRouteId()));
         res.setAircraft(aircraft.apply(flight.getAircraftId()));

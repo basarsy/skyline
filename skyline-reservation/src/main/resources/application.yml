@@ -37,6 +37,9 @@ spring:
         spring.json.trusted.packages: com.basarsy.skyline.reservation.client.dto
 
 skyline:
+  pricing:
+    # ISO 4217 code of every price this service returns (validated at startup).
+    currency: ${SKYLINE_CURRENCY:EUR}
   internal:
     api-key: ${SKYLINE_INTERNAL_API_KEY}
 

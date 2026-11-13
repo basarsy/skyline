@@ -22,6 +22,7 @@ public interface ReservationMapper {
     Reservation toEntity(ReservationRequest request);
 
     @Mapping(target = "flight", ignore = true)
+    @Mapping(target = "currency", ignore = true)
     ReservationResponse toResponse(Reservation reservation);
 
     @Mapping(target = "id", ignore = true)
