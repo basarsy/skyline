@@ -118,6 +118,23 @@ abstract class E2eTest {
         return new User(id, email, login.path("data.accessToken"), login.path("data.refreshToken"));
     }
 
+    /**
+     * A STAFF account. There is no API to create one yet, so promote a fresh passenger in the auth database
+     * and log in again to get a token carrying the new role.
+     */
+    static User createStaff() {
+        User user = registerPassenger("staff");
+        try (var connection = java.sql.DriverManager.getConnection(AUTH_DB_URL, "skyline_user", "skyline_pass");
+                var statement = connection.prepareStatement("UPDATE users SET role = 'STAFF' WHERE email = ?")) {
+            statement.setString(1, user.email());
+            assertThat(statement.executeUpdate()).isEqualTo(1);
+        } catch (java.sql.SQLException e) {
+            throw new IllegalStateException("Could not promote " + user.email() + " to STAFF", e);
+        }
+        Response login = login(user.email(), PASSWORD).then().statusCode(200).extract().response();
+        return new User(user.id(), user.email(), login.path("data.accessToken"), login.path("data.refreshToken"));
+    }
+
     /** A fresh flight IST→LHR departing in 24h (inside the check-in window) on a new 180-seat aircraft. */
     static String createFlight() {
         String aircraftId = api(adminToken)

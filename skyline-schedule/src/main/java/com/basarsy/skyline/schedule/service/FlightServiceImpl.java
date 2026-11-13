@@ -7,21 +7,27 @@ import com.basarsy.skyline.schedule.client.RouteClient;
 import com.basarsy.skyline.schedule.client.CrewClient;
 import com.basarsy.skyline.schedule.client.dto.AircraftResponse;
 import com.basarsy.skyline.schedule.client.dto.RouteResponse;
+import com.basarsy.skyline.schedule.dto.FlightBoardFilter;
 import com.basarsy.skyline.schedule.dto.FlightRequest;
 import com.basarsy.skyline.schedule.dto.FlightResponse;
 import com.basarsy.skyline.schedule.entity.Flight;
 import com.basarsy.skyline.schedule.entity.FlightStatus;
 import com.basarsy.skyline.schedule.mapper.FlightMapper;
 import com.basarsy.skyline.schedule.repository.FlightRepository;
+import com.basarsy.skyline.schedule.repository.FlightSpecifications;
 import com.basarsy.skyline.schedule.event.FlightCancelledEvent;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -29,6 +35,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class FlightServiceImpl implements FlightService {
@@ -131,25 +138,53 @@ public class FlightServiceImpl implements FlightService {
         Page<Flight> flights = flightRepository.searchFlights(
                 matchingRouteIds, startOfDay, endOfDay, BOOKABLE_STATUSES, pageable);
                 
-        return flights.map(this::enrichFlightResponse);
+        return enrichPage(flights);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<FlightResponse> getFlightBoard(FlightBoardFilter filter, Pageable pageable) {
+        return enrichPage(flightRepository.findAll(FlightSpecifications.matching(filter), pageable));
+    }
+
+    /** Enriches a page, fetching each distinct route and aircraft once instead of once per flight. */
+    private Page<FlightResponse> enrichPage(Page<Flight> flights) {
+        Map<UUID, RouteResponse> routes = new HashMap<>();
+        Map<UUID, AircraftResponse> aircraft = new HashMap<>();
+        return flights.map(flight -> enrich(flight,
+                id -> routes.computeIfAbsent(id, this::fetchRoute),
+                id -> aircraft.computeIfAbsent(id, this::fetchAircraft)));
     }
 
     private FlightResponse enrichFlightResponse(Flight flight) {
-        FlightResponse res = flightMapper.toResponse(flight);
-        
-        try {
-            res.setRoute(routeClient.getRoute(flight.getRouteId()));
-        } catch (Exception e) {
-            // Log error
-        }
+        return enrich(flight, this::fetchRoute, this::fetchAircraft);
+    }
 
-        try {
-            res.setAircraft(fleetClient.getAircraft(flight.getAircraftId()));
-        } catch (Exception e) {
-            // Log error
-        }
-        
+    private FlightResponse enrich(Flight flight, Function<UUID, RouteResponse> routes,
+            Function<UUID, AircraftResponse> aircraft) {
+        FlightResponse res = flightMapper.toResponse(flight);
+        // Null when the other service is unreachable: clients render a fallback rather than failing the read.
+        res.setRoute(routes.apply(flight.getRouteId()));
+        res.setAircraft(aircraft.apply(flight.getAircraftId()));
         return res;
+    }
+
+    private RouteResponse fetchRoute(UUID routeId) {
+        try {
+            return routeClient.getRoute(routeId);
+        } catch (Exception e) {
+            log.warn("Could not load route {} to enrich a flight: {}", routeId, e.getMessage());
+            return null;
+        }
+    }
+
+    private AircraftResponse fetchAircraft(UUID aircraftId) {
+        try {
+            return fleetClient.getAircraft(aircraftId);
+        } catch (Exception e) {
+            log.warn("Could not load aircraft {} to enrich a flight: {}", aircraftId, e.getMessage());
+            return null;
+        }
     }
 
     @Override

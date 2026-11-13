@@ -1,16 +1,21 @@
 package com.basarsy.skyline.schedule.controller;
 
 import com.basarsy.skyline.common.response.ApiResponse;
+import com.basarsy.skyline.schedule.dto.FlightBoardFilter;
 import com.basarsy.skyline.schedule.dto.FlightRequest;
 import com.basarsy.skyline.schedule.dto.FlightResponse;
 import com.basarsy.skyline.schedule.dto.UpdateFlightStatusRequest;
+import com.basarsy.skyline.schedule.entity.FlightStatus;
 import com.basarsy.skyline.schedule.service.FlightService;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -40,6 +45,23 @@ public class FlightController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
             Pageable pageable) {
         return ApiResponse.success("Flights retrieved successfully", flightService.searchFlights(origin, destination, date, pageable));
+    }
+
+    /**
+     * Operations flight board: flights of every status. All filters are optional; {@code status} is
+     * repeatable ({@code ?status=DELAYED&status=BOARDING}) and {@code date} is a UTC day. The literal path
+     * takes precedence over {@code /{id}}.
+     */
+    @GetMapping("/board")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    public ApiResponse<Page<FlightResponse>> getFlightBoard(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam(name = "status", required = false) Set<FlightStatus> statuses,
+            @RequestParam(required = false) String flightNumber,
+            @RequestParam(required = false) UUID routeId,
+            @PageableDefault(size = 50, sort = "departureTime", direction = Sort.Direction.ASC) Pageable pageable) {
+        FlightBoardFilter filter = new FlightBoardFilter(date, statuses, flightNumber, routeId);
+        return ApiResponse.success("Flights retrieved successfully", flightService.getFlightBoard(filter, pageable));
     }
 
     @GetMapping("/{id}")

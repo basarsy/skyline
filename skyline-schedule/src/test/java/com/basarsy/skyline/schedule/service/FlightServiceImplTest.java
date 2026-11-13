@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -15,6 +16,7 @@ import com.basarsy.skyline.schedule.client.dto.AircraftStatus;
 import com.basarsy.skyline.schedule.client.dto.AircraftTypeSummary;
 import com.basarsy.skyline.schedule.client.dto.AirportSummary;
 import com.basarsy.skyline.schedule.client.dto.RouteResponse;
+import com.basarsy.skyline.schedule.dto.FlightBoardFilter;
 import com.basarsy.skyline.schedule.entity.Flight;
 import com.basarsy.skyline.schedule.entity.FlightStatus;
 import com.basarsy.skyline.schedule.mapper.FlightMapper;
@@ -30,6 +32,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 
 class FlightServiceImplTest {
 
@@ -65,6 +69,37 @@ class FlightServiceImplTest {
         assertThat(page.getContent()).extracting(f -> f.getStatus()).containsExactly(FlightStatus.DELAYED);
         verify(repository).searchFlights(eq(List.of(ROUTE_ID)), eq(LocalDate.of(2030, 6, 1).atStartOfDay()), any(),
                 eq(java.util.EnumSet.of(FlightStatus.SCHEDULED, FlightStatus.DELAYED)), any());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void boardEnrichesEachDistinctRouteAndAircraftOnce() {
+        Flight first = flight(FlightStatus.SCHEDULED);
+        Flight second = flight(FlightStatus.CANCELLED);
+        when(repository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(first, second)));
+
+        var page = service.getFlightBoard(new FlightBoardFilter(null, null, null, null), PageRequest.of(0, 50));
+
+        assertThat(page.getContent()).allSatisfy(f -> {
+            assertThat(f.getRoute().origin().timezone()).isEqualTo("Europe/Istanbul");
+            assertThat(f.getAircraft().tailNumber()).isEqualTo("TC-JFA");
+        });
+        verify(routeClient, times(1)).getRoute(ROUTE_ID);
+        verify(fleetClient, times(1)).getAircraft(AIRCRAFT_ID);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void anUnreachableRouteServiceLeavesTheRouteNullInsteadOfFailing() {
+        when(routeClient.getRoute(ROUTE_ID)).thenThrow(new RuntimeException("route service down"));
+        when(repository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(flight(FlightStatus.SCHEDULED))));
+
+        var page = service.getFlightBoard(new FlightBoardFilter(null, null, null, null), PageRequest.of(0, 50));
+
+        assertThat(page.getContent().get(0).getRoute()).isNull();
+        assertThat(page.getContent().get(0).getAircraft()).isNotNull();
     }
 
     // ------------------------------------------------------------------ fixtures

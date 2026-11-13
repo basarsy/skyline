@@ -1,5 +1,6 @@
 package com.basarsy.skyline.schedule.service;
 
+import com.basarsy.skyline.schedule.dto.FlightBoardFilter;
 import com.basarsy.skyline.schedule.dto.FlightRequest;
 import com.basarsy.skyline.schedule.dto.FlightResponse;
 import com.basarsy.skyline.schedule.entity.FlightStatus;
@@ -14,6 +15,9 @@ public interface FlightService {
     FlightResponse updateFlightStatus(UUID id, FlightStatus status);
     FlightResponse getFlight(UUID id);
     Page<FlightResponse> searchFlights(String origin, String destination, LocalDate date, Pageable pageable);
+
+    /** Operations listing: flights of every status, filtered by {@code filter}. */
+    Page<FlightResponse> getFlightBoard(FlightBoardFilter filter, Pageable pageable);
     void cancelFlight(UUID id);
 
     void decrementSeat(UUID id);
