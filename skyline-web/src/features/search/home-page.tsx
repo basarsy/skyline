@@ -61,7 +61,7 @@ function FeatureTile({ icon, title, body, to }: { icon: React.ReactNode; title: 
     <>
       <span className="grid size-11 place-items-center rounded-full bg-elevated [&_svg]:size-5">{icon}</span>
       <div className="flex flex-col gap-1">
-        <h3 className="flex items-center gap-1.5 text-base font-semibold">
+        <h2 className="flex items-center gap-1.5 text-base font-semibold">
           {title}
           {to && (
             <ArrowRight
@@ -70,7 +70,7 @@ function FeatureTile({ icon, title, body, to }: { icon: React.ReactNode; title: 
               aria-hidden
             />
           )}
-        </h3>
+        </h2>
         <p className="text-sm text-muted-foreground">{body}</p>
       </div>
     </>

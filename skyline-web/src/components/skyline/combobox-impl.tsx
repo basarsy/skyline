@@ -4,6 +4,7 @@ import { Check } from 'lucide-react'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/cn'
+import { keepFocusIfMoved } from './popover-focus'
 import { triggerClass, TriggerContent, type ComboboxProps } from './combobox'
 
 /** The interactive combobox (Radix Popover + cmdk), loaded on first interaction by Combobox. */
@@ -55,6 +56,7 @@ export function ComboboxImpl({
       </PopoverTrigger>
       <PopoverContent
         align="start"
+        onCloseAutoFocus={keepFocusIfMoved}
         className={cn('w-[min(var(--radix-popover-trigger-width),calc(100vw-2rem))] min-w-72 p-0', className)}
       >
         <Command shouldFilter={!onSearch} className="rounded-2xl">

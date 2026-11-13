@@ -2,6 +2,7 @@ import * as React from 'react'
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { isoFromLocalDate, localDateFromIso } from '@/lib/format'
+import { keepFocusIfMoved } from './popover-focus'
 import { DateTriggerContent, dateTriggerClass, type DatePickerProps } from './pickers'
 
 const Calendar = React.lazy(() => import('@/components/ui/calendar').then((module) => ({ default: module.Calendar })))
@@ -41,7 +42,7 @@ export function DatePickerImpl({
           <DateTriggerContent value={value} placeholder={placeholder} />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-auto p-3">
+      <PopoverContent align="start" className="w-auto p-3" onCloseAutoFocus={keepFocusIfMoved}>
         <React.Suspense fallback={<div className="h-[300px] w-[252px]" role="status" aria-label="Loading calendar" />}>
           <Calendar
             mode="single"
