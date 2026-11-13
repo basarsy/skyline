@@ -148,7 +148,8 @@ pnpm e2e         # Playwright against the mocked API (starts `vite --mode msw` i
 
 The mocked suite covers the passenger journey, PNR lookup, the ops lifecycle, and an accessibility and layout
 sweep: axe (no serious or critical issues) on every route in both themes, no horizontal scroll at 375, 768,
-1024 and 1440px, and reduced motion. MSW only exists in `--mode msw`; it is not part of production builds.
+1024 and 1440px, and reduced motion. MSW only exists in `--mode msw`; it is not part of production builds. `e2e/screenshots.spec.ts` is skipped unless `SCREENSHOTS=1` is set; it regenerates the walkthrough images
+in the root README (`.github/screenshots`).
 
 ### Against the live stack
 
