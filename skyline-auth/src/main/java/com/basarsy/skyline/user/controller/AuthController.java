@@ -6,11 +6,15 @@ import com.basarsy.skyline.user.dto.LoginRequest;
 import com.basarsy.skyline.user.dto.RefreshTokenRequest;
 import com.basarsy.skyline.user.dto.RegisterRequest;
 import com.basarsy.skyline.user.dto.UserResponse;
+import com.basarsy.skyline.common.security.SkylineUserDetails;
 import com.basarsy.skyline.user.service.AuthService;
+import com.basarsy.skyline.user.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -22,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthService authService;
+    private final UserService userService;
 
     @PostMapping("/register")
     public ResponseEntity<ApiResponse<UserResponse>> register(@Valid @RequestBody RegisterRequest request) {
@@ -38,5 +43,11 @@ public class AuthController {
     @PostMapping("/refresh")
     public ResponseEntity<ApiResponse<AuthResponse>> refresh(@Valid @RequestBody RefreshTokenRequest request) {
         return ResponseEntity.ok(ApiResponse.success(authService.refresh(request)));
+    }
+
+    /** The caller's account; any authenticated user (non-POST /auth/** requires a token). */
+    @GetMapping("/me")
+    public ApiResponse<UserResponse> me(@AuthenticationPrincipal SkylineUserDetails principal) {
+        return ApiResponse.success(userService.getCurrentUser(principal.getId()));
     }
 }

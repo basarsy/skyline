@@ -44,6 +44,9 @@ ARG APP_PORT=8080
 
 WORKDIR /app
 
+# UTC is the contract for every LocalDateTime (see README, "Dates and times").
+ENV TZ=UTC
+
 # Run as non-root
 RUN groupadd -r skyline && useradd -r -g skyline -s /bin/false skyline
 RUN chown skyline:skyline /app
@@ -54,4 +57,4 @@ COPY --from=build --chown=skyline:skyline /workspace/${MODULE}/target/*.jar app.
 
 EXPOSE ${APP_PORT}
 
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-Duser.timezone=UTC", "-jar", "app.jar"]

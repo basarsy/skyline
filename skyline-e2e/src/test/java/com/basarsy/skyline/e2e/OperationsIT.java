@@ -28,6 +28,37 @@ class OperationsIT extends E2eTest {
     }
 
     @Test
+    void cancellingThroughTheStatusPatchRunsTheFullCancellation() {
+        String flightId = createFlight();
+        User alice = registerPassenger("alice");
+        Booking booking = book(alice, flightId, "Alice", "Smith", "P1");
+        assertThat(availableSeats(flightId)).isEqualTo(179);
+
+        api(adminToken).body(Map.of("status", "CANCELLED")).patch("/flights/" + flightId + "/status")
+                .then().statusCode(200);
+
+        assertThat(availableSeats(flightId)).as("seats reset like DELETE does").isEqualTo(180);
+        Awaitility.await("reservation cancelled via Kafka")
+                .atMost(Duration.ofSeconds(60))
+                .pollInterval(Duration.ofSeconds(1))
+                .untilAsserted(() -> assertThat((String) api(alice.accessToken()).get("/reservations/" + booking.id())
+                        .then().statusCode(200).extract().path("data.status")).isEqualTo("CANCELLED"));
+    }
+
+    @Test
+    void staffCannotCancelAFlightThroughTheStatusPatch() {
+        String flightId = createFlight();
+        User staff = createStaff();
+
+        String message = api(staff.accessToken()).body(Map.of("status", "CANCELLED"))
+                .patch("/flights/" + flightId + "/status").then().statusCode(403).extract().path("message");
+
+        assertThat(message).isEqualTo("Only an admin can cancel a flight");
+        assertThat((String) api(null).get("/flights/" + flightId).then().extract().path("data.status"))
+                .isEqualTo("SCHEDULED");
+    }
+
+    @Test
     void crewManifestReflectsAssignmentsImmediately() {
         String flightId = createFlight();
         User captainUser = registerPassenger("captain");

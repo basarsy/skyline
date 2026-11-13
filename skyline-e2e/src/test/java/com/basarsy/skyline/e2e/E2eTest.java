@@ -8,6 +8,7 @@ import io.restassured.response.Response;
 import io.restassured.specification.RequestSpecification;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -117,13 +118,32 @@ abstract class E2eTest {
         return new User(id, email, login.path("data.accessToken"), login.path("data.refreshToken"));
     }
 
+    /**
+     * A fresh STAFF account, created by the admin through {@code POST /users}, and logged in.
+     */
+    static User createStaff() {
+        String email = ("staff-" + shortId() + "@e2e.test").toLowerCase();
+        String id = api(adminToken).body(Map.of("email", email, "password", STAFF_PASSWORD, "role", "STAFF"))
+                .post("/users").then().statusCode(201).extract().path("data.id");
+        Response login = login(email, STAFF_PASSWORD).then().statusCode(200).extract().response();
+        return new User(id, email, login.path("data.accessToken"), login.path("data.refreshToken"));
+    }
+
+    /** Staff and admin accounts need at least 12 characters. */
+    static final String STAFF_PASSWORD = "Staff-Passw0rd!!";
+
     /** A fresh flight IST→LHR departing in 24h (inside the check-in window) on a new 180-seat aircraft. */
     static String createFlight() {
         String aircraftId = api(adminToken)
                 .body(Map.of("tailNumber", "TC-" + shortId(), "aircraftTypeId", A320NEO, "manufacturedYear", 2020))
                 .post("/aircraft").then().statusCode(201).extract().path("data.id");
 
-        LocalDateTime departure = LocalDateTime.now().plusHours(24).truncatedTo(ChronoUnit.MINUTES);
+        return createFlight(aircraftId, nowUtc().plusHours(24));
+    }
+
+    /** A flight IST→LHR on the given aircraft, departing at {@code departureUtc} (all API times are UTC). */
+    static String createFlight(String aircraftId, LocalDateTime departureUtc) {
+        LocalDateTime departure = departureUtc.truncatedTo(ChronoUnit.MINUTES);
         return api(adminToken)
                 .body(Map.of(
                         "flightNumber", "E2E" + shortId().substring(0, 4),
@@ -165,6 +185,11 @@ abstract class E2eTest {
 
     static int availableSeats(String flightId) {
         return api(null).get("/flights/" + flightId).then().statusCode(200).extract().path("data.availableSeats");
+    }
+
+    /** The API speaks UTC; the machine running the tests may not. */
+    static LocalDateTime nowUtc() {
+        return LocalDateTime.now(ZoneOffset.UTC);
     }
 
     static String shortId() {

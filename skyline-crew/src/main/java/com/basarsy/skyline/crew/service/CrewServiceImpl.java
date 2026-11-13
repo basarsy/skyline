@@ -9,15 +9,18 @@ import com.basarsy.skyline.crew.dto.CrewMemberResponse;
 import com.basarsy.skyline.crew.dto.FlightCrewAssignmentRequest;
 import com.basarsy.skyline.crew.dto.FlightCrewResponse;
 import com.basarsy.skyline.crew.entity.CrewMember;
+import com.basarsy.skyline.crew.entity.CrewRole;
 import com.basarsy.skyline.crew.entity.FlightCrew;
 import com.basarsy.skyline.crew.mapper.CrewMapper;
 import com.basarsy.skyline.crew.repository.CrewMemberRepository;
+import com.basarsy.skyline.crew.repository.CrewMemberSpecifications;
 import com.basarsy.skyline.crew.repository.FlightCrewRepository;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,11 +37,38 @@ public class CrewServiceImpl implements CrewService {
     @Override
     @Transactional
     public CrewMemberResponse addCrewMember(CrewMemberRequest request) {
+        // The unique indexes still guard against a concurrent duplicate (409 from the global handler);
+        // these checks just name the conflict.
+        if (crewMemberRepository.existsByEmployeeNumberIgnoreCase(request.employeeNumber())) {
+            throw new SkylineException("Employee number already exists", HttpStatus.CONFLICT);
+        }
+        if (crewMemberRepository.existsByUserId(request.userId())) {
+            throw new SkylineException("This user is already a crew member", HttpStatus.CONFLICT);
+        }
+
         CrewMember crewMember = crewMapper.toEntity(request);
         crewMember.setUserId(request.userId());
 
         CrewMember saved = crewMemberRepository.save(crewMember);
         return crewMapper.toResponse(saved);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<CrewMemberResponse> listCrewMembers(CrewRole role, String q) {
+        Sort byName = Sort.by(Sort.Order.asc("lastName").ignoreCase(), Sort.Order.asc("firstName").ignoreCase(),
+                Sort.Order.asc("employeeNumber"));
+        return crewMemberRepository.findAll(CrewMemberSpecifications.matching(role, q), byName).stream()
+                .map(crewMapper::toResponse)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public CrewMemberResponse getCrewMember(UUID id) {
+        return crewMemberRepository.findById(id)
+                .map(crewMapper::toResponse)
+                .orElseThrow(() -> new ResourceNotFoundException("Crew member not found"));
     }
 
     @Override
@@ -98,8 +128,8 @@ public class CrewServiceImpl implements CrewService {
     public void validateCrewForFlight(UUID flightId) {
         List<FlightCrew> crew = flightCrewRepository.findByFlightId(flightId);
         
-        boolean hasCaptain = crew.stream().anyMatch(c -> c.getRole() == com.basarsy.skyline.crew.entity.CrewRole.CAPTAIN);
-        boolean hasFirstOfficer = crew.stream().anyMatch(c -> c.getRole() == com.basarsy.skyline.crew.entity.CrewRole.FIRST_OFFICER);
+        boolean hasCaptain = crew.stream().anyMatch(c -> c.getRole() == CrewRole.CAPTAIN);
+        boolean hasFirstOfficer = crew.stream().anyMatch(c -> c.getRole() == CrewRole.FIRST_OFFICER);
 
         if (!hasCaptain || !hasFirstOfficer) {
             throw new SkylineException("Flight must have at least one CAPTAIN and one FIRST_OFFICER to proceed", HttpStatus.BAD_REQUEST);

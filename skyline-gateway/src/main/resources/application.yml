@@ -8,10 +8,23 @@ spring:
     gateway:
       server:
         webflux:
+          # Browser clients on another origin (e.g. the web front-end's dev server) need CORS. It is
+          # handled here once, so no downstream service sets CORS headers itself.
+          globalcors:
+            cors-configurations:
+              '[/**]':
+                # Comma-separated list, e.g. "http://localhost:5173,https://skyline.example.com".
+                allowed-origins: ${SKYLINE_CORS_ALLOWED_ORIGINS:http://localhost:5173}
+                allowed-methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
+                allowed-headers: Authorization, Content-Type
+                allow-credentials: false
+                max-age: 3600
           default-filters:
             # The internal service key grants ROLE_SERVICE downstream. It must only ever be set by
             # services calling each other directly, never by external clients via the gateway.
             - RemoveRequestHeader=X-Skyline-Internal-Key
+            # Should a downstream service ever add its own CORS headers, never send them twice.
+            - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_UNIQUE
           routes:
             - id: fleet-service
               uri: ${FLEET_SERVICE_URL:http://localhost:8081}
@@ -24,7 +37,7 @@ spring:
             - id: auth-service
               uri: ${AUTH_SERVICE_URL:http://localhost:8083}
               predicates:
-                - Path=/api/v1/auth/**
+                - Path=/api/v1/auth/**, /api/v1/users/**
             - id: reservation-service
               uri: ${RESERVATION_SERVICE_URL:http://localhost:8084}
               predicates:

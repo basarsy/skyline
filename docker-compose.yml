@@ -252,6 +252,7 @@ services:
       FLEET_SERVICE_URL: http://fleet-service:8081
       ROUTE_SERVICE_URL: http://route-service:8082
       CREW_SERVICE_URL: http://crew-service:8086
+      SKYLINE_CURRENCY: ${SKYLINE_CURRENCY:-EUR}
     depends_on:
       schedule-db:
         condition: service_healthy
@@ -278,6 +279,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       FLEET_SERVICE_URL: http://fleet-service:8081
       SCHEDULE_SERVICE_URL: http://schedule-service:8080
+      SKYLINE_CURRENCY: ${SKYLINE_CURRENCY:-EUR}
     depends_on:
       reservation-db:
         condition: service_healthy
@@ -345,6 +347,7 @@ services:
       CHECKIN_SERVICE_URL: http://checkin-service:8085
       CREW_SERVICE_URL: http://crew-service:8086
       SCHEDULE_SERVICE_URL: http://schedule-service:8080
+      SKYLINE_CORS_ALLOWED_ORIGINS: ${SKYLINE_CORS_ALLOWED_ORIGINS:-http://localhost:5173}
     depends_on:
       - auth-service
       - fleet-service

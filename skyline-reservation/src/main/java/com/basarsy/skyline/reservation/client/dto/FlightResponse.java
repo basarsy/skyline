@@ -25,6 +25,7 @@ public class FlightResponse {
     private FlightStatus status;
     private int availableSeats;
     private BigDecimal basePrice;
+    private String currency;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

@@ -1,5 +1,6 @@
 package com.basarsy.skyline.reservation.service;
 
+import com.basarsy.skyline.common.pricing.PricingProperties;
 import com.basarsy.skyline.common.exception.ResourceNotFoundException;
 import com.basarsy.skyline.common.exception.SkylineException;
 import com.basarsy.skyline.reservation.client.FleetClient;
@@ -51,6 +52,7 @@ public class ReservationServiceImpl implements ReservationService {
     private final FleetClient fleetClient;
     private final ReservationMapper reservationMapper;
     private final PassengerMapper passengerMapper;
+    private final PricingProperties pricing;
 
     @Override
     @Transactional
@@ -158,6 +160,7 @@ public class ReservationServiceImpl implements ReservationService {
 
     private ReservationResponse enrichReservationResponse(Reservation reservation, FlightResponse flight) {
         ReservationResponse response = reservationMapper.toResponse(reservation);
+        response.setCurrency(pricing.currency());
         if (flight == null) {
             try {
                 flight = scheduleClient.getFlight(reservation.getFlightId());

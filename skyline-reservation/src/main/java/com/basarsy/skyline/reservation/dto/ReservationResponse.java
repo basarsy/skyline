@@ -24,6 +24,8 @@ public class ReservationResponse {
     private String seatNumber;
     private CabinClass cabinClass;
     private BigDecimal totalPrice;
+    /** ISO 4217 code of {@code totalPrice}. */
+    private String currency;
     private LocalDateTime bookedAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

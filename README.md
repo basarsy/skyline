@@ -138,20 +138,36 @@ All traffic is routed through the **API Gateway** at `http://localhost:8000`.
 
 Base path: `/api/v1`
 
+**CORS.** The gateway answers CORS for browser clients on the origins listed in `SKYLINE_CORS_ALLOWED_ORIGINS` (comma-separated, default `http://localhost:5173`, the web front-end's dev server). Allowed methods: `GET, POST, PUT, PATCH, DELETE, OPTIONS`; allowed request headers: `Authorization, Content-Type`; no credentials (tokens travel in the `Authorization` header); preflights are cached for an hour.
+
 ### Auth (skyline-auth · :8083)
 ```
 POST   /auth/register              Register passenger
 POST   /auth/login                 Login → JWT
 POST   /auth/refresh               Refresh token
+GET    /auth/me                    Current user                [any authenticated]
+```
+
+### Users (skyline-auth · :8083)
+```
+GET    /users                      Search users, paged (optional: email = contains,
+                                   case-insensitive; role)     [ADMIN]
+POST   /users                      Create a STAFF or ADMIN account
+                                   (password min 12; duplicate email: 409) [ADMIN]
 ```
 
 ### Flights (skyline-schedule · :8080)
 ```
-GET    /flights                    Search flights (origin, destination, date)
+GET    /flights                    Search bookable flights: SCHEDULED + DELAYED (origin, destination IATA; date = UTC day)
+GET    /flights/board              Operations flight board, every status [STAFF, ADMIN]
+                                   (optional: date = UTC day, status (repeatable), flightNumber
+                                    (contains, case-insensitive), routeId; paged, default size 50,
+                                    sort departureTime,asc)
 GET    /flights/{id}               Flight detail
-POST   /flights                    Create flight               [STAFF, ADMIN]
-PUT    /flights/{id}               Update flight               [STAFF, ADMIN]
-PATCH  /flights/{id}/status        Update flight status        [STAFF, ADMIN]
+POST   /flights                    Create flight (aircraft must be ACTIVE) [STAFF, ADMIN]
+PUT    /flights/{id}               Update flight (aircraft must be ACTIVE) [STAFF, ADMIN]
+PATCH  /flights/{id}/status        Update flight status        [STAFF, ADMIN; CANCELLED: ADMIN only,
+                                   same full cancellation as DELETE]
 DELETE /flights/{id}               Cancel flight               [ADMIN]
 ```
 
@@ -194,11 +210,27 @@ GET    /checkin/{pnr}/boarding-pass Download boarding pass
 
 ### Crew (skyline-crew · :8086)
 ```
-POST   /crew                       Add crew member             [ADMIN]
+GET    /crew                       Crew directory, sorted by last name [STAFF, ADMIN]
+                                   (optional: role, q = first/last name or employee number)
+GET    /crew/{id}                  Crew member detail          [STAFF, ADMIN]
+POST   /crew                       Add crew member             [ADMIN] (duplicate employee number: 409)
 POST   /flights/{id}/crew          Assign to flight            [STAFF, ADMIN]
 GET    /flights/{id}/crew          Crew manifest               [STAFF, ADMIN]
 DELETE /flights/{flightId}/crew/{crewMemberId}  Remove from flight [STAFF, ADMIN]
 ```
+
+### Dates and times
+
+**All date-times are UTC.** Every `LocalDateTime` the API accepts, stores, compares or returns (`departureTime`, `arrivalTime`, `bookedAt`, `boardingTime`, `issuedAt`, `createdAt`, the envelope `timestamp`, ...) is a UTC wall-clock time, serialized as ISO-8601 **without an offset**, e.g. `"2026-12-01T14:30:00"`. Clients send UTC the same way (no `Z`, no offset).
+
+- Every service pins its JVM to UTC (`TimeZone.setDefault` in `main`, `-Duser.timezone=UTC` and `TZ=UTC` in the Docker image) and Hibernate writes timestamps in UTC (`hibernate.jdbc.time_zone: UTC`), so a service started on a non-UTC host behaves identically.
+- Airports carry their IANA zone, and every embedded route exposes it as `origin.timezone` / `destination.timezone`, so clients can show departure in the origin's local time and arrival in the destination's.
+- `LocalDate` values (`dateOfBirth`, `licenseExpiryDate`) have no zone. The flight search `date` is a **UTC calendar day**.
+- The check-in window (48h → 1h before departure) is evaluated against a UTC clock.
+
+### Money
+
+Prices (`basePrice` on a flight, `totalPrice` on a reservation) are JSON numbers, and every response that carries one also carries `currency`, the ISO 4217 code configured with `SKYLINE_CURRENCY` (default `EUR`).
 
 ### Response Envelope
 
@@ -341,8 +373,10 @@ Each service reads configuration from its own `application.yml`. Infrastructure 
 | `CREW_SERVICE_URL` | Crew service base URL | `http://localhost:8086` |
 | `SKYLINE_ADMIN_EMAIL` | (auth) Email of the initial ADMIN account, created on startup if missing | — (skipped) |
 | `SKYLINE_ADMIN_PASSWORD` | (auth) Password for the initial ADMIN account (min 12 chars) | — (skipped) |
+| `SKYLINE_CORS_ALLOWED_ORIGINS` | (gateway) Comma-separated browser origins allowed by CORS | `http://localhost:5173` |
+| `SKYLINE_CURRENCY` | (schedule, reservation) ISO 4217 currency of every price, returned as `currency`; validated at startup. Set the same value on both | `EUR` |
 
-> Public registration always creates `PASSENGER` accounts. Set `SKYLINE_ADMIN_EMAIL` / `SKYLINE_ADMIN_PASSWORD` on the auth service to bootstrap the first `ADMIN`.
+> Public registration always creates `PASSENGER` accounts. Set `SKYLINE_ADMIN_EMAIL` / `SKYLINE_ADMIN_PASSWORD` on the auth service to bootstrap the first `ADMIN`, who can then create further `STAFF` and `ADMIN` accounts with `POST /users`.
 
 ---
 
