@@ -3,7 +3,7 @@ import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/cn'
 import { aircraftStatusLabel, flightStatusLabel, reservationStatusLabel } from '@/lib/labels'
 
-type Tone = 'neutral' | 'success' | 'destructive' | 'inverted' | 'muted'
+type Tone = 'neutral' | 'success' | 'warning' | 'destructive' | 'inverted' | 'muted'
 
 function Dot({ tone }: { tone: Tone }) {
   return (
@@ -12,6 +12,7 @@ function Dot({ tone }: { tone: Tone }) {
       className={cn(
         'size-1.5 shrink-0 rounded-full',
         tone === 'success' && 'bg-success',
+        tone === 'warning' && 'bg-warning',
         tone === 'destructive' && 'bg-destructive',
         tone === 'inverted' && 'bg-background',
         tone === 'neutral' && 'bg-foreground',
@@ -32,7 +33,7 @@ function StatusPill({ tone, label, className }: { tone: Tone; label: string; cla
 
 const FLIGHT_TONE: Record<FlightStatus, Tone> = {
   SCHEDULED: 'neutral',
-  DELAYED: 'inverted',
+  DELAYED: 'warning',
   BOARDING: 'neutral',
   DEPARTED: 'muted',
   ARRIVED: 'muted',
@@ -48,13 +49,14 @@ const RESERVATION_TONE: Record<ReservationStatus, Tone> = {
 
 const AIRCRAFT_TONE: Record<AircraftStatus, Tone> = {
   ACTIVE: 'success',
-  MAINTENANCE: 'inverted',
+  MAINTENANCE: 'warning',
   RETIRED: 'muted',
 }
 
 /**
  * Status as a monochrome pill with a dot and a text label, so it reads without color. Only
- * CONFIRMED/CHECKED_IN use the success hue and only CANCELLED the destructive one; DELAYED is inverted.
+ * CONFIRMED/CHECKED_IN use the success hue, DELAYED/MAINTENANCE the warning hue (a dot only), and
+ * CANCELLED the destructive one.
  */
 export function FlightStatusBadge({ status, className }: { status: FlightStatus; className?: string }) {
   return <StatusPill tone={FLIGHT_TONE[status]} label={flightStatusLabel[status]} className={className} />

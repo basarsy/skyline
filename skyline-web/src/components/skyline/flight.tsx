@@ -116,9 +116,9 @@ export function FlightTimeline({
       <div className={cn('flex flex-col items-center gap-1.5', size === 'detail' ? 'pt-5 sm:pt-7' : 'pt-3.5 sm:pt-4')}>
         <div className="flex w-full items-center gap-2 text-muted-foreground">
           <span className="size-1.5 shrink-0 rounded-full border border-current" aria-hidden />
-          <span className="h-px flex-1 bg-border" aria-hidden />
-          <PlaneGlyph className="size-4 shrink-0 rotate-45 text-foreground" />
-          <span className="h-px flex-1 bg-border" aria-hidden />
+          <span className="h-0 flex-1 border-t border-dashed border-brand-line" aria-hidden />
+          <PlaneGlyph className="size-4 shrink-0 rotate-45 text-primary" />
+          <span className="h-0 flex-1 border-t border-dashed border-brand-line" aria-hidden />
           <span className="size-1.5 shrink-0 rounded-full bg-current" aria-hidden />
         </div>
         <span className="text-caption text-muted-foreground tabular">{formatDuration(times.durationMinutes)}</span>
@@ -151,11 +151,16 @@ export function FlightCard({
   const times = flightTimes(flight)
   return (
     <article
-      className={cn('flex flex-col gap-5 rounded-card border border-border bg-card p-5 sm:p-6', className)}
+      className={cn(
+        'flex flex-col gap-5 rounded-card border border-border bg-card p-5 shadow-card transition-[box-shadow,border-color] duration-200 hover:border-brand-line hover:shadow-float sm:p-6',
+        className,
+      )}
       aria-label={`${flight.flightNumber}, departs ${times.departure} ${flight.route?.origin.iataCode ?? ''}, arrives ${times.arrival} ${flight.route?.destination.iataCode ?? ''}`}
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
-        <span className="font-mono font-semibold">{flight.flightNumber}</span>
+        <span className="rounded-full bg-brand-soft px-2.5 py-1 font-mono text-xs font-semibold text-primary">
+          {flight.flightNumber}
+        </span>
         <span className="text-muted-foreground">
           {flight.aircraft
             ? `${flight.aircraft.aircraftType.manufacturer} ${flight.aircraft.aircraftType.model}`

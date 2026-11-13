@@ -88,12 +88,17 @@ e2e/            Playwright specs
   shows the server's answer and message.
 - **Bundle:** every screen is a lazy route. Pickers (Radix Popover, cmdk, react-day-picker), the account
   menu, the toaster, motion's animation features, zod for the search form and the PDF417 encoder all load on
-  demand. Initial JS (gzipped, before `load`): `/` 194 kB, `/flights` 195 kB, `/login` 184 kB.
+  demand. Initial JS (gzipped, before `load`): `/` 193 kB, `/flights` 196 kB, `/login` 184 kB.
 
 ## Design system
 
-Monochrome tokens in OKLCH for light and dark live only in `src/styles/globals.css` and are mapped through
-`@theme inline`; components use semantic classes (`bg-card`, `text-muted-foreground`). The theme follows the
+Tokens in OKLCH for light and dark live only in `src/styles/globals.css` and are mapped through `@theme inline`;
+components use semantic classes (`bg-card`, `text-muted-foreground`, `bg-brand-soft`). The palette is cool,
+faintly blue-tinted neutrals with one brand hue (indigo-blue `primary`, with `brand-soft` / `brand-line` tints)
+and a warm `spark` accent used only as decoration. Status hues (`success`, `warning`, `destructive`) appear
+as small dots or text next to a label, so status never depends on color. Two shared surfaces carry the brand:
+the `sky-band` utility (the night-sky band behind the home hero, the results header and the short task pages
+via `SkyPage`) and `dest-art-0`...`dest-art-5` (route-card artwork, picked by a hash of the route). The theme follows the
 OS by default; logged-in users choose System / Light / Dark in the account menu (visitors cycle it from the
 header). An inline script in `index.html` applies it before first paint.
 
@@ -104,16 +109,21 @@ and measures the contrast pairs below in the browser.
 
 Measured WCAG ratios (target: 4.5:1 for text; 3:1 is the floor for the functional hues, which also clear 4.5:1):
 
-| Text / surface                | Light   | Dark    |
-| ----------------------------- | ------- | ------- |
-| foreground / background       | 18.97:1 | 19.30:1 |
-| foreground / card             | 19.80:1 | 17.95:1 |
-| muted-foreground / card       | 6.01:1  | 6.49:1  |
-| muted-foreground / background | 5.76:1  | 6.98:1  |
-| muted-foreground / elevated   | 5.51:1  | 5.97:1  |
-| primary-foreground / primary  | 19.80:1 | 19.30:1 |
-| destructive / card            | 5.26:1  | 6.58:1  |
-| success / card                | 4.60:1  | 8.78:1  |
+| Text / surface                  | Light   | Dark    |
+| ------------------------------- | ------- | ------- |
+| foreground / background         | 17.00:1 | 17.93:1 |
+| foreground / card               | 17.75:1 | 16.61:1 |
+| muted-foreground / card         | 6.00:1  | 7.04:1  |
+| muted-foreground / background   | 5.75:1  | 7.59:1  |
+| muted-foreground / elevated     | 5.43:1  | 6.31:1  |
+| primary-foreground / primary    | 6.05:1  | 7.60:1  |
+| primary / card                  | 6.05:1  | 7.20:1  |
+| primary / brand-soft            | 5.20:1  | 5.83:1  |
+| destructive / card              | 5.26:1  | 6.35:1  |
+| success / card                  | 4.62:1  | 8.49:1  |
+| warning / card (dot only)       | 4.83:1  | 9.54:1  |
+| sky-foreground / sky band       | 15.99:1 | 17.79:1 |
+| sky-muted / sky band (lightest) | 6.95:1  | 8.60:1  |
 
 ## Testing
 

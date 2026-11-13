@@ -87,7 +87,7 @@ export function Component() {
           Already have one?{' '}
           <Link
             to={`/login${next ? `?next=${encodeURIComponent(next)}` : ''}`}
-            className="rounded font-medium text-foreground underline underline-offset-4 focus-ring"
+            className="rounded font-medium text-sky-foreground underline underline-offset-4 focus-ring"
           >
             Log in
           </Link>
