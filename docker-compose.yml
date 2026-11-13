@@ -345,6 +345,7 @@ services:
       CHECKIN_SERVICE_URL: http://checkin-service:8085
       CREW_SERVICE_URL: http://crew-service:8086
       SCHEDULE_SERVICE_URL: http://schedule-service:8080
+      SKYLINE_CORS_ALLOWED_ORIGINS: ${SKYLINE_CORS_ALLOWED_ORIGINS:-http://localhost:5173}
     depends_on:
       - auth-service
       - fleet-service

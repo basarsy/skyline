@@ -138,6 +138,8 @@ All traffic is routed through the **API Gateway** at `http://localhost:8000`.
 
 Base path: `/api/v1`
 
+**CORS.** The gateway answers CORS for browser clients on the origins listed in `SKYLINE_CORS_ALLOWED_ORIGINS` (comma-separated, default `http://localhost:5173`, the web front-end's dev server). Allowed methods: `GET, POST, PUT, PATCH, DELETE, OPTIONS`; allowed request headers: `Authorization, Content-Type`; no credentials (tokens travel in the `Authorization` header); preflights are cached for an hour.
+
 ### Auth (skyline-auth · :8083)
 ```
 POST   /auth/register              Register passenger
@@ -341,6 +343,7 @@ Each service reads configuration from its own `application.yml`. Infrastructure 
 | `CREW_SERVICE_URL` | Crew service base URL | `http://localhost:8086` |
 | `SKYLINE_ADMIN_EMAIL` | (auth) Email of the initial ADMIN account, created on startup if missing | — (skipped) |
 | `SKYLINE_ADMIN_PASSWORD` | (auth) Password for the initial ADMIN account (min 12 chars) | — (skipped) |
+| `SKYLINE_CORS_ALLOWED_ORIGINS` | (gateway) Comma-separated browser origins allowed by CORS | `http://localhost:5173` |
 
 > Public registration always creates `PASSENGER` accounts. Set `SKYLINE_ADMIN_EMAIL` / `SKYLINE_ADMIN_PASSWORD` on the auth service to bootstrap the first `ADMIN`.
 
