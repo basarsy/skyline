@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 
-import { rawRequest } from '@/api/http'
+import { isApiError, rawRequest } from '@/api/http'
 import type { AuthResponse, UserResponse, UserRole, UUID } from '@/api/types'
 import { decodeJwt, msUntilExpiry, roleFromClaims } from './jwt'
 
@@ -131,20 +131,48 @@ export function refreshSession(): Promise<boolean> {
   }
 
   const hadSession = state.status === 'authenticated'
-  refreshInFlight = rawRequest<AuthResponse>('/auth/refresh', { method: 'POST', body: { refreshToken } })
+  refreshInFlight = refreshWithRetry(refreshToken)
     .then((auth) => {
       setTokens(auth)
       return true
     })
-    .catch(() => {
-      clearSession()
-      if (hadSession) expiredHandlers.forEach((handler) => handler())
+    .catch((error: unknown) => {
+      if (isRejected(error)) {
+        // The server refused the token: the session is over.
+        clearSession()
+        if (hadSession) expiredHandlers.forEach((handler) => handler())
+      } else {
+        // Unreachable or failing server: not a verdict on the session. Keep the refresh token so a later
+        // attempt (or reload) can still restore it.
+        clearTimeout(refreshTimer)
+        setState({ status: 'anonymous', accessToken: null, user: null })
+      }
       return false
     })
     .finally(() => {
       refreshInFlight = null
     })
   return refreshInFlight
+}
+
+/** A 4xx from /auth/refresh is the server's answer; anything else (network, 5xx) is transient. */
+function isRejected(error: unknown) {
+  return isApiError(error) && error.status >= 400 && error.status < 500
+}
+
+const RETRY_DELAYS_MS = [400, 1200]
+
+/** Transient failures are retried with backoff; a refusal is final immediately. */
+async function refreshWithRetry(refreshToken: string): Promise<AuthResponse> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await rawRequest<AuthResponse>('/auth/refresh', { method: 'POST', body: { refreshToken } })
+    } catch (error) {
+      const delay = RETRY_DELAYS_MS[attempt]
+      if (isRejected(error) || delay === undefined) throw error
+      await new Promise((resolve) => setTimeout(resolve, delay))
+    }
+  }
 }
 
 /** For tests: back to the initial state. */

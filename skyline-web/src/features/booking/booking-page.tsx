@@ -320,6 +320,9 @@ export function Component() {
   return (
     <Page className="flex flex-col gap-8 pb-40 md:pb-12">
       <div className="flex flex-col gap-4">
+        <h1 className="text-h2 font-semibold sm:text-h1">
+          {flight.route ? `${flight.route.origin.city} to ${flight.route.destination.city}` : 'Book your flight'}
+        </h1>
         <div className="flex flex-wrap items-center gap-3 text-sm">
           <RouteLabel route={flight.route} />
           <span className="text-muted-foreground">

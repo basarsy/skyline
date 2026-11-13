@@ -31,13 +31,13 @@ export function Avatar({ email, className }: { email: string; className?: string
   return (
     <span
       aria-hidden
+      data-initials={email.slice(0, 2)}
+      // Initials come from CSS so they aren't text competing with the trigger's accessible name.
       className={cn(
-        'grid size-9 place-items-center rounded-full bg-primary text-xs font-semibold text-primary-foreground uppercase',
+        'grid size-9 place-items-center rounded-full bg-primary text-xs font-semibold text-primary-foreground uppercase before:content-[attr(data-initials)]',
         className,
       )}
-    >
-      {email.slice(0, 2)}
-    </span>
+    />
   )
 }
 

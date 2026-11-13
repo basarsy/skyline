@@ -148,7 +148,6 @@ function StatusCard({ flight, manifest }: { flight: FlightResponse; manifest: Fl
           <Button
             className="w-full"
             loading={setStatus.isPending}
-            disabled={target !== null && requiresCrew(target) && !crewReadiness(manifest).ready}
             onClick={() => target && setStatus.mutate(target, { onSuccess: () => setTarget(null) })}
           >
             {target ? transitionCopy[target] : 'Confirm'}

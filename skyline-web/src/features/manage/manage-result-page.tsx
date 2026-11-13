@@ -7,6 +7,7 @@ import { Page } from '@/components/layout/app-shell'
 import { ErrorState, LoadingRegion, SkeletonCard } from '@/components/skyline/states'
 import { Button } from '@/components/ui/button'
 import { useDocumentTitle } from '@/lib/hooks'
+import { DOCUMENT_ID } from '@/lib/document-id'
 import { normalizePnr } from '@/lib/pnr'
 import { useReservationByPnr } from '@/features/trips/queries'
 import { ReservationView, TripActions } from '@/features/trips/reservation-view'
@@ -20,7 +21,9 @@ import type { ManageState } from './manage-page'
 export function Component() {
   const pnr = normalizePnr(useParams().pnr ?? '')
   const location = useLocation()
-  const lastName = (location.state as ManageState | null)?.lastName
+  const state = location.state as ManageState | null
+  // After a hard refresh the state is still in history, but stale: send visitors back to the form.
+  const lastName = state?.documentId === DOCUMENT_ID ? state.lastName : undefined
   const { status, user, isLoading } = useAuth()
   const canQuery = !isLoading && (!!lastName || status === 'authenticated')
   const query = useReservationByPnr(pnr, lastName, canQuery)
@@ -34,7 +37,7 @@ export function Component() {
     const status = isApiError(query.error) ? query.error.status : 0
     // A wrong last name is a 404 on purpose; so is an unknown PNR. Never say which.
     if (status === 404 || status === 400) {
-      return <Navigate to="/manage" replace state={{ pnr, lastName, notFound: true }} />
+      return <Navigate to="/manage" replace state={{ pnr, lastName, notFound: true, documentId: DOCUMENT_ID }} />
     }
     return (
       <Page>

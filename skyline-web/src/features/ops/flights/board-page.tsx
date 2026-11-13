@@ -235,11 +235,11 @@ export function Component() {
             {date ? 'All dates' : 'Today'}
           </Button>
           <div className="flex flex-col gap-1.5">
-            <span id="board-route" className="micro-label">
+            <label htmlFor="board-route" className="micro-label">
               Route
-            </span>
+            </label>
             <Combobox
-              aria-describedby="board-route"
+              id="board-route"
               value={routeId}
               onChange={(value) => update({ routeId: value })}
               placeholder="All routes"

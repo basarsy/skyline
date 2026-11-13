@@ -57,7 +57,8 @@ test('register, search, book, check in and get a boarding pass', async ({ page, 
   await expect(page.getByRole('heading', { name: 'You’re booked.' })).toBeVisible()
   const pnr = (await page.locator('.font-mono.tracking-\\[0\\.18em\\]').first().textContent())!.trim()
   expect(pnr).toMatch(/^[A-HJ-NP-Z2-9]{6}$/)
-  await expect(page.getByLabel(/^Total €/)).toBeVisible()
+  await expect(page.getByText('Total', { exact: true })).toBeVisible()
+  await expect(page.getByText(/^€\d[\d,]*\.\d{2}$/).first()).toBeAttached()
 
   // My trips shows it; check in from there.
   await page.goto('/trips')

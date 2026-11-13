@@ -1,9 +1,10 @@
 import type * as React from 'react'
 import { motion } from 'motion/react'
 import { CloudOff, Lock, RotateCw, SearchX } from 'lucide-react'
-import { Link } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 
 import { isApiError } from '@/api/http'
+import { logout } from '@/auth/session'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/cn'
@@ -78,19 +79,27 @@ export function ErrorState({
 
 /** Full-page "no access" (403) with a way back. */
 export function ForbiddenState({ className }: { className?: string }) {
+  const navigate = useNavigate()
+  const location = useLocation()
   return (
     <StateFrame
       className={cn('mx-auto my-16 max-w-xl', className)}
       icon={<Lock strokeWidth={1.75} aria-hidden />}
-      title="You don't have access"
+      title="You don’t have access"
       description="This area needs a different account. Go back, or log in with an account that has access."
       action={
         <>
           <Button asChild variant="outline">
             <Link to="/">Back to home</Link>
           </Button>
-          <Button asChild>
-            <Link to="/login">Switch account</Link>
+          <Button
+            onClick={() => {
+              // /login sends logged-in users away, so log out first; come back here after.
+              logout()
+              navigate(`/login?next=${encodeURIComponent(location.pathname)}`)
+            }}
+          >
+            Switch account
           </Button>
         </>
       }

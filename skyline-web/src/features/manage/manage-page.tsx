@@ -9,6 +9,7 @@ import { PnrInput } from '@/components/skyline/pnr'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useDocumentTitle } from '@/lib/hooks'
+import { DOCUMENT_ID } from '@/lib/document-id'
 import { isValidPnr, PNR_HINT } from '@/lib/pnr'
 
 const schema = z.object({
@@ -21,13 +22,17 @@ type Values = z.infer<typeof schema>
 export interface ManageState {
   lastName: string
   notFound?: boolean
+  /** The page load that set this state; a reload makes it stale. */
+  documentId?: string
 }
 
 export function Component() {
   useDocumentTitle('Manage booking')
   const navigate = useNavigate()
   const location = useLocation()
-  const previous = location.state as Partial<ManageState & { pnr: string }> | null
+  const raw = location.state as Partial<ManageState & { pnr: string }> | null
+  // The last name and the not-found notice only count for this page load (never after a refresh).
+  const previous = raw?.documentId === DOCUMENT_ID ? raw : { pnr: raw?.pnr }
 
   const form = useForm<Values>({
     resolver: zodResolver(schema),
@@ -36,7 +41,9 @@ export function Component() {
   const { errors, submitCount } = form.formState
 
   const onSubmit = form.handleSubmit((values) => {
-    navigate(`/manage/${values.pnr}`, { state: { lastName: values.lastName.trim() } satisfies ManageState })
+    navigate(`/manage/${values.pnr}`, {
+      state: { lastName: values.lastName.trim(), documentId: DOCUMENT_ID } satisfies ManageState,
+    })
   })
 
   return (
