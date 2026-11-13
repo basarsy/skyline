@@ -202,6 +202,15 @@ GET    /flights/{id}/crew          Crew manifest               [STAFF, ADMIN]
 DELETE /flights/{flightId}/crew/{crewMemberId}  Remove from flight [STAFF, ADMIN]
 ```
 
+### Dates and times
+
+**All date-times are UTC.** Every `LocalDateTime` the API accepts, stores, compares or returns (`departureTime`, `arrivalTime`, `bookedAt`, `boardingTime`, `issuedAt`, `createdAt`, the envelope `timestamp`, ...) is a UTC wall-clock time, serialized as ISO-8601 **without an offset**, e.g. `"2026-12-01T14:30:00"`. Clients send UTC the same way (no `Z`, no offset).
+
+- Every service pins its JVM to UTC (`TimeZone.setDefault` in `main`, `-Duser.timezone=UTC` and `TZ=UTC` in the Docker image) and Hibernate writes timestamps in UTC (`hibernate.jdbc.time_zone: UTC`), so a service started on a non-UTC host behaves identically.
+- Airports carry their IANA zone, and every embedded route exposes it as `origin.timezone` / `destination.timezone`, so clients can show departure in the origin's local time and arrival in the destination's.
+- `LocalDate` values (`dateOfBirth`, `licenseExpiryDate`) have no zone. The flight search `date` is a **UTC calendar day**.
+- The check-in window (48h → 1h before departure) is evaluated against a UTC clock.
+
 ### Response Envelope
 
 All endpoints return a consistent `ApiResponse<T>`:

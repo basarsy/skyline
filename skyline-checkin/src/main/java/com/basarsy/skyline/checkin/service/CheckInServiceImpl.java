@@ -14,6 +14,7 @@ import com.basarsy.skyline.checkin.repository.BoardingPassRepository;
 import com.basarsy.skyline.common.exception.ResourceNotFoundException;
 import com.basarsy.skyline.common.exception.SkylineException;
 import com.basarsy.skyline.common.security.SkylineUserDetails;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.Set;
@@ -35,6 +36,8 @@ public class CheckInServiceImpl implements CheckInService {
     private final ReservationClient reservationClient;
     private final BoardingPassRepository boardingPassRepository;
     private final BoardingPassMapper boardingPassMapper;
+    /** UTC: departure times are UTC, so the window is compared in UTC whatever the host zone. */
+    private final Clock clock;
 
     /**
      * Idempotent: repeating a check-in returns the existing boarding pass. If an earlier attempt marked the
@@ -118,7 +121,7 @@ public class CheckInServiceImpl implements CheckInService {
     }
 
     private void validateCheckInWindow(ReservationResponse reservation) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(clock);
         LocalDateTime departureTime = reservation.flight().getDepartureTime();
 
         if (now.isBefore(departureTime.minusHours(48))) {
@@ -145,7 +148,7 @@ public class CheckInServiceImpl implements CheckInService {
         bp.setGate(gateFor(flight.getId()));
         bp.setBoardingTime(flight.getDepartureTime().minusMinutes(45));
         bp.setBarcodeData("SKY-" + reservation.pnr() + "-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase());
-        bp.setIssuedAt(LocalDateTime.now());
+        bp.setIssuedAt(LocalDateTime.now(clock));
         return bp;
     }
 

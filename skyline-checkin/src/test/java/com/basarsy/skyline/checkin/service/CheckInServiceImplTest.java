@@ -19,13 +19,18 @@ import com.basarsy.skyline.checkin.client.dto.RouteResponse;
 import com.basarsy.skyline.checkin.dto.BoardingPassResponse;
 import com.basarsy.skyline.checkin.dto.CheckInRequest;
 import com.basarsy.skyline.checkin.entity.BoardingPass;
+import com.basarsy.skyline.checkin.exception.CheckInWindowException;
 import com.basarsy.skyline.checkin.mapper.BoardingPassMapper;
 import com.basarsy.skyline.checkin.repository.BoardingPassRepository;
 import com.basarsy.skyline.common.exception.ResourceNotFoundException;
 import com.basarsy.skyline.common.security.SkylineUserDetails;
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.TimeZone;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -41,11 +46,15 @@ class CheckInServiceImplTest {
     private static final UUID OWNER_ID = UUID.randomUUID();
     private static final UUID FLIGHT_ID = UUID.randomUUID();
     private static final String PNR = "ABC234";
+    /** Fixed UTC instant: every LocalDateTime in Skyline is UTC. */
+    private static final Instant NOW = Instant.parse("2026-12-01T12:00:00Z");
+    private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
+    private static final LocalDateTime NOW_UTC = LocalDateTime.ofInstant(NOW, ZoneOffset.UTC);
 
     private final ReservationClient reservationClient = mock(ReservationClient.class);
     private final BoardingPassRepository repository = mock(BoardingPassRepository.class);
     private final BoardingPassMapper mapper = mock(BoardingPassMapper.class);
-    private final CheckInServiceImpl service = new CheckInServiceImpl(reservationClient, repository, mapper);
+    private final CheckInServiceImpl service = new CheckInServiceImpl(reservationClient, repository, mapper, CLOCK);
 
     @BeforeEach
     void setUp() {
@@ -130,6 +139,66 @@ class CheckInServiceImplTest {
     }
 
     @Test
+    void checkInOpensFortyEightHoursBeforeTheUtcDeparture() {
+        loginAs(OWNER_ID, "ROLE_PASSENGER");
+        stubReservation(NOW_UTC.plusHours(48).plusMinutes(1));
+
+        assertThatThrownBy(() -> service.performCheckIn(new CheckInRequest(PNR)))
+                .isInstanceOf(CheckInWindowException.class)
+                .hasMessage("Check-in opens 48 hours before departure.");
+
+        stubReservation(NOW_UTC.plusHours(48));
+        assertThat(service.performCheckIn(new CheckInRequest(PNR)).getSeatNumber()).isEqualTo("1A");
+    }
+
+    @Test
+    void checkInClosesOneHourBeforeTheUtcDeparture() {
+        loginAs(OWNER_ID, "ROLE_PASSENGER");
+        stubReservation(NOW_UTC.plusMinutes(59));
+
+        assertThatThrownBy(() -> service.performCheckIn(new CheckInRequest(PNR)))
+                .isInstanceOf(CheckInWindowException.class)
+                .hasMessage("Check-in closes 1 hour before departure.");
+    }
+
+    @Test
+    void windowDoesNotDependOnTheHostTimeZone() {
+        TimeZone original = TimeZone.getDefault();
+        try {
+            // UTC+14: a host-zone now() would be 14h ahead and call a flight 10h away "closed".
+            TimeZone.setDefault(TimeZone.getTimeZone("Pacific/Kiritimati"));
+            loginAs(OWNER_ID, "ROLE_PASSENGER");
+            stubReservation(NOW_UTC.plusHours(10));
+            assertThat(service.performCheckIn(new CheckInRequest(PNR)).getSeatNumber()).isEqualTo("1A");
+
+            // UTC-12: a host-zone now() would be 12h behind and call a flight 40h away "not open yet".
+            TimeZone.setDefault(TimeZone.getTimeZone("Etc/GMT+12"));
+            stubReservation(NOW_UTC.plusHours(40));
+            assertThat(service.performCheckIn(new CheckInRequest(PNR)).getSeatNumber()).isEqualTo("1A");
+        } finally {
+            TimeZone.setDefault(original);
+        }
+    }
+
+    @Test
+    void boardingPassIsIssuedAtTheUtcInstant() {
+        loginAs(OWNER_ID, "ROLE_PASSENGER");
+        stubReservation(NOW_UTC.plusHours(24));
+
+        service.performCheckIn(new CheckInRequest(PNR));
+
+        verify(repository).saveAndFlush(org.mockito.ArgumentMatchers.argThat(bp ->
+                bp.getIssuedAt().equals(NOW_UTC) && bp.getBoardingTime().equals(NOW_UTC.plusHours(24).minusMinutes(45))));
+    }
+
+    private void stubReservation(LocalDateTime departureUtc) {
+        ReservationResponse confirmed = reservation(ReservationStatus.CONFIRMED, null, departureUtc);
+        when(reservationClient.getReservationByPnr(PNR)).thenReturn(confirmed);
+        when(repository.findByReservationId(confirmed.id())).thenReturn(Optional.empty());
+        when(reservationClient.checkIn(confirmed.id())).thenReturn(reservation(ReservationStatus.CHECKED_IN, "1A", departureUtc));
+    }
+
+    @Test
     void gateIsStablePerFlight() {
         assertThat(CheckInServiceImpl.gateFor(FLIGHT_ID)).isEqualTo(CheckInServiceImpl.gateFor(FLIGHT_ID));
         assertThat(CheckInServiceImpl.gateFor(FLIGHT_ID)).matches("G([1-9]|1[0-9]|20)");
@@ -138,16 +207,20 @@ class CheckInServiceImplTest {
     private static final UUID RESERVATION_ID = UUID.randomUUID();
 
     private static ReservationResponse reservation(ReservationStatus status, String seat) {
+        return reservation(status, seat, NOW_UTC.plusHours(24));
+    }
+
+    private static ReservationResponse reservation(ReservationStatus status, String seat, LocalDateTime departureUtc) {
         RouteResponse route = new RouteResponse(UUID.randomUUID(),
-                new AirportSummary(UUID.randomUUID(), "IST", "Istanbul Airport", "Istanbul", "Turkey"),
-                new AirportSummary(UUID.randomUUID(), "LHR", "Heathrow", "London", "UK"), 2500, 240);
+                new AirportSummary(UUID.randomUUID(), "IST", "Istanbul Airport", "Istanbul", "Turkey", "Europe/Istanbul"),
+                new AirportSummary(UUID.randomUUID(), "LHR", "Heathrow", "London", "UK", "Europe/London"), 2500, 240);
         FlightResponse flight = FlightResponse.builder()
                 .id(FLIGHT_ID).flightNumber("SK100").route(route)
-                .departureTime(LocalDateTime.now().plusHours(24)).build();
+                .departureTime(departureUtc).build();
         PassengerResponse passenger = new PassengerResponse(UUID.randomUUID(), OWNER_ID, "Ada", "Lovelace",
                 "P123", LocalDate.of(1990, 1, 1), "TR");
         return new ReservationResponse(RESERVATION_ID, PNR, passenger, flight, status, seat, CabinClass.ECONOMY,
-                BigDecimal.TEN, LocalDateTime.now(), LocalDateTime.now(), LocalDateTime.now());
+                BigDecimal.TEN, NOW_UTC, NOW_UTC, NOW_UTC);
     }
 
     private static void loginAs(UUID userId, String role) {
