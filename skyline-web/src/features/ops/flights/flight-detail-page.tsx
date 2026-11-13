@@ -75,10 +75,7 @@ function StatusStepper({ status }: { status: FlightStatus }) {
         {MAIN_LINE.map((step, i) => (
           <li key={step} className="flex flex-col gap-2" aria-current={step === status ? 'step' : undefined}>
             <span
-              className={cn(
-                'h-1 rounded-full',
-                i <= reached && status !== 'CANCELLED' ? 'bg-foreground' : 'bg-elevated',
-              )}
+              className={cn('h-1 rounded-full', i <= reached && status !== 'CANCELLED' ? 'bg-primary' : 'bg-elevated')}
             />
             <span
               className={cn('text-caption sm:text-sm', step === status ? 'font-semibold' : 'text-muted-foreground')}
@@ -411,7 +408,7 @@ function InventoryCard({ flight }: { flight: FlightResponse }) {
         aria-valuenow={Math.round(factor * 100)}
       >
         <div
-          className="h-full rounded-full bg-foreground transition-[width] duration-500"
+          className="h-full rounded-full bg-primary transition-[width] duration-500"
           style={{ width: `${factor * 100}%` }}
         />
       </div>

@@ -243,7 +243,7 @@ export function ReservationView({ reservation, redacted }: { reservation: Reserv
                   aria-hidden
                   className={cn(
                     'mt-1.5 size-2.5 shrink-0 rounded-full',
-                    step.done ? 'bg-foreground' : 'border border-muted-foreground',
+                    step.done ? 'bg-primary' : 'border border-muted-foreground',
                   )}
                 />
                 <span className="flex flex-col">

@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 
-import { bookViaApi, freshApp, live, logIn, MOCK } from './support'
+import { bookViaApi, freshApp, gotoStable, live, logIn, MOCK } from './support'
 
 test.skip(live, 'Accessibility and layout checks run against the mocked API')
 
@@ -63,7 +63,7 @@ for (const theme of ['light', 'dark'] as const) {
     test('public routes have no serious accessibility violations', async ({ page }) => {
       await freshApp(page)
       for (const route of PUBLIC) {
-        await page.goto(route)
+        await gotoStable(page, route)
         await settle(page)
         await axe(page, route)
       }
@@ -81,7 +81,7 @@ for (const theme of ['light', 'dark'] as const) {
         `/checkin/${booking.pnr}`,
       ]
       for (const route of routes) {
-        await page.goto(route)
+        await gotoStable(page, route)
         await settle(page)
         await axe(page, route)
       }
@@ -98,7 +98,7 @@ for (const theme of ['light', 'dark'] as const) {
       await freshApp(page)
       await logIn(page, MOCK.admin.email, MOCK.admin.password)
       for (const route of OPS) {
-        await page.goto(route)
+        await gotoStable(page, route)
         await settle(page)
         await axe(page, route)
       }
@@ -110,7 +110,7 @@ async function noHorizontalScroll(page: Page, routes: string[]) {
   for (const width of [375, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 })
     for (const route of routes) {
-      await page.goto(route)
+      await gotoStable(page, route)
       await settle(page)
       const overflow = await page.evaluate(
         () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

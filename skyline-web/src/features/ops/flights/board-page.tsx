@@ -78,7 +78,7 @@ function SeatsBar({ flight }: { flight: FlightResponse }) {
         aria-valuemax={capacity}
         aria-valuenow={sold}
       >
-        <div className="h-full rounded-full bg-foreground" style={{ width: `${(sold / capacity) * 100}%` }} />
+        <div className="h-full rounded-full bg-primary" style={{ width: `${(sold / capacity) * 100}%` }} />
       </div>
       <span className="text-sm tabular">
         {flight.availableSeats}
