@@ -1,3 +1,5 @@
+import * as React from 'react'
+
 import { cn } from '@/lib/cn'
 import { useNow } from '@/lib/hooks'
 
@@ -27,7 +29,10 @@ export function CountdownTimer({
 }) {
   const now = useNow(1000)
   const remaining = target.getTime() - now.getTime()
-  if (remaining <= 0) onElapsed?.()
+  const elapsed = remaining <= 0
+  React.useEffect(() => {
+    if (elapsed) onElapsed?.()
+  }, [elapsed, onElapsed])
   const { days, hours, minutes, seconds } = parts(remaining)
 
   if (size === 'inline') {

@@ -61,8 +61,19 @@ function isEnvelope(value: unknown): value is ApiEnvelope<unknown> {
   return typeof value === 'object' && value !== null && 'success' in value && 'data' in value
 }
 
+/** A successful call with the server's human-readable message (shown in toasts when present). */
+export interface ApiResult<T> {
+  data: T
+  message: string | null
+}
+
 /** Unwraps `data` on 2xx; throws a typed ApiError otherwise. */
 export async function readEnvelope<T>(response: Response): Promise<T> {
+  return (await readEnvelopeResult<T>(response)).data
+}
+
+/** Like readEnvelope, keeping the envelope's message. */
+export async function readEnvelopeResult<T>(response: Response): Promise<ApiResult<T>> {
   const text = await response.text()
   let body: unknown = undefined
   if (text) {
@@ -74,7 +85,9 @@ export async function readEnvelope<T>(response: Response): Promise<T> {
   }
 
   if (response.ok) {
-    return (isEnvelope(body) ? body.data : body) as T
+    return isEnvelope(body)
+      ? { data: body.data as T, message: body.message?.trim() || null }
+      : { data: body as T, message: null }
   }
 
   const envelope = isEnvelope(body) ? body : null

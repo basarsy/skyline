@@ -1,4 +1,4 @@
-import { api } from '../client'
+import { api, command } from '../client'
 import { parsePage } from '../page'
 import type { CreateUserRequest, PageParams, UserResponse, UserRole } from '../types'
 
@@ -11,5 +11,5 @@ export interface UserSearchParams extends PageParams {
 export const usersApi = {
   search: async (params: UserSearchParams, signal?: AbortSignal) =>
     parsePage<UserResponse>(await api.get('/users', { query: { ...params }, signal })),
-  create: (body: CreateUserRequest) => api.post<UserResponse>('/users', body),
+  create: (body: CreateUserRequest) => command.post<UserResponse>('/users', body),
 }

@@ -38,7 +38,9 @@ export default tseslint.config(
   },
   {
     // shadcn primitives export variants alongside components.
-    files: ['src/components/**/*.tsx'],
+    // shadcn primitives export variants alongside components; lazy route modules export Component
+    // next to private helpers (the data-router convention).
+    files: ['src/components/**/*.tsx', 'src/features/**/*.tsx'],
     rules: { 'react-refresh/only-export-components': 'off' },
   },
   {

@@ -117,7 +117,7 @@ export function FlightTimeline({
         <div className="flex w-full items-center gap-2 text-muted-foreground">
           <span className="size-1.5 shrink-0 rounded-full border border-current" aria-hidden />
           <span className="h-px flex-1 bg-border" aria-hidden />
-          <PlaneGlyph className="size-4 shrink-0 rotate-[20deg] text-foreground" />
+          <PlaneGlyph className="size-4 shrink-0 rotate-45 text-foreground" />
           <span className="h-px flex-1 bg-border" aria-hidden />
           <span className="size-1.5 shrink-0 rounded-full bg-current" aria-hidden />
         </div>

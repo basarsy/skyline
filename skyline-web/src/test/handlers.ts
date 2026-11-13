@@ -717,3 +717,38 @@ export function issueSessionFor(email: string) {
   if (!user) throw new Error(`No mock user ${email}`)
   return issueTokens(user)
 }
+
+// ------------------------------------------------------------------ persistence (browser mode)
+
+interface SerializedDb extends Omit<Db, 'tokens' | 'refreshTokens' | 'passes' | 'manifests'> {
+  tokens: [string, string][]
+  refreshTokens: [string, string][]
+  passes: [string, BoardingPassResponse][]
+  manifests: [string, FlightCrewResponse[]][]
+  counter: number
+}
+
+/** Snapshot of the mock back-end, so a full page reload in the browser keeps its data. */
+export function exportDb(): string {
+  const snapshot: SerializedDb = {
+    ...db,
+    tokens: [...db.tokens],
+    refreshTokens: [...db.refreshTokens],
+    passes: [...db.passes],
+    manifests: [...db.manifests],
+    counter,
+  }
+  return JSON.stringify(snapshot)
+}
+
+export function importDb(json: string) {
+  const snapshot = JSON.parse(json) as SerializedDb
+  counter = snapshot.counter
+  db = {
+    ...snapshot,
+    tokens: new Map(snapshot.tokens),
+    refreshTokens: new Map(snapshot.refreshTokens),
+    passes: new Map(snapshot.passes),
+    manifests: new Map(snapshot.manifests),
+  }
+}

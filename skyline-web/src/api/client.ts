@@ -1,8 +1,8 @@
 import { getAccessToken, refreshSession } from '@/auth/auth-store'
-import { ApiError, buildUrl, fallbackMessage, readEnvelope, type RequestOptions } from './http'
+import { ApiError, buildUrl, fallbackMessage, readEnvelopeResult, type ApiResult, type RequestOptions } from './http'
 
 export { ApiError, isApiError } from './http'
-export type { RequestOptions } from './http'
+export type { ApiResult, RequestOptions } from './http'
 
 /** Refresh/login answer 401 for bad credentials; refreshing again would be pointless. */
 const NO_REFRESH_PATHS = ['/auth/login', '/auth/refresh', '/auth/register']
@@ -35,6 +35,11 @@ async function send(path: string, options: RequestOptions, token: string | null)
  * session is cleared and the 401 surfaces.
  */
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  return (await apiRequest<T>(path, options)).data
+}
+
+/** apiFetch, keeping the server message (for mutations that show it in a toast). */
+export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<ApiResult<T>> {
   const token = getAccessToken()
   let response = await send(path, options, token)
 
@@ -45,7 +50,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     }
   }
 
-  return readEnvelope<T>(response)
+  return readEnvelopeResult<T>(response)
 }
 
 export const api = {
@@ -58,4 +63,12 @@ export const api = {
     apiFetch<T>(path, { ...options, method: 'PATCH', body }),
   delete: <T>(path: string, options?: Omit<RequestOptions, 'method' | 'body'>) =>
     apiFetch<T>(path, { ...options, method: 'DELETE' }),
+}
+
+/** Mutations: same as `api`, but resolving to { data, message }. */
+export const command = {
+  post: <T>(path: string, body?: unknown) => apiRequest<T>(path, { method: 'POST', body }),
+  put: <T>(path: string, body?: unknown) => apiRequest<T>(path, { method: 'PUT', body }),
+  patch: <T>(path: string, body?: unknown) => apiRequest<T>(path, { method: 'PATCH', body }),
+  delete: <T>(path: string) => apiRequest<T>(path, { method: 'DELETE' }),
 }

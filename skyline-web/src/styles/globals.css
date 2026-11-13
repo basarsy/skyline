@@ -9,7 +9,8 @@
  * functional ones (destructive, success), used on small text, icons and badge dots, always next to a label.
  * Components reference the semantic tokens only (bg-card, text-muted-foreground, ...). Raw colors live here.
  */
-:root {
+:root,
+.light {
   --background: oklch(0.985 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -36,6 +37,12 @@
 
   --shadow-float: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px rgb(0 0 0 / 0.06);
   --chrome: oklch(0.985 0 0 / 0.72);
+
+  /* The boarding pass is always black on white, in either theme, like a real pass. */
+  --pass: oklch(1 0 0);
+  --pass-foreground: oklch(0.145 0 0);
+  --pass-muted: oklch(0.45 0 0);
+  --pass-line: oklch(0.88 0 0);
 }
 
 .dark {
@@ -84,6 +91,12 @@
   --color-success: var(--success);
   --color-chrome: var(--chrome);
   --color-overlay: var(--overlay);
+
+  /* The boarding pass is always black on white, in either theme, like a real pass. */
+  --color-pass: var(--pass);
+  --color-pass-foreground: var(--pass-foreground);
+  --color-pass-muted: var(--pass-muted);
+  --color-pass-line: var(--pass-line);
 
   --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
   --font-display: 'Inter Tight Variable', 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
@@ -206,5 +219,38 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* Ticket perforation: a dashed rule with semicircular notches cut from both edges. */
+@utility pass-perforation {
+  position: relative;
+  height: 28px;
+  background-image: linear-gradient(to right, var(--pass-line) 55%, transparent 0%);
+  background-size: 12px 1px;
+  background-repeat: repeat-x;
+  background-position: center;
+
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 9999px;
+    background: var(--background);
+  }
+  &::before {
+    left: -14px;
+  }
+  &::after {
+    right: -14px;
+  }
+}
+
+@keyframes arc-drift {
+  to {
+    stroke-dashoffset: -240;
   }
 }
