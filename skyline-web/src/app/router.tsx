@@ -2,7 +2,7 @@ import { createBrowserRouter, type RouteObject } from 'react-router'
 
 import { RedirectIfAuthenticated, RequireAuth, RequireRole } from '@/auth/guards'
 import { AppShell } from '@/components/layout/app-shell'
-import { OpsShell, type Crumb } from '@/components/layout/ops-shell'
+import type { Crumb } from '@/components/layout/ops-shell'
 import { BootFallback, RootLayout } from './root-layout'
 
 /** Every screen is a lazy route module exporting `Component`, so each loads as its own chunk. */
@@ -63,7 +63,8 @@ const routes: RouteObject[] = [
         element: <RequireRole roles={['STAFF', 'ADMIN']} />,
         children: [
           {
-            element: <OpsShell />,
+            // The console chrome loads with the first ops page, never for passengers.
+            lazy: async () => ({ Component: (await import('@/components/layout/ops-shell')).OpsShell }),
             handle: crumb('Ops'),
             children: [
               {

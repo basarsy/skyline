@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { bookableFlight, freshApp, register, uniqueEmail } from './support'
+import { bookableFlight, bookViaApi, freshApp, live, register, uniqueEmail } from './support'
 
 /** The popover that is currently open (a closing one may still be animating out). */
 function openPopover(page: Page) {
@@ -24,6 +24,7 @@ async function pickAirport(page: Page, label: string, iata: string) {
 }
 
 test('register, search, book, check in and get a boarding pass', async ({ page, request }) => {
+  test.slow()
   const flight = await bookableFlight(request, 24)
   await freshApp(page)
   await register(page, uniqueEmail('pax'))
@@ -34,7 +35,17 @@ test('register, search, book, check in and get a boarding pass', async ({ page, 
   await pickAirport(page, 'To', 'LHR')
   await page.goto(`/flights?from=IST&to=LHR&date=${flight.date}&cabin=ECONOMY`)
   await expect(page).toHaveURL(new RegExp(`from=IST&to=LHR&date=${flight.date}`))
-  await page.getByRole('link', { name: `Select flight ${flight.flightNumber}` }).click()
+  // The live stack may hold many flights that day: load more until ours is listed.
+  const select = page.getByRole('link', { name: `Select flight ${flight.flightNumber}` })
+  await expect(page.getByRole('heading', { name: /\d+ flights? from IST to LHR/ })).toBeVisible()
+  const loadMore = page.getByRole('button', { name: 'Load more' })
+  for (let i = 0; i < 50 && !(await select.isVisible()); i += 1) {
+    if (!(await loadMore.isVisible())) break
+    // While a page is loading the button is disabled; wait instead of clicking.
+    if (await loadMore.isEnabled()) await loadMore.click()
+    else await page.waitForTimeout(250)
+  }
+  await select.click()
 
   // Cabin → Passenger → Review
   await expect(page.getByRole('heading', { name: 'Choose your cabin' })).toBeVisible()
@@ -57,7 +68,8 @@ test('register, search, book, check in and get a boarding pass', async ({ page, 
   await expect(page.getByRole('heading', { name: 'You’re booked.' })).toBeVisible()
   const pnr = (await page.locator('.font-mono.tracking-\\[0\\.18em\\]').first().textContent())!.trim()
   expect(pnr).toMatch(/^[A-HJ-NP-Z2-9]{6}$/)
-  await expect(page.getByLabel(/^Total €/)).toBeVisible()
+  await expect(page.getByText('Total', { exact: true })).toBeVisible()
+  await expect(page.getByText(/^€\d[\d,]*\.\d{2}$/).first()).toBeAttached()
 
   // My trips shows it; check in from there.
   await page.goto('/trips')
@@ -79,62 +91,39 @@ test('register, search, book, check in and get a boarding pass', async ({ page, 
 })
 
 test('a flight more than 48h away shows the countdown, and cancelling frees the seat', async ({ page, request }) => {
-  await bookableFlight(request, 24)
+  // Live: a fresh IST → LHR flight 96h out. Mocked: the seeded SK201 (LHR → JFK, 96h out).
+  const flight = live ? await bookableFlight(request, 96) : { id: 'f0000000-0000-4000-8000-000000000003' }
   await freshApp(page)
   await register(page, uniqueEmail('later'))
-  // The mocked back-end seeds SK201 (LHR → JFK) 96h out.
-  const date = new Date(Date.now() + 96 * 3_600_000).toISOString().slice(0, 10)
-  await page.goto(`/flights?from=LHR&to=JFK&date=${date}&cabin=ECONOMY`)
-  test.skip(!!process.env.E2E_LIVE, 'Uses the mocked LHR → JFK flight')
-  const seatsBefore = await page.evaluate(
-    async () =>
-      (
-        (await (await fetch('/api/v1/flights/f0000000-0000-4000-8000-000000000003')).json()) as {
-          data: { availableSeats: number }
-        }
-      ).data.availableSeats,
-  )
-  await page
-    .getByRole('link', { name: /Select flight/ })
-    .first()
-    .click()
-  await page.getByRole('button', { name: 'Continue' }).first().click()
-  await page.getByLabel('First name').fill('Grace')
-  await page.getByLabel('Last name').fill('Hopper')
-  await page.getByLabel('Passport number').fill('P7654321')
-  await pickBirthDate(page, '1985')
-  await page.getByRole('combobox', { name: 'Nationality' }).click()
-  await openPopover(page).getByPlaceholder('Search countries').fill('Türk')
-  await openPopover(page).getByRole('option').first().click()
-  await page.getByRole('button', { name: 'Review booking' }).first().click()
-  await page.getByRole('button', { name: 'Confirm booking' }).first().click()
-  await expect(page.getByText(/Check-in opens in/)).toBeVisible()
+  const seats = async () =>
+    page.evaluate(
+      async (id) =>
+        ((await (await fetch(`/api/v1/flights/${id}`)).json()) as { data: { availableSeats: number } }).data
+          .availableSeats,
+      flight.id,
+    )
+  const seatsBefore = await seats()
+  const booking = await bookViaApi(page, flight.id, 'Hopper')
+  expect(await seats()).toBe(seatsBefore - 1)
 
-  await page.getByRole('link', { name: 'View trip' }).click()
-  await expect(page).toHaveURL(/\/trips\//)
-  const tripUrl = page.url()
+  await page.goto(`/trips/${booking.id}`)
+  await expect(page.getByRole('button', { name: 'Cancel booking' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Check in' })).toHaveCount(0)
-  const pnr = (await page.locator('.font-mono.tracking-\\[0\\.18em\\]').first().textContent())!.trim()
-  await page.goto(`/checkin/${pnr}`)
+
+  await page.goto(`/checkin/${booking.pnr}`)
+  await expect(page.getByRole('heading', { name: 'Check-in opens in' })).toBeVisible()
   await expect(page.getByRole('timer')).toBeVisible()
 
-  await page.goto(tripUrl)
+  await page.goto(`/trips/${booking.id}`)
   await page.getByRole('button', { name: 'Cancel booking' }).click()
   const dialog = page.getByRole('alertdialog')
-  await expect(dialog).toContainText(pnr)
+  await expect(dialog).toContainText(booking.pnr)
   await dialog.getByRole('button', { name: 'Cancel booking' }).click()
+  await expect(dialog).toBeHidden()
   await expect(page.getByText('Cancelled').first()).toBeVisible()
   await expect(page.getByRole('button', { name: 'Cancel booking' })).toHaveCount(0)
-  // The seat went back: the flight's availableSeats is back to where it was before booking.
-  const flight = await page.evaluate(
-    async () =>
-      (
-        (await (await fetch('/api/v1/flights/f0000000-0000-4000-8000-000000000003')).json()) as {
-          data: { availableSeats: number }
-        }
-      ).data.availableSeats,
-  )
-  expect(flight).toBe(Number(seatsBefore))
+  // The seat went back.
+  await expect.poll(seats).toBe(seatsBefore)
 })
 
 test('booking works with the keyboard only', async ({ page }) => {

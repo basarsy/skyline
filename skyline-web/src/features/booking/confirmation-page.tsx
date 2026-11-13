@@ -1,4 +1,4 @@
-import { motion } from 'motion/react'
+import * as m from 'motion/react-m'
 import { CalendarPlus, Clock3 } from 'lucide-react'
 import { Link, useParams } from 'react-router'
 
@@ -10,35 +10,36 @@ import { PriceTag } from '@/components/skyline/price-tag'
 import { ErrorState, LoadingRegion, SkeletonCard } from '@/components/skyline/states'
 import { Button } from '@/components/ui/button'
 import { checkinWindow } from '@/lib/checkin-window'
-import { useDocumentTitle } from '@/lib/hooks'
+import { useDocumentTitle, usePrefersReducedMotion } from '@/lib/hooks'
 import { downloadIcs } from '@/lib/ics'
 import { cabinLabel } from '@/lib/labels'
 import { useReservation } from '@/features/trips/queries'
 
 /** A drawn check mark; with reduced motion it simply appears. */
 function SuccessMark() {
+  const reduce = usePrefersReducedMotion()
   return (
-    <motion.svg
+    <m.svg
       viewBox="0 0 72 72"
       className="size-[72px] text-foreground"
       aria-hidden
-      initial={{ scale: 0.8, opacity: 0 }}
+      initial={reduce ? false : { scale: 0.8, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       transition={{ type: 'spring', stiffness: 320, damping: 22 }}
     >
       <circle cx="36" cy="36" r="34" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.15" />
-      <motion.path
+      <m.path
         d="M22 37.5 31.5 47 50 27"
         fill="none"
         stroke="currentColor"
         strokeWidth="4"
         strokeLinecap="round"
         strokeLinejoin="round"
-        initial={{ pathLength: 0 }}
+        initial={reduce ? false : { pathLength: 0 }}
         animate={{ pathLength: 1 }}
         transition={{ duration: 0.45, delay: 0.15, ease: 'easeOut' }}
       />
-    </motion.svg>
+    </m.svg>
   )
 }
 

@@ -6,10 +6,8 @@ import { networkApi } from '@/api/endpoints/network'
 import { networkKeys } from '@/api/query-keys'
 import type { AirportResponse } from '@/api/types'
 import { STATIC_STALE_TIME } from '@/app/query-client'
-import { Calendar } from '@/components/ui/calendar'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/cn'
-import { formatLocalDate, isoFromLocalDate, localDateFromIso } from '@/lib/format'
+import { formatLocalDate } from '@/lib/format'
 import { Combobox, type ComboboxOption } from './combobox'
 
 type ControlAria = { id?: string; 'aria-invalid'?: true | undefined; 'aria-describedby'?: string | undefined }
@@ -142,23 +140,7 @@ export function TimezoneCombobox(
   )
 }
 
-/**
- * Date picker for LocalDate values ("yyyy-MM-dd"), without zone conversion. `note` renders under the
- * calendar (e.g. "Dates are in UTC" for search).
- */
-export function DatePicker({
-  value,
-  onChange,
-  disablePast,
-  disableFuture,
-  note,
-  placeholder = 'Pick a date',
-  variant = 'field',
-  captionLayout,
-  fromYear,
-  toYear,
-  ...aria
-}: {
+export interface DatePickerProps extends ControlAria {
   value: string | null | undefined
   onChange: (value: string) => void
   disablePast?: boolean
@@ -169,50 +151,65 @@ export function DatePicker({
   captionLayout?: 'label' | 'dropdown'
   fromYear?: number
   toYear?: number
-} & ControlAria) {
-  const [open, setOpen] = React.useState(false)
-  const selected = value ? localDateFromIso(value) : undefined
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+}
 
+export function dateTriggerClass(variant: DatePickerProps['variant']) {
+  return cn(
+    'flex h-12 w-full cursor-pointer items-center gap-3 border border-transparent bg-elevated px-4 text-left text-base focus-ring transition-colors outline-none hover:border-border data-[invalid=true]:border-destructive',
+    variant === 'pill' ? 'rounded-full' : 'rounded-input',
+  )
+}
+
+export function DateTriggerContent({ value, placeholder }: { value: string | null | undefined; placeholder: string }) {
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          {...aria}
-          className={cn(
-            'flex h-12 w-full cursor-pointer items-center gap-3 border border-transparent bg-elevated px-4 text-left text-base focus-ring transition-colors outline-none hover:border-border aria-invalid:border-destructive',
-            variant === 'pill' ? 'rounded-full' : 'rounded-input',
-          )}
-        >
-          <CalendarDays className="size-[18px] shrink-0 text-muted-foreground" strokeWidth={1.75} aria-hidden />
-          <span className={cn('truncate tabular', !value && 'text-muted-foreground')}>
-            {value ? formatLocalDate(value, 'EEE d MMM yyyy') : placeholder}
-          </span>
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-auto p-3">
-        <Calendar
-          mode="single"
-          selected={selected}
-          defaultMonth={selected}
-          captionLayout={captionLayout}
-          startMonth={fromYear ? new Date(fromYear, 0) : undefined}
-          endMonth={toYear ? new Date(toYear, 11) : undefined}
-          onSelect={(date) => {
-            if (date) {
-              onChange(isoFromLocalDate(date))
-              setOpen(false)
-            }
-          }}
-          disabled={[
-            ...(disablePast ? [{ before: today }] : []),
-            ...(disableFuture ? [{ after: new Date(today.getTime() - 86_400_000) }] : []),
-          ]}
-        />
-        {note && <p className="px-2 pt-2 pb-1 text-caption text-muted-foreground">{note}</p>}
-      </PopoverContent>
-    </Popover>
+    <>
+      <CalendarDays className="size-[18px] shrink-0 text-muted-foreground" strokeWidth={1.75} aria-hidden />
+      <span className={cn('truncate tabular', !value && 'text-muted-foreground')}>
+        {value ? formatLocalDate(value, 'EEE d MMM yyyy') : placeholder}
+      </span>
+    </>
+  )
+}
+
+const loadDatePicker = () => import('./date-picker-impl')
+const DatePickerImpl = React.lazy(() => loadDatePicker().then((module) => ({ default: module.DatePickerImpl })))
+
+/**
+ * Date picker for LocalDate values ("yyyy-MM-dd"), without zone conversion. The note renders under the
+ * calendar (e.g. "Dates are in UTC" for search). Like Combobox, it renders a static trigger until the user
+ * reaches for it; the popover and calendar load on hover or focus.
+ */
+export function DatePicker(props: DatePickerProps) {
+  const { value, placeholder = 'Pick a date', variant = 'field', id } = props
+  const [active, setActive] = React.useState<{ open: boolean; focus: boolean } | null>(null)
+  const staticTrigger = (
+    <button
+      id={id}
+      type="button"
+      // Buttons can't carry aria-invalid; the error text is linked through aria-describedby.
+      data-invalid={props['aria-invalid']}
+      aria-describedby={props['aria-describedby']}
+      className={dateTriggerClass(variant)}
+      onPointerEnter={() => void loadDatePicker()}
+      onFocus={() => {
+        void loadDatePicker()
+        setActive((current) => current ?? { open: false, focus: true })
+      }}
+      // Open on press, and stop the browser from moving focus: the real trigger replaces this one
+      // mid-press, and a focus landing on the removed node would close the popover again.
+      onMouseDown={(event) => {
+        event.preventDefault()
+        setActive({ open: true, focus: true })
+      }}
+      onClick={() => setActive({ open: true, focus: true })}
+    >
+      <DateTriggerContent value={value} placeholder={placeholder} />
+    </button>
+  )
+  if (!active) return staticTrigger
+  return (
+    <React.Suspense fallback={staticTrigger}>
+      <DatePickerImpl {...props} defaultOpen={active.open} takeFocus={active.focus && !active.open} />
+    </React.Suspense>
   )
 }

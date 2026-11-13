@@ -1,7 +1,7 @@
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it } from 'vitest'
 
-import { getAccessToken, getAuthState, REFRESH_TOKEN_KEY, setTokens } from '@/auth/auth-store'
+import { getAccessToken, getAuthState, REFRESH_TOKEN_KEY, refreshSession, setTokens } from '@/auth/auth-store'
 import { fakeJwt } from '@/test/fixtures'
 import { fail, ok } from '@/test/handlers'
 import { server } from '@/test/server'
@@ -146,6 +146,33 @@ describe('authentication and refresh', () => {
     expect(getAuthState().status).toBe('anonymous')
     expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBeNull()
   })
+
+  it('retries a refresh that failed transiently instead of logging out', async () => {
+    const fresh = fakeJwt(user)
+    let attempts = 0
+    server.use(
+      http.post('*/api/v1/auth/refresh', () => {
+        attempts += 1
+        return attempts === 1
+          ? new HttpResponse('Bad gateway', { status: 502 })
+          : ok({ accessToken: fresh, refreshToken: 'rt-2', tokenType: 'Bearer', expiresIn: 900 })
+      }),
+    )
+    localStorage.setItem(REFRESH_TOKEN_KEY, 'rt-1')
+
+    await expect(refreshSession()).resolves.toBe(true)
+    expect(attempts).toBe(2)
+    expect(getAccessToken()).toBe(fresh)
+  })
+
+  it('keeps the refresh token when the server stays unreachable', async () => {
+    server.use(http.post('*/api/v1/auth/refresh', () => HttpResponse.error()))
+    localStorage.setItem(REFRESH_TOKEN_KEY, 'rt-keep')
+
+    await expect(refreshSession()).resolves.toBe(false)
+    expect(getAuthState().status).toBe('anonymous')
+    expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBe('rt-keep')
+  }, 10_000)
 
   it('does not try to refresh after a failed login', async () => {
     let refreshCalls = 0

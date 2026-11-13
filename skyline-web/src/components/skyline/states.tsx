@@ -1,12 +1,14 @@
 import type * as React from 'react'
-import { motion } from 'motion/react'
+import * as m from 'motion/react-m'
 import { CloudOff, Lock, RotateCw, SearchX } from 'lucide-react'
-import { Link } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 
 import { isApiError } from '@/api/http'
+import { logout } from '@/auth/session'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/cn'
+import { usePrefersReducedMotion } from '@/lib/hooks'
 
 interface StateProps {
   icon?: React.ReactNode
@@ -78,19 +80,27 @@ export function ErrorState({
 
 /** Full-page "no access" (403) with a way back. */
 export function ForbiddenState({ className }: { className?: string }) {
+  const navigate = useNavigate()
+  const location = useLocation()
   return (
     <StateFrame
       className={cn('mx-auto my-16 max-w-xl', className)}
       icon={<Lock strokeWidth={1.75} aria-hidden />}
-      title="You don't have access"
+      title="You don’t have access"
       description="This area needs a different account. Go back, or log in with an account that has access."
       action={
         <>
           <Button asChild variant="outline">
             <Link to="/">Back to home</Link>
           </Button>
-          <Button asChild>
-            <Link to="/login">Switch account</Link>
+          <Button
+            onClick={() => {
+              // /login sends logged-in users away, so log out first; come back here after.
+              logout()
+              navigate(`/login?next=${encodeURIComponent(location.pathname)}`)
+            }}
+          >
+            Switch account
           </Button>
         </>
       }
@@ -136,14 +146,16 @@ export function Stagger({
   children: React.ReactNode
   className?: string
 }) {
+  const reduce = usePrefersReducedMotion()
   return (
-    <motion.div
+    <m.div
       className={className}
-      initial={{ opacity: 0, y: 8 }}
+      // Reduced motion: no fade, no slide; render the final state.
+      initial={reduce ? false : { opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: 'spring', stiffness: 420, damping: 36, delay: Math.min(index, 10) * 0.04 }}
     >
       {children}
-    </motion.div>
+    </m.div>
   )
 }

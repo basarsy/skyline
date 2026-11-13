@@ -22,7 +22,7 @@ export function uniqueEmail(prefix: string) {
 
 /** Opens the app with a fresh mocked back-end (no-op against the live stack). */
 export async function freshApp(page: Page, path = '/') {
-  await page.goto(path)
+  await gotoStable(page, path)
   if (!live) {
     await page.evaluate(() => {
       ;(window as unknown as { __skylineResetMocks?: () => void }).__skylineResetMocks?.()
@@ -32,8 +32,19 @@ export async function freshApp(page: Page, path = '/') {
   }
 }
 
+/** page.goto that retries once when a concurrent navigation aborts it (net::ERR_ABORTED). */
+export async function gotoStable(page: Page, path: string) {
+  try {
+    await page.goto(path)
+  } catch (error) {
+    if (!/ERR_ABORTED|interrupted by another navigation/.test(String(error))) throw error
+    await page.waitForLoadState()
+    await page.goto(path)
+  }
+}
+
 export async function logIn(page: Page, email: string, password: string) {
-  await page.goto('/login')
+  await gotoStable(page, '/login')
   await page.getByLabel('Email').fill(email)
   await page.getByLabel('Password', { exact: true }).fill(password)
   await page.getByRole('button', { name: 'Log in' }).click()
@@ -119,4 +130,36 @@ export async function bookableFlight(
   })
   expect(flight.ok(), await flight.text()).toBeTruthy()
   return { id: ((await flight.json()) as { data: { id: string } }).data.id, flightNumber, date: departure.slice(0, 10) }
+}
+
+/** Books the flight through the API as the logged-in passenger (the booking UI has its own spec). */
+export async function bookViaApi(page: Page, flightId: string, lastName: string) {
+  return page.evaluate(
+    async ({ flightId, lastName }) => {
+      const refresh = localStorage.getItem('skyline.rt')
+      const auth = await fetch('/api/v1/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: refresh }),
+      }).then((r) => r.json() as Promise<{ data: { accessToken: string; refreshToken: string } }>)
+      localStorage.setItem('skyline.rt', auth.data.refreshToken)
+      const booking = await fetch('/api/v1/reservations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.data.accessToken}` },
+        body: JSON.stringify({
+          flightId,
+          cabinClass: 'ECONOMY',
+          passenger: {
+            firstName: 'Ada',
+            lastName,
+            passportNumber: 'U12345678',
+            dateOfBirth: '1990-05-14',
+            nationality: 'United Kingdom',
+          },
+        }),
+      }).then((r) => r.json() as Promise<{ data: { id: string; pnr: string } }>)
+      return booking.data
+    },
+    { flightId, lastName },
+  )
 }

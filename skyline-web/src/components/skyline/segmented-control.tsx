@@ -1,8 +1,9 @@
 import * as React from 'react'
-import { motion } from 'motion/react'
+import * as m from 'motion/react-m'
 import { RadioGroup } from 'radix-ui'
 
 import { cn } from '@/lib/cn'
+import { usePrefersReducedMotion } from '@/lib/hooks'
 
 interface Option<T extends string> {
   value: T
@@ -32,6 +33,7 @@ export function SegmentedControl<T extends string>({
   size = 'default',
 }: SegmentedControlProps<T>) {
   const layoutId = React.useId()
+  const reduce = usePrefersReducedMotion()
   return (
     <RadioGroup.Root
       value={value}
@@ -53,8 +55,8 @@ export function SegmentedControl<T extends string>({
             )}
           >
             {active && (
-              <motion.span
-                layoutId={layoutId}
+              <m.span
+                layoutId={reduce ? undefined : layoutId}
                 aria-hidden
                 className="absolute inset-0 rounded-full bg-primary"
                 transition={{ type: 'spring', stiffness: 500, damping: 40 }}

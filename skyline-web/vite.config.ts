@@ -27,24 +27,34 @@ export default defineConfig(({ mode }) => {
   // Where the dev server forwards /api. The browser always calls a relative /api/v1 (same origin, no
   // preflight); only this proxy knows the gateway's address.
   const gateway = env.SKYLINE_GATEWAY_URL || 'http://localhost:8000'
+  // The proxy makes API calls same-origin, so drop the browser's Origin header: with changeOrigin the
+  // gateway would otherwise see a cross-origin request from whatever host the dev server runs on.
+  const apiProxy = {
+    target: gateway,
+    changeOrigin: true,
+    configure: (proxy: {
+      on: (event: 'proxyReq', fn: (req: { removeHeader: (name: string) => void }) => void) => void
+    }) => {
+      proxy.on('proxyReq', (req) => req.removeHeader('origin'))
+    },
+  }
 
   return {
     plugins: [react(), tailwindcss(), ...(mode === 'msw' ? [mockServiceWorker()] : [])],
     resolve: {
       alias: { '@': path.resolve(import.meta.dirname, 'src') },
     },
+    // Pre-bundle every dependency the lazy routes use at startup, so the dev server never re-optimizes
+    // and reloads the page when a route is first visited.
+    optimizeDeps: { entries: ['index.html', 'src/**/*.{ts,tsx}', '!src/**/*.test.{ts,tsx}'] },
     server: {
       port: 5173,
       strictPort: true,
-      proxy: {
-        '/api': { target: gateway, changeOrigin: true },
-      },
+      proxy: { '/api': apiProxy },
     },
     preview: {
       port: 4173,
-      proxy: {
-        '/api': { target: gateway, changeOrigin: true },
-      },
+      proxy: { '/api': apiProxy },
     },
     build: {
       target: 'es2022',

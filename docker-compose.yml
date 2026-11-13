@@ -357,6 +357,20 @@ services:
       - checkin-service
       - crew-service
 
+  # ──────────────────────────────────────────────────────────────
+  # Web front-end (nginx: the built SPA, /api proxied to the gateway)
+  # ──────────────────────────────────────────────────────────────
+  web:
+    build:
+      context: ./skyline-web
+    container_name: skyline-web
+    ports:
+      - "5173:80"
+    environment:
+      SKYLINE_GATEWAY_URL: http://gateway-service:8000
+    depends_on:
+      - gateway-service
+
 volumes:
   auth_pg_data:
   fleet_pg_data:

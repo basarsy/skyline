@@ -1,7 +1,8 @@
 import * as React from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { AnimatePresence, motion } from 'motion/react'
+import { AnimatePresence } from 'motion/react'
+import * as m from 'motion/react-m'
 import { ArrowLeft, ArrowRight, Check } from 'lucide-react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
@@ -24,7 +25,7 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/cn'
 import { isBookable } from '@/lib/flight-status'
 import { formatLocalDate, isoFromLocalDate } from '@/lib/format'
-import { useDocumentTitle } from '@/lib/hooks'
+import { useDocumentTitle, usePrefersReducedMotion } from '@/lib/hooks'
 import { cabinLabel, CABINS } from '@/lib/labels'
 import { cabinMultiplierCopy, estimatePrice } from '@/lib/pricing'
 import { useFlight } from '@/features/search/queries'
@@ -210,6 +211,7 @@ export function Component() {
     },
   })
   const { errors, submitCount } = form.formState
+  const reduceMotion = usePrefersReducedMotion()
   const values = useWatch({ control: form.control }) as PassengerValues
 
   const book = useMutation({
@@ -320,6 +322,9 @@ export function Component() {
   return (
     <Page className="flex flex-col gap-8 pb-40 md:pb-12">
       <div className="flex flex-col gap-4">
+        <h1 className="text-h2 font-semibold sm:text-h1">
+          {flight.route ? `${flight.route.origin.city} to ${flight.route.destination.city}` : 'Book your flight'}
+        </h1>
         <div className="flex flex-wrap items-center gap-3 text-sm">
           <RouteLabel route={flight.route} />
           <span className="text-muted-foreground">
@@ -333,11 +338,11 @@ export function Component() {
       <div className="grid gap-8 lg:grid-cols-[1fr_360px]">
         <div ref={headingRef} className="min-w-0">
           <AnimatePresence mode="wait" initial={false}>
-            <motion.div
+            <m.div
               key={step}
-              initial={{ opacity: 0, x: 16 }}
+              initial={reduceMotion ? false : { opacity: 0, x: 16 }}
               animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -16 }}
+              exit={reduceMotion ? undefined : { opacity: 0, x: -16 }}
               transition={{ type: 'spring', stiffness: 420, damping: 38 }}
             >
               {step === 0 && <CabinStep flight={flight} cabin={cabin} onChange={setCabin} />}
@@ -445,7 +450,7 @@ export function Component() {
                   )}
                 </section>
               )}
-            </motion.div>
+            </m.div>
           </AnimatePresence>
 
           <div className="mt-8 hidden items-center justify-between gap-3 md:flex">

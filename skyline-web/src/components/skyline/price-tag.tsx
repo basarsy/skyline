@@ -24,10 +24,8 @@ export function PriceTag({ amount, currency, size = 'inline', label, className }
   return (
     <span className={cn('inline-flex flex-col', className)}>
       {label && <span className="mb-2 micro-label">{label}</span>}
-      <span
-        className={cn('hero-number', size === 'hero' ? 'text-display-sm sm:text-display' : 'text-h1')}
-        aria-label={`${label ? `${label} ` : ''}${formatMoney(amount, currency)}`}
-      >
+      <span className={cn('hero-number', size === 'hero' ? 'text-display-sm sm:text-display' : 'text-h1')}>
+        <span className="sr-only">{formatMoney(amount, currency)}</span>
         <span aria-hidden>{main.map((part) => part.value).join('')}</span>
         <span aria-hidden className="text-[0.5em] text-muted-foreground">
           {fraction.map((part) => part.value).join('')}

@@ -2,6 +2,7 @@ import { http, HttpResponse, type JsonBodyType } from 'msw'
 
 import type {
   AircraftResponse,
+  AircraftTypeResponse,
   AirportResponse,
   BoardingPassResponse,
   CrewMemberResponse,
@@ -44,6 +45,7 @@ interface Db {
   airports: AirportResponse[]
   routes: RouteResponse[]
   aircraft: AircraftResponse[]
+  aircraftTypes: AircraftTypeResponse[]
   flights: FlightResponse[]
   reservations: ReservationResponse[]
   passes: Map<string, BoardingPassResponse>
@@ -104,6 +106,7 @@ function freshDb(): Db {
     airports: structuredClone(seedAirports),
     routes: structuredClone(seedRoutes),
     aircraft: structuredClone(seedAircraft),
+    aircraftTypes: structuredClone(aircraftTypes),
     flights: seedFlights(),
     reservations: [],
     passes: new Map(),
@@ -342,7 +345,7 @@ export const handlers = [
     const tail = body.tailNumber.toUpperCase()
     if (db.aircraft.some((a) => a.tailNumber === tail))
       return fail(409, 'Aircraft with this tail number already exists')
-    const { cabinConfig: _config, ...type } = aircraftTypes.find((t) => t.id === body.aircraftTypeId)!
+    const { cabinConfig: _config, ...type } = db.aircraftTypes.find((t) => t.id === body.aircraftTypeId)!
     const created: AircraftResponse = {
       id: uuid(),
       tailNumber: tail,
@@ -362,7 +365,15 @@ export const handlers = [
     target.status = body.status
     return ok(target, 'Aircraft status updated')
   }),
-  http.get(`${API}/aircraft-types`, ({ request }) => guard(request, ['STAFF', 'ADMIN']).denied ?? ok(aircraftTypes)),
+  http.get(`${API}/aircraft-types`, ({ request }) => guard(request, ['STAFF', 'ADMIN']).denied ?? ok(db.aircraftTypes)),
+  http.post(`${API}/aircraft-types`, async ({ request }) => {
+    const { denied } = guard(request, ['ADMIN'])
+    if (denied) return denied
+    const body = (await request.json()) as Omit<AircraftTypeResponse, 'id'>
+    const type: AircraftTypeResponse = { ...body, id: uuid(), cabinConfig: body.cabinConfig ?? null }
+    db.aircraftTypes.push(type)
+    return ok(type, 'Aircraft type created successfully', 201)
+  }),
 
   // ---- flights
   http.get(`${API}/flights/board`, ({ request }) => {

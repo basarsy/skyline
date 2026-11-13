@@ -1,17 +1,15 @@
 import * as React from 'react'
-import { CircleUser, LayoutDashboard, LogIn, LogOut, Plane, Search, Ticket, UserPlus } from 'lucide-react'
-import { Link, NavLink, Outlet, useNavigate } from 'react-router'
+import { CircleUser, Plane, Search, Ticket } from 'lucide-react'
+import { Link, NavLink, Outlet } from 'react-router'
 
 import { useAuth } from '@/auth/use-auth'
 import { Wordmark } from '@/components/skyline/brand'
-import { ResponsiveSheet } from '@/components/skyline/responsive-sheet'
-import { SegmentedControl } from '@/components/skyline/segmented-control'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/cn'
-import { userRoleLabel } from '@/lib/labels'
-import { useTheme, type ThemePreference } from '@/lib/theme'
-import { Avatar, THEME_OPTIONS, ThemeToggle, UserMenu } from './user-menu'
+import { ThemeToggle } from './theme-toggle'
+
+/** The account menu (Radix dropdown) loads only for logged-in users. */
+const UserMenu = React.lazy(() => import('./user-menu').then((module) => ({ default: module.UserMenu })))
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   cn(
@@ -46,7 +44,9 @@ function PublicHeader() {
           {isLoading ? (
             <span className="size-11" aria-hidden />
           ) : isAuthenticated ? (
-            <UserMenu />
+            <React.Suspense fallback={<span className="size-11" aria-hidden />}>
+              <UserMenu />
+            </React.Suspense>
           ) : (
             <>
               <ThemeToggle />
@@ -67,76 +67,13 @@ const tabClass = ({ isActive }: { isActive: boolean }) =>
     isActive ? 'text-foreground' : 'text-muted-foreground',
   )
 
-/** Account sheet behind the mobile tab bar's fourth tab. */
-function AccountSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const { user, isStaff, logout } = useAuth()
-  const { preference, setPreference } = useTheme()
-  const navigate = useNavigate()
-  const go = (to: string) => {
-    onOpenChange(false)
-    navigate(to)
-  }
-  return (
-    <ResponsiveSheet open={open} onOpenChange={onOpenChange} title="Account">
-      <div className="flex flex-col gap-6">
-        {user ? (
-          <div className="flex items-center gap-3">
-            <Avatar email={user.email} className="size-11" />
-            <div className="flex min-w-0 flex-col gap-1">
-              <span className="truncate font-medium">{user.email}</span>
-              <Badge variant="outline">{userRoleLabel[user.role]}</Badge>
-            </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-3">
-            <Button onClick={() => go('/login')}>
-              <LogIn strokeWidth={1.75} aria-hidden />
-              Log in
-            </Button>
-            <Button variant="outline" onClick={() => go('/register')}>
-              <UserPlus strokeWidth={1.75} aria-hidden />
-              Sign up
-            </Button>
-          </div>
-        )}
-        <div className="flex flex-col gap-3">
-          <span className="micro-label">Theme</span>
-          <SegmentedControl
-            label="Theme"
-            value={preference}
-            onValueChange={(value) => setPreference(value as ThemePreference)}
-            options={THEME_OPTIONS.map(({ value, label }) => ({ value, label }))}
-            className="w-full"
-          />
-        </div>
-        {user && (
-          <div className="flex flex-col gap-3">
-            {isStaff && (
-              <Button variant="outline" onClick={() => go('/ops/flights')}>
-                <LayoutDashboard strokeWidth={1.75} aria-hidden />
-                Ops console
-              </Button>
-            )}
-            <Button
-              variant="outline"
-              onClick={() => {
-                logout()
-                go('/')
-              }}
-            >
-              <LogOut strokeWidth={1.75} aria-hidden />
-              Log out
-            </Button>
-          </div>
-        )}
-      </div>
-    </ResponsiveSheet>
-  )
-}
+/** Loaded the first time the Account tab is opened (it pulls in the drawer). */
+const AccountSheet = React.lazy(() => import('./account-sheet'))
 
 /** Frosted bottom tab bar on mobile: Book / Trips / Check-in / Account. */
 function MobileTabBar() {
   const [accountOpen, setAccountOpen] = React.useState(false)
+  const [accountRequested, setAccountRequested] = React.useState(false)
   const iconProps = { strokeWidth: 1.75, 'aria-hidden': true, className: 'size-[22px]' } as const
   return (
     <>
@@ -159,7 +96,10 @@ function MobileTabBar() {
           </NavLink>
           <button
             type="button"
-            onClick={() => setAccountOpen(true)}
+            onClick={() => {
+              setAccountRequested(true)
+              setAccountOpen(true)
+            }}
             className={tabClass({ isActive: accountOpen })}
             aria-haspopup="dialog"
           >
@@ -168,7 +108,11 @@ function MobileTabBar() {
           </button>
         </div>
       </nav>
-      <AccountSheet open={accountOpen} onOpenChange={setAccountOpen} />
+      {accountRequested && (
+        <React.Suspense fallback={null}>
+          <AccountSheet open={accountOpen} onOpenChange={setAccountOpen} />
+        </React.Suspense>
+      )}
     </>
   )
 }

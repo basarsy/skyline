@@ -36,11 +36,7 @@ function TripCard({ reservation }: { reservation: ReservationResponse }) {
   return (
     <article className="flex flex-col gap-5 rounded-card border border-border bg-card p-5 sm:p-6">
       <div className="flex items-start justify-between gap-4">
-        <Link
-          to={`/trips/${reservation.id}`}
-          className="group -m-1 flex flex-col gap-2 rounded-2xl p-1 focus-ring"
-          aria-label={`Trip ${flight?.route ? `${flight.route.origin.iataCode} to ${flight.route.destination.iataCode}` : ''}, booking ${reservation.pnr}`}
-        >
+        <Link to={`/trips/${reservation.id}`} className="group -m-1 flex flex-col gap-2 rounded-2xl p-1 focus-ring">
           <span className="flex items-center gap-3 hero-number text-[2rem] sm:text-[2.5rem]">
             {flight?.route?.origin.iataCode ?? '—'}
             <Plane className="size-5 text-muted-foreground" strokeWidth={1.75} aria-hidden />

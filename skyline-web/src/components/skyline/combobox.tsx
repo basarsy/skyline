@@ -1,8 +1,6 @@
 import * as React from 'react'
-import { Check, ChevronsUpDown } from 'lucide-react'
+import { ChevronsUpDown } from 'lucide-react'
 
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/cn'
 
 export interface ComboboxOption {
@@ -17,7 +15,7 @@ export interface ComboboxOption {
   disabledReason?: string
 }
 
-interface ComboboxProps {
+export interface ComboboxProps {
   value: string | null | undefined
   onChange: (value: string | null) => void
   options: readonly ComboboxOption[]
@@ -38,90 +36,92 @@ interface ComboboxProps {
   variant?: 'field' | 'pill'
 }
 
-/** Searchable select: a button that opens a filterable list. Keyboard: type, arrows, Enter, Escape. */
-export function Combobox({
-  value,
-  onChange,
-  options,
-  placeholder = 'Select…',
-  searchPlaceholder = 'Search…',
-  emptyText = 'No matches',
-  onSearch,
-  loading,
-  id,
-  disabled,
-  className,
-  triggerClassName,
+export function triggerClass(variant: ComboboxProps['variant'], extra?: string) {
+  return cn(
+    'flex h-12 w-full min-w-0 cursor-pointer items-center justify-between gap-2 border border-transparent bg-elevated px-4 text-left text-base focus-ring transition-colors outline-none hover:border-border disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive',
+    variant === 'pill' ? 'rounded-full' : 'rounded-input',
+    extra,
+  )
+}
+
+export function TriggerContent({
+  selected,
+  placeholder,
   renderValue,
-  variant = 'field',
-  ...aria
-}: ComboboxProps) {
-  const [open, setOpen] = React.useState(false)
+}: {
+  selected: ComboboxOption | undefined
+  placeholder: string
+  renderValue?: (option: ComboboxOption) => React.ReactNode
+}) {
+  return (
+    <>
+      <span className={cn('min-w-0 flex-1 truncate', !selected && 'text-muted-foreground')}>
+        {selected ? (renderValue?.(selected) ?? selected.label) : placeholder}
+      </span>
+      <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.75} aria-hidden />
+    </>
+  )
+}
+
+const loadImpl = () => import('./combobox-impl')
+const ComboboxImpl = React.lazy(() => loadImpl().then((module) => ({ default: module.ComboboxImpl })))
+
+/**
+ * Searchable select: a button that opens a filterable list (keyboard: type, arrows, Enter, Escape).
+ *
+ * Until the user reaches for it, this renders a static trigger that looks identical; the popover and list
+ * code (Radix Popover, cmdk) loads on hover or focus and takes over, keeping focus and opening on click.
+ * That keeps it out of the initial bundle of pages like Home.
+ */
+export function Combobox(props: ComboboxProps) {
+  const {
+    value,
+    options,
+    placeholder = 'Select…',
+    renderValue,
+    variant = 'field',
+    triggerClassName,
+    id,
+    disabled,
+  } = props
   const listId = React.useId()
+  const [active, setActive] = React.useState<{ open: boolean; focus: boolean } | null>(null)
   const selected = options.find((option) => option.value === value)
 
+  const staticTrigger = (
+    <button
+      id={id}
+      type="button"
+      role="combobox"
+      aria-expanded={false}
+      aria-controls={listId}
+      aria-haspopup="listbox"
+      aria-invalid={props['aria-invalid']}
+      aria-describedby={props['aria-describedby']}
+      disabled={disabled}
+      className={triggerClass(variant, triggerClassName)}
+      onPointerEnter={() => void loadImpl()}
+      onFocus={() => {
+        void loadImpl()
+        setActive((current) => current ?? { open: false, focus: true })
+      }}
+      // Open on press, and stop the browser from moving focus: the real trigger replaces this one
+      // mid-press, and a focus landing on the removed node would close the popover again.
+      onMouseDown={(event) => {
+        event.preventDefault()
+        setActive({ open: true, focus: true })
+      }}
+      onClick={() => setActive({ open: true, focus: true })}
+    >
+      <TriggerContent selected={selected} placeholder={placeholder} renderValue={renderValue} />
+    </button>
+  )
+
+  if (!active) return staticTrigger
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          id={id}
-          type="button"
-          role="combobox"
-          aria-expanded={open}
-          aria-controls={listId}
-          aria-haspopup="listbox"
-          disabled={disabled}
-          {...aria}
-          className={cn(
-            'flex h-12 w-full min-w-0 cursor-pointer items-center justify-between gap-2 border border-transparent bg-elevated px-4 text-left text-base focus-ring transition-colors outline-none hover:border-border disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive',
-            variant === 'pill' ? 'rounded-full' : 'rounded-input',
-            triggerClassName,
-          )}
-        >
-          <span className={cn('min-w-0 flex-1 truncate', !selected && 'text-muted-foreground')}>
-            {selected ? (renderValue?.(selected) ?? selected.label) : placeholder}
-          </span>
-          <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.75} aria-hidden />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        className={cn('w-[min(var(--radix-popover-trigger-width),calc(100vw-2rem))] min-w-72 p-0', className)}
-      >
-        <Command shouldFilter={!onSearch} className="rounded-2xl">
-          <CommandInput placeholder={searchPlaceholder} onValueChange={onSearch} className="h-12 text-base" />
-          <CommandList id={listId} className="max-h-72">
-            <CommandEmpty>{loading ? 'Searching…' : emptyText}</CommandEmpty>
-            <CommandGroup>
-              {options.map((option) => (
-                <CommandItem
-                  key={option.value}
-                  value={option.value}
-                  keywords={[option.label, ...(option.keywords ?? [])]}
-                  disabled={!!option.disabledReason}
-                  onSelect={() => {
-                    onChange(option.value === value ? null : option.value)
-                    setOpen(false)
-                  }}
-                  className="min-h-11 cursor-pointer gap-3 rounded-xl px-3 py-2"
-                >
-                  <div className="min-w-0 flex-1">
-                    {option.render ?? option.label}
-                    {option.disabledReason && (
-                      <div className="mt-0.5 text-caption text-muted-foreground">{option.disabledReason}</div>
-                    )}
-                  </div>
-                  <Check
-                    className={cn('size-4 shrink-0', option.value === value ? 'opacity-100' : 'opacity-0')}
-                    strokeWidth={1.75}
-                    aria-hidden
-                  />
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+    <React.Suspense fallback={staticTrigger}>
+      {/* When opening, Radix moves focus into the popover; only take focus back for a plain focus hand-off. */}
+      <ComboboxImpl {...props} listId={listId} defaultOpen={active.open} takeFocus={active.focus && !active.open} />
+    </React.Suspense>
   )
 }
