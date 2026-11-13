@@ -28,6 +28,9 @@ export const flightKeys = {
   boardAll: ['flights', 'board'] as const,
   board: (params: FlightBoardParams) => ['flights', 'board', params] as const,
   detail: (id: string) => ['flights', 'detail', id] as const,
+  /** One day of the home page's lowest-fare scan (first page, earliest first). */
+  fareDay: (origin: string, destination: string, date: string) =>
+    ['flights', 'fare-day', origin, destination, date] as const,
 }
 
 export const reservationKeys = {

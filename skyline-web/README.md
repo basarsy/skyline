@@ -88,7 +88,7 @@ e2e/            Playwright specs
   shows the server's answer and message.
 - **Bundle:** every screen is a lazy route. Pickers (Radix Popover, cmdk, react-day-picker), the account
   menu, the toaster, motion's animation features, zod for the search form and the PDF417 encoder all load on
-  demand. Initial JS (gzipped, before `load`): `/` 198 kB, `/flights` 198 kB, `/login` 186 kB.
+  demand. Initial JS (gzipped, before `load`): `/` 199 kB, `/flights` 198 kB, `/login` 187 kB.
 
 ## Design system
 
@@ -103,8 +103,13 @@ buttons, 10px cards) and the layout is dense, the way airline sites are.
   (`BandPage`: log in, sign up, manage booking, check-in). `on-band` and `on-footer` remap the semantic tokens
   inside the band and the dark footer, so ordinary components read light-on-dark there without extra classes.
 - The home page leads with a photo (`hero-scrim` darkens it behind the headline) and a tabbed booking box
-  (Flights, Manage booking, Check-in; the last two load on first use). "Where we fly" shows every airport with
-  its photo; airports without one get a `dest-art-0`...`dest-art-5` gradient.
+  (Flights, Manage booking, Check-in; a small WAI-ARIA tabs implementation, and the last two forms load on
+  first use). "Where we fly" shows every airport with its photo (airports without one get a
+  `dest-art-0`...`dest-art-5` gradient) and a "from" price: once the cards scroll into view,
+  `useLowestFares` searches the next 7 days of each direct route (one request per route and day, since search
+  takes a single date) and shows the lowest estimated Economy fare, rounded up to whole units.
+- The logo (`SkylineMark` in `components/skyline/brand.tsx`, and `public/favicon.svg`) is a globe crossed by
+  two rising flight paths, cut out with a mask so it works on any background.
 
 The theme follows the OS by default; logged-in users choose System / Light / Dark in the account menu (visitors
 cycle it from the header). An inline script in `index.html` applies it before first paint.

@@ -1,6 +1,5 @@
 import * as React from 'react'
 import { ArrowRight, CircleUser, Clock3, Luggage, Plane, Smartphone, Ticket, TicketCheck } from 'lucide-react'
-import { Tabs } from 'radix-ui'
 import { Link, useSearchParams } from 'react-router'
 
 import type { AirportResponse, RouteResponse } from '@/api/types'
@@ -8,12 +7,13 @@ import { useAirports } from '@/components/skyline/pickers'
 import { Stagger } from '@/components/skyline/states'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/cn'
-import { formatDuration } from '@/lib/format'
+import { formatDuration, formatMoneyFrom } from '@/lib/format'
 import { useDocumentTitle } from '@/lib/hooks'
 import heroPhoto from '@/assets/photos/hero-wing.webp'
 import istanbulPhoto from '@/assets/photos/istanbul.webp'
 import londonPhoto from '@/assets/photos/london.webp'
 import newYorkPhoto from '@/assets/photos/new-york.webp'
+import { FARE_SCAN_DAYS, useLowestFares, type LowestFare } from './lowest-fares'
 import { useRoutes } from './queries'
 import { SearchCard, type SearchValues } from './search-card'
 
@@ -43,7 +43,26 @@ function FormFallback() {
   return <Skeleton className="h-[136px] rounded-xl" />
 }
 
-/** The booking box: flight search, booking lookup and check-in, as tabs. */
+const iconProps = { className: 'size-4', strokeWidth: 2, 'aria-hidden': true } as const
+
+const BOOKING_TABS: { value: BookingTab; icon: React.ReactNode; label: React.ReactNode }[] = [
+  { value: 'flights', icon: <Plane {...iconProps} />, label: 'Flights' },
+  {
+    value: 'manage',
+    icon: <Ticket {...iconProps} />,
+    label: (
+      <span>
+        Manage<span className="hidden sm:inline"> booking</span>
+      </span>
+    ),
+  },
+  { value: 'checkin', icon: <TicketCheck {...iconProps} />, label: 'Check-in' },
+]
+
+/**
+ * The booking box: flight search, booking lookup and check-in, as tabs (WAI-ARIA tabs pattern: arrow keys,
+ * Home and End move between tabs; only the selected panel is rendered, so the lazy forms load on first use).
+ */
 function BookingBox({
   prefill,
   formKey,
@@ -55,44 +74,74 @@ function BookingBox({
   tab: BookingTab
   onTabChange: (tab: BookingTab) => void
 }) {
-  const iconProps = { className: 'size-4', strokeWidth: 2, 'aria-hidden': true } as const
+  const id = React.useId()
+  const tabRefs = React.useRef<Partial<Record<BookingTab, HTMLButtonElement | null>>>({})
+
+  function onKeyDown(event: React.KeyboardEvent) {
+    const index = BOOKING_TABS.findIndex((t) => t.value === tab)
+    const last = BOOKING_TABS.length - 1
+    const next =
+      event.key === 'ArrowRight'
+        ? (index + 1) % BOOKING_TABS.length
+        : event.key === 'ArrowLeft'
+          ? (index + last) % BOOKING_TABS.length
+          : event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+              ? last
+              : null
+    if (next === null) return
+    event.preventDefault()
+    const value = BOOKING_TABS[next]?.value
+    if (!value) return
+    onTabChange(value)
+    tabRefs.current[value]?.focus()
+  }
+
   return (
-    <Tabs.Root
-      value={tab}
-      onValueChange={(value) => onTabChange(value as BookingTab)}
-      className="overflow-hidden rounded-card border border-border bg-card shadow-float"
-    >
-      <Tabs.List
+    <div className="overflow-hidden rounded-card border border-border bg-card shadow-float">
+      <div
+        role="tablist"
         aria-label="What do you want to do?"
         className="flex overflow-x-auto border-b border-border px-1 sm:px-2"
       >
-        <Tabs.Trigger value="flights" className={tabTrigger}>
-          <Plane {...iconProps} />
-          Flights
-        </Tabs.Trigger>
-        <Tabs.Trigger value="manage" className={tabTrigger}>
-          <Ticket {...iconProps} />
-          Manage<span className="hidden sm:inline">&nbsp;booking</span>
-        </Tabs.Trigger>
-        <Tabs.Trigger value="checkin" className={tabTrigger}>
-          <TicketCheck {...iconProps} />
-          Check-in
-        </Tabs.Trigger>
-      </Tabs.List>
-      <Tabs.Content value="flights" className="outline-none">
-        <SearchCard key={formKey} initial={prefill} className="rounded-none border-0 bg-transparent shadow-none" />
-      </Tabs.Content>
-      <Tabs.Content value="manage" className="p-5 outline-none sm:p-6">
-        <React.Suspense fallback={<FormFallback />}>
-          <ManageQuickForm />
-        </React.Suspense>
-      </Tabs.Content>
-      <Tabs.Content value="checkin" className="p-5 outline-none sm:p-6">
-        <React.Suspense fallback={<FormFallback />}>
-          <CheckinQuickForm />
-        </React.Suspense>
-      </Tabs.Content>
-    </Tabs.Root>
+        {BOOKING_TABS.map(({ value, icon, label }) => (
+          <button
+            key={value}
+            ref={(element) => {
+              tabRefs.current[value] = element
+            }}
+            type="button"
+            role="tab"
+            id={`${id}-tab-${value}`}
+            aria-selected={tab === value}
+            aria-controls={`${id}-panel-${value}`}
+            tabIndex={tab === value ? 0 : -1}
+            data-state={tab === value ? 'active' : 'inactive'}
+            onClick={() => onTabChange(value)}
+            onKeyDown={onKeyDown}
+            className={tabTrigger}
+          >
+            {icon}
+            {label}
+          </button>
+        ))}
+      </div>
+      <div
+        role="tabpanel"
+        id={`${id}-panel-${tab}`}
+        aria-labelledby={`${id}-tab-${tab}`}
+        className={cn('outline-none', tab !== 'flights' && 'p-5 sm:p-6')}
+      >
+        {tab === 'flights' ? (
+          <SearchCard key={formKey} initial={prefill} className="rounded-none border-0 bg-transparent shadow-none" />
+        ) : (
+          <React.Suspense fallback={<FormFallback />}>
+            {tab === 'manage' ? <ManageQuickForm /> : <CheckinQuickForm />}
+          </React.Suspense>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -153,6 +202,25 @@ function Shortcuts() {
   )
 }
 
+/** True once the element comes within 200px of the viewport; it stays true after that. */
+function useInView<T extends Element>() {
+  const ref = React.useRef<T>(null)
+  const [inView, setInView] = React.useState(false)
+  React.useEffect(() => {
+    const element = ref.current
+    if (!element || inView || typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) setInView(true)
+      },
+      { rootMargin: '200px' },
+    )
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [inView])
+  return [ref, inView] as const
+}
+
 /** A stable fallback gradient for a destination without a photo. */
 function artFor(key: string) {
   let hash = 0
@@ -174,7 +242,39 @@ function destinationDetail({ airport, inbound }: Destination) {
   return `Direct from ${inbound.map((route) => route.origin.city).join(', ')}`
 }
 
-function DestinationCard({ destination, onPick }: { destination: Destination; onPick: (d: Destination) => void }) {
+/** "from €120", a placeholder while the fare scan runs, or "Search" when nothing is bookable this week. */
+function FareOrSearch({ fare }: { fare: LowestFare | null | undefined }) {
+  if (fare === undefined) return <Skeleton className="h-10 w-20" />
+  if (fare === null) {
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-primary">
+        Search
+        <ArrowRight
+          className="size-4 transition-transform duration-200 group-hover:translate-x-0.5"
+          strokeWidth={2}
+          aria-hidden
+        />
+      </span>
+    )
+  }
+  return (
+    <span className="flex shrink-0 flex-col items-end">
+      <span className="text-xs text-muted-foreground">from</span>
+      <span className="text-h3 font-bold text-primary tabular">{formatMoneyFrom(fare.amount, fare.currency)}</span>
+    </span>
+  )
+}
+
+function DestinationCard({
+  destination,
+  fare,
+  onPick,
+}: {
+  destination: Destination
+  /** Lowest fare over the direct routes into this airport; null when none is bookable. */
+  fare: LowestFare | null | undefined
+  onPick: (d: Destination) => void
+}) {
   const { airport } = destination
   const photo = DESTINATION_PHOTOS[airport.iataCode]
   return (
@@ -204,14 +304,7 @@ function DestinationCard({ destination, onPick }: { destination: Destination; on
           </span>
           <span className="truncate text-sm text-muted-foreground">{destinationDetail(destination)}</span>
         </div>
-        <span className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-primary">
-          Search
-          <ArrowRight
-            className="size-4 transition-transform duration-200 group-hover:translate-x-0.5"
-            strokeWidth={2}
-            aria-hidden
-          />
-        </span>
+        <FareOrSearch fare={fare} />
       </div>
     </button>
   )
@@ -221,7 +314,7 @@ function DestinationCard({ destination, onPick }: { destination: Destination; on
 function Destinations({ onPick }: { onPick: (d: Destination) => void }) {
   const airports = useAirports()
   const routes = useRoutes()
-  if (airports.isError || (!airports.isLoading && !airports.data?.length)) return null
+  const [sectionRef, inView] = useInView<HTMLElement>()
   const destinations: Destination[] = (airports.data ?? []).map((airport) => ({
     airport,
     inbound: (routes.data ?? []).filter((route) => route.destination.iataCode === airport.iataCode),
@@ -231,22 +324,39 @@ function Destinations({ onPick }: { onPick: (d: Destination) => void }) {
     (a, b) =>
       Number(b.inbound.length > 0) - Number(a.inbound.length > 0) || a.airport.city.localeCompare(b.airport.city),
   )
+  const shown = destinations.slice(0, 6)
+  const fares = useLowestFares(
+    shown.flatMap((destination) => destination.inbound),
+    inView,
+  )
+  const fareFor = (destination: Destination): LowestFare | null | undefined => {
+    if (destination.inbound.length === 0) return null
+    const all = destination.inbound.map((route) => fares.get(route.id))
+    if (all.some((fare) => fare === undefined)) return undefined
+    return all.reduce<LowestFare | null>(
+      (best, fare) => (fare && (!best || fare.amount < best.amount) ? fare : best),
+      null,
+    )
+  }
+  if (airports.isError || (!airports.isLoading && !airports.data?.length)) return null
   return (
-    <section aria-labelledby="destinations" className="flex flex-col gap-5">
+    <section ref={sectionRef} aria-labelledby="destinations" className="flex flex-col gap-5">
       <div className="flex flex-col gap-1">
         <h2 id="destinations" className="text-h2 font-bold">
           Where we fly
         </h2>
-        <p className="text-muted-foreground">Pick a destination to start your search.</p>
+        <p className="text-muted-foreground">
+          Estimated Economy fares for the next {FARE_SCAN_DAYS} days. Pick a destination to start your search.
+        </p>
       </div>
       <div className="-mx-4 flex snap-x gap-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-2 sm:px-0 lg:grid-cols-3">
         {airports.isLoading
           ? Array.from({ length: 3 }, (_, i) => (
               <Skeleton key={i} className="aspect-[4/3] w-72 shrink-0 rounded-card sm:w-auto" />
             ))
-          : destinations.slice(0, 6).map((destination, index) => (
+          : shown.map((destination, index) => (
               <Stagger key={destination.airport.id} index={index} className="w-72 shrink-0 snap-start sm:w-auto">
-                <DestinationCard destination={destination} onPick={onPick} />
+                <DestinationCard destination={destination} fare={fareFor(destination)} onPick={onPick} />
               </Stagger>
             ))}
       </div>

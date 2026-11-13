@@ -1,3 +1,4 @@
+import * as React from 'react'
 import { Link } from 'react-router'
 
 import { cn } from '@/lib/cn'
@@ -11,18 +12,38 @@ export function PlaneGlyph({ className, ...props }: React.ComponentProps<'svg'>)
   )
 }
 
-/** The wordmark: "skyline" in lowercase, bold Inter Tight, with the glyph. */
+/**
+ * The Skyline mark: a globe crossed by two rising flight paths, in currentColor. The paths are cut out of the
+ * disc with a mask, so the mark works on any background. public/favicon.svg is the same drawing.
+ */
+export function SkylineMark({ className, ...props }: React.ComponentProps<'svg'>) {
+  const maskId = `skyline-mark-${React.useId().replace(/:/g, '')}`
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden className={cn('size-5', className)} {...props}>
+      <defs>
+        <mask id={maskId}>
+          <rect width="24" height="24" fill="white" />
+          <path d="M-1 17C6 15 13 11 25 4" stroke="black" strokeWidth="2.4" strokeLinecap="round" fill="none" />
+          <path d="M-1 22C7 20 15 16 25 9" stroke="black" strokeWidth="2.4" strokeLinecap="round" fill="none" />
+        </mask>
+      </defs>
+      <circle cx="12" cy="12" r="9.5" fill="currentColor" mask={`url(#${maskId})`} />
+    </svg>
+  )
+}
+
+/** The wordmark: the mark on a brand tile, then "Skyline". Inside a band, the tile turns white (on-band). */
 export function Wordmark({ className, to = '/' }: { className?: string; to?: string }) {
   return (
     <Link
       to={to}
-      className={cn('inline-flex items-center gap-2 rounded-full py-2 pr-2 text-foreground focus-ring', className)}
+      className={cn('inline-flex items-center gap-2.5 rounded-md py-2 pr-2 text-foreground focus-ring', className)}
       aria-label="Skyline home"
     >
-      <span className="grid size-8 place-items-center rounded-[10px] bg-primary text-primary-foreground">
-        <PlaneGlyph className="size-[18px]" />
+      <span className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground">
+        <SkylineMark className="size-6" />
       </span>
-      <span className="font-display text-[1.375rem] leading-none font-bold tracking-[-0.04em]">skyline</span>
+      <span className="font-display text-[1.375rem] leading-none font-bold tracking-[-0.02em]">Skyline</span>
     </Link>
   )
 }
