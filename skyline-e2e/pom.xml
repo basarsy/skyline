@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>org.springframework.boot</groupId>
+		<artifactId>spring-boot-starter-parent</artifactId>
+		<version>3.5.14</version>
+		<relativePath/> <!-- lookup parent from repository -->
+	</parent>
+	<groupId>com.basarsy</groupId>
+	<artifactId>skyline-e2e</artifactId>
+	<version>0.0.1-SNAPSHOT</version>
+	<name>skyline-e2e</name>
+	<description>
+		End-to-end tests that drive the running Skyline system through the API gateway.
+		They only run with -Pe2e and expect the stack to be up (docker compose up), see README.
+	</description>
+
+	<properties>
+		<java.version>21</java.version>
+		<!-- Nothing to package or deploy: this module only holds tests. -->
+		<maven.install.skip>true</maven.install.skip>
+		<maven.deploy.skip>true</maven.deploy.skip>
+	</properties>
+
+	<dependencies>
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.assertj</groupId>
+			<artifactId>assertj-core</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>io.rest-assured</groupId>
+			<artifactId>rest-assured</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<!-- RestAssured needs a JSON mapper on the classpath to serialize request bodies. -->
+			<groupId>com.fasterxml.jackson.core</groupId>
+			<artifactId>jackson-databind</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.awaitility</groupId>
+			<artifactId>awaitility</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.postgresql</groupId>
+			<artifactId>postgresql</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.slf4j</groupId>
+			<artifactId>slf4j-simple</artifactId>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+
+	<profiles>
+		<profile>
+			<!-- ./mvnw -Pe2e verify -pl skyline-e2e   (with the stack running) -->
+			<id>e2e</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-failsafe-plugin</artifactId>
+						<executions>
+							<execution>
+								<goals>
+									<goal>integration-test</goal>
+									<goal>verify</goal>
+								</goals>
+							</execution>
+						</executions>
+						<configuration>
+							<systemPropertyVariables>
+								<skyline.e2e.baseUrl>${skyline.e2e.baseUrl}</skyline.e2e.baseUrl>
+								<skyline.e2e.adminEmail>${skyline.e2e.adminEmail}</skyline.e2e.adminEmail>
+								<skyline.e2e.adminPassword>${skyline.e2e.adminPassword}</skyline.e2e.adminPassword>
+								<skyline.e2e.authDbUrl>${skyline.e2e.authDbUrl}</skyline.e2e.authDbUrl>
+							</systemPropertyVariables>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+			<properties>
+				<skyline.e2e.baseUrl>http://localhost:8000/api/v1</skyline.e2e.baseUrl>
+				<skyline.e2e.adminEmail>${env.SKYLINE_ADMIN_EMAIL}</skyline.e2e.adminEmail>
+				<skyline.e2e.adminPassword>${env.SKYLINE_ADMIN_PASSWORD}</skyline.e2e.adminPassword>
+				<skyline.e2e.authDbUrl>jdbc:postgresql://localhost:5433/skyline_auth</skyline.e2e.authDbUrl>
+			</properties>
+		</profile>
+	</profiles>
+
+</project>

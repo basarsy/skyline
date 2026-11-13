@@ -373,12 +373,31 @@ db-migrations/
 
 ## Running Tests
 
+### Unit and integration tests
+
 ```bash
-# All tests (from project root)
-./mvnw test
+# All module tests (from project root); Testcontainers tests need Docker
+./mvnw verify
 ```
 
-> **Note:** The test suite is still being built out. CI runs `./mvnw -B verify` on every push and PR to `main`.
+### End-to-end tests (`skyline-e2e`)
+
+The `skyline-e2e` module drives the **running** system through the API gateway: booking, PNR lookup,
+check-in and seat assignment, flight cancellation over Kafka, crew manifests and security rules.
+It only runs with the `e2e` profile and needs the stack to be up:
+
+```bash
+cp .env.example .env            # set JWT_SECRET, SKYLINE_INTERNAL_API_KEY, SKYLINE_ADMIN_EMAIL, SKYLINE_ADMIN_PASSWORD
+set -a; source .env; set +a
+docker compose up -d --build
+./mvnw -Pe2e verify -pl skyline-e2e
+```
+
+Each test creates its own aircraft, flights and users, so the suite can run repeatedly against the same stack.
+Override the target with `-Dskyline.e2e.baseUrl=...` if the gateway is not on `localhost:8000`.
+
+CI runs `./mvnw -B verify` on every push and PR to `main`, then an `e2e` job that boots the stack with
+throwaway secrets and runs the end-to-end suite.
 
 ---
 

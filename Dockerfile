@@ -23,6 +23,8 @@ COPY skyline-schedule/pom.xml    skyline-schedule/pom.xml
 COPY skyline-reservation/pom.xml skyline-reservation/pom.xml
 COPY skyline-checkin/pom.xml skyline-checkin/pom.xml
 COPY skyline-crew/pom.xml   skyline-crew/pom.xml
+# Test-only module, but the reactor needs its pom to resolve the root project.
+COPY skyline-e2e/pom.xml    skyline-e2e/pom.xml
 
 # Download dependencies (cached unless a pom.xml changes)
 RUN ./mvnw -B dependency:go-offline -pl ${MODULE} -am -q || true
