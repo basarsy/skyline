@@ -3,6 +3,7 @@ package com.basarsy.skyline.schedule.repository;
 import com.basarsy.skyline.schedule.entity.Flight;
 import com.basarsy.skyline.schedule.entity.FlightStatus;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -18,13 +19,13 @@ public interface FlightRepository extends JpaRepository<Flight, UUID> {
             WHERE f.routeId IN :routeIds
               AND f.departureTime >= :departureStart
               AND f.departureTime < :departureEnd
-              AND f.status = :status
+              AND f.status IN :statuses
             """)
     Page<Flight> searchFlights(
             @Param("routeIds") java.util.List<UUID> routeIds,
             @Param("departureStart") LocalDateTime departureStart,
             @Param("departureEnd") LocalDateTime departureEnd,
-            @Param("status") FlightStatus status,
+            @Param("statuses") Collection<FlightStatus> statuses,
             Pageable pageable);
 
     @Modifying

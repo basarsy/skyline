@@ -17,7 +17,9 @@ import com.basarsy.skyline.schedule.event.FlightCancelledEvent;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -30,6 +32,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class FlightServiceImpl implements FlightService {
+
+    /** Statuses a passenger can book (see the reservation service), so the ones search must return. */
+    static final Set<FlightStatus> BOOKABLE_STATUSES = EnumSet.of(FlightStatus.SCHEDULED, FlightStatus.DELAYED);
 
     private final FlightRepository flightRepository;
     private final FleetClient fleetClient;
@@ -124,7 +129,7 @@ public class FlightServiceImpl implements FlightService {
         }
         
         Page<Flight> flights = flightRepository.searchFlights(
-                matchingRouteIds, startOfDay, endOfDay, FlightStatus.SCHEDULED, pageable);
+                matchingRouteIds, startOfDay, endOfDay, BOOKABLE_STATUSES, pageable);
                 
         return flights.map(this::enrichFlightResponse);
     }

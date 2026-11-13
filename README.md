@@ -149,7 +149,7 @@ POST   /auth/refresh               Refresh token
 
 ### Flights (skyline-schedule · :8080)
 ```
-GET    /flights                    Search flights (origin, destination, date)
+GET    /flights                    Search bookable flights: SCHEDULED + DELAYED (origin, destination IATA; date = UTC day)
 GET    /flights/{id}               Flight detail
 POST   /flights                    Create flight               [STAFF, ADMIN]
 PUT    /flights/{id}               Update flight               [STAFF, ADMIN]
