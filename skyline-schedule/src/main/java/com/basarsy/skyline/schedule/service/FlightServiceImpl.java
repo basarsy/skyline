@@ -6,6 +6,7 @@ import com.basarsy.skyline.schedule.client.FleetClient;
 import com.basarsy.skyline.schedule.client.RouteClient;
 import com.basarsy.skyline.schedule.client.CrewClient;
 import com.basarsy.skyline.schedule.client.dto.AircraftResponse;
+import com.basarsy.skyline.schedule.client.dto.AircraftStatus;
 import com.basarsy.skyline.schedule.client.dto.RouteResponse;
 import com.basarsy.skyline.schedule.dto.FlightBoardFilter;
 import com.basarsy.skyline.schedule.dto.FlightRequest;
@@ -57,7 +58,7 @@ public class FlightServiceImpl implements FlightService {
     public FlightResponse createFlight(FlightRequest request) {
         RouteResponse route = routeClient.getRoute(request.routeId());
         
-        AircraftResponse aircraft = fleetClient.getAircraft(request.aircraftId());
+        AircraftResponse aircraft = requireActive(fleetClient.getAircraft(request.aircraftId()));
 
         if (request.departureTime().isAfter(request.arrivalTime()) || request.departureTime().isEqual(request.arrivalTime())) {
             throw new SkylineException("Departure time must be before arrival time", HttpStatus.BAD_REQUEST);
@@ -84,7 +85,7 @@ public class FlightServiceImpl implements FlightService {
 
         RouteResponse route = routeClient.getRoute(request.routeId());
         
-        AircraftResponse aircraft = fleetClient.getAircraft(request.aircraftId());
+        AircraftResponse aircraft = requireActive(fleetClient.getAircraft(request.aircraftId()));
 
         if (request.departureTime().isAfter(request.arrivalTime()) || request.departureTime().isEqual(request.arrivalTime())) {
             throw new SkylineException("Departure time must be before arrival time", HttpStatus.BAD_REQUEST);
@@ -230,6 +231,14 @@ public class FlightServiceImpl implements FlightService {
     @Transactional
     public void incrementSeat(UUID id) {
         flightRepository.incrementSeat(id);
+    }
+
+    /** Aircraft in maintenance or retired can't be scheduled. */
+    private static AircraftResponse requireActive(AircraftResponse aircraft) {
+        if (aircraft.status() != AircraftStatus.ACTIVE) {
+            throw new SkylineException("Aircraft " + aircraft.tailNumber() + " is not active", HttpStatus.BAD_REQUEST);
+        }
+        return aircraft;
     }
 
     private static boolean callerIsAdmin() {

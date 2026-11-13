@@ -155,8 +155,8 @@ GET    /flights/board              Operations flight board, every status [STAFF,
                                     (contains, case-insensitive), routeId; paged, default size 50,
                                     sort departureTime,asc)
 GET    /flights/{id}               Flight detail
-POST   /flights                    Create flight               [STAFF, ADMIN]
-PUT    /flights/{id}               Update flight               [STAFF, ADMIN]
+POST   /flights                    Create flight (aircraft must be ACTIVE) [STAFF, ADMIN]
+PUT    /flights/{id}               Update flight (aircraft must be ACTIVE) [STAFF, ADMIN]
 PATCH  /flights/{id}/status        Update flight status        [STAFF, ADMIN; CANCELLED: ADMIN only,
                                    same full cancellation as DELETE]
 DELETE /flights/{id}               Cancel flight               [ADMIN]

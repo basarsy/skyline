@@ -58,6 +58,25 @@ class FlightsIT extends E2eTest {
         api(null).get("/flights/board").then().statusCode(401);
     }
 
+    @Test
+    void aircraftInMaintenanceCannotBeScheduled() {
+        String tail = "TC-" + shortId();
+        String aircraftId = api(adminToken)
+                .body(Map.of("tailNumber", tail, "aircraftTypeId", A320NEO, "manufacturedYear", 2020))
+                .post("/aircraft").then().statusCode(201).extract().path("data.id");
+        api(adminToken).body(Map.of("status", "MAINTENANCE")).patch("/aircraft/" + aircraftId + "/status")
+                .then().statusCode(200);
+
+        String departure = nowUtc().plusDays(3).withNano(0).toString();
+        String message = api(adminToken)
+                .body(Map.of("flightNumber", "E2E" + shortId().substring(0, 4), "routeId", istToLhrRoute(),
+                        "aircraftId", aircraftId, "departureTime", departure,
+                        "arrivalTime", nowUtc().plusDays(3).plusHours(4).withNano(0).toString(), "basePrice", 100))
+                .post("/flights").then().statusCode(400).extract().path("message");
+
+        assertThat(message).isEqualTo("Aircraft " + tail.toUpperCase() + " is not active");
+    }
+
     static List<String> searchIstLhr(String date) {
         return api(null)
                 .queryParam("origin", "IST").queryParam("destination", "LHR").queryParam("date", date)

@@ -20,6 +20,7 @@ import com.basarsy.skyline.schedule.client.dto.AircraftTypeSummary;
 import com.basarsy.skyline.schedule.client.dto.AirportSummary;
 import com.basarsy.skyline.schedule.client.dto.RouteResponse;
 import com.basarsy.skyline.schedule.dto.FlightBoardFilter;
+import com.basarsy.skyline.schedule.dto.FlightRequest;
 import com.basarsy.skyline.schedule.entity.Flight;
 import com.basarsy.skyline.schedule.event.FlightCancelledEvent;
 import com.basarsy.skyline.schedule.entity.FlightStatus;
@@ -171,6 +172,59 @@ class FlightServiceImplTest {
     @AfterEach
     void clearSecurity() {
         SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void createRejectsAircraftThatIsNotActive() {
+        for (AircraftStatus status : List.of(AircraftStatus.MAINTENANCE, AircraftStatus.RETIRED)) {
+            UUID aircraftId = UUID.randomUUID();
+            when(fleetClient.getAircraft(aircraftId)).thenReturn(aircraft(aircraftId, status));
+
+            assertThatThrownBy(() -> service.createFlight(request(aircraftId)))
+                    .isInstanceOf(SkylineException.class)
+                    .hasMessage("Aircraft TC-JFA is not active")
+                    .extracting(e -> ((SkylineException) e).getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+        }
+        verify(repository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void createAcceptsAnActiveAircraft() {
+        var response = service.createFlight(request(AIRCRAFT_ID));
+
+        assertThat(response.getStatus()).isEqualTo(FlightStatus.SCHEDULED);
+        assertThat(response.getAvailableSeats()).isEqualTo(180);
+    }
+
+    @Test
+    void updateRejectsAircraftThatIsNotActive() {
+        Flight flight = flight(FlightStatus.SCHEDULED);
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+        UUID retired = UUID.randomUUID();
+        when(fleetClient.getAircraft(retired)).thenReturn(aircraft(retired, AircraftStatus.RETIRED));
+
+        assertThatThrownBy(() -> service.updateFlight(flight.getId(), request(retired)))
+                .isInstanceOf(SkylineException.class)
+                .hasMessage("Aircraft TC-JFA is not active");
+        assertThat(flight.getAircraftId()).isEqualTo(AIRCRAFT_ID);
+    }
+
+    @Test
+    void updateAcceptsAnActiveAircraft() {
+        Flight flight = flight(FlightStatus.DELAYED);
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+        UUID other = UUID.randomUUID();
+        when(fleetClient.getAircraft(other)).thenReturn(aircraft(other, AircraftStatus.ACTIVE));
+
+        service.updateFlight(flight.getId(), request(other));
+
+        assertThat(flight.getAircraftId()).isEqualTo(other);
+    }
+
+    static FlightRequest request(UUID aircraftId) {
+        LocalDateTime departure = LocalDateTime.of(2030, 6, 1, 9, 0);
+        return new FlightRequest("SK200", ROUTE_ID, aircraftId, departure, departure.plusHours(4),
+                new BigDecimal("120.00"));
     }
 
     // ------------------------------------------------------------------ fixtures
