@@ -81,7 +81,7 @@ function DateStrip({
                   active ? 'bg-primary text-primary-foreground' : 'bg-card ring-1 ring-border hover:bg-elevated',
                 )}
               >
-                <span className={cn('text-caption', active ? 'opacity-80' : 'text-muted-foreground')}>
+                <span className={cn('text-caption', active ? 'font-medium' : 'text-muted-foreground')}>
                   {format(day, 'EEE')}
                 </span>
                 <span className="font-semibold tabular">{format(day, 'd MMM')}</span>
@@ -136,99 +136,119 @@ export function Component() {
     : []
 
   return (
-    <Page className="flex flex-col gap-6 sm:gap-8">
-      <SearchCard key={`${from}-${to}-${date}-${cabin}`} initial={{ from, to, date, cabin }} variant="bar" />
-
-      {!valid ? (
-        <EmptyState
-          icon={<CalendarSearch strokeWidth={1.75} aria-hidden />}
-          title="Where to?"
-          description="Choose where you’re flying from and to, and a date."
+    <>
+      <section aria-label="Your search" className="brand-band on-band">
+        <div className="mx-auto flex max-w-[1200px] flex-col gap-5 px-4 pt-8 pb-16 sm:px-6 sm:pt-10 sm:pb-20">
+          <p className="font-display text-h3 font-bold">
+            {valid ? (
+              <>
+                {from} <span className="font-medium text-muted-foreground">to</span> {to}
+              </>
+            ) : (
+              'Find your flight'
+            )}
+          </p>
+        </div>
+      </section>
+      <Page className="flex flex-col gap-6 pt-0 sm:gap-8 sm:pt-0">
+        <SearchCard
+          key={`${from}-${to}-${date}-${cabin}`}
+          initial={{ from, to, date, cabin }}
+          variant="bar"
+          className="-mt-12 shadow-float sm:-mt-14"
         />
-      ) : (
-        <>
-          <DateStrip date={date} onPick={(day) => update({ date: day })} prefetch={prefetch} />
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h1 ref={resultsRef} className="text-h3 font-semibold" aria-live="polite">
-              {query.isSuccess
-                ? `${total} ${total === 1 ? 'flight' : 'flights'} from ${from} to ${to}`
-                : `Flights from ${from} to ${to}`}
-              <span className="ml-2 font-sans text-sm font-normal text-muted-foreground">
-                {cabinLabel[cabin]} · prices are estimates
-              </span>
-            </h1>
-            <SegmentedControl<Sort>
-              label="Sort by departure"
-              size="sm"
-              value={sort}
-              onValueChange={(value) => update({ sort: value })}
-              options={[
-                { value: 'departureTime,asc', label: 'Earliest first' },
-                { value: 'departureTime,desc', label: 'Latest first' },
-              ]}
-            />
-          </div>
+        {!valid ? (
+          <EmptyState
+            icon={<CalendarSearch strokeWidth={1.75} aria-hidden />}
+            title="Where to?"
+            description="Choose where you’re flying from and to, and a date."
+          />
+        ) : (
+          <>
+            <DateStrip date={date} onPick={(day) => update({ date: day })} prefetch={prefetch} />
 
-          {query.isPending ? (
-            <LoadingRegion label="Loading flights">
-              <div className="flex flex-col gap-3">
-                {[0, 1, 2].map((i) => (
-                  <SkeletonCard key={i} className="h-[214px] md:h-[150px]" />
-                ))}
-              </div>
-            </LoadingRegion>
-          ) : query.isError ? (
-            <ErrorState error={query.error} onRetry={() => void query.refetch()} title="We couldn’t load flights" />
-          ) : flights.length === 0 ? (
-            <EmptyState
-              title="No flights on this day"
-              description={`There are no bookable flights from ${from} to ${to} on this date. Try a nearby day, or another route.`}
-              action={
-                <>
-                  {neighbours.map((day) => (
-                    <Button key={day} variant="outline" onClick={() => update({ date: day })}>
-                      Try {format(localDateFromIso(day)!, 'EEE d MMM')}
-                    </Button>
-                  ))}
-                  <Button asChild variant="ghost">
-                    <Link to="/">Change route</Link>
-                  </Button>
-                </>
-              }
-            />
-          ) : (
-            <div className="flex flex-col gap-3">
-              {flights.map((flight, index) => (
-                <Stagger key={flight.id} index={index}>
-                  <FlightCard
-                    flight={flight}
-                    price={
-                      <PriceTag
-                        amount={estimatePrice(flight, cabin).amount}
-                        currency={flight.currency}
-                        size="large"
-                        label="Estimated"
-                      />
-                    }
-                    action={<ResultAction flight={flight} cabin={cabin} />}
-                  />
-                </Stagger>
-              ))}
-              {query.hasNextPage && (
-                <Button
-                  variant="outline"
-                  className="self-center"
-                  loading={query.isFetchingNextPage}
-                  onClick={() => void query.fetchNextPage()}
-                >
-                  Load more
-                </Button>
-              )}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <h1 ref={resultsRef} className="text-h3 font-semibold" aria-live="polite">
+                {query.isSuccess
+                  ? `${total} ${total === 1 ? 'flight' : 'flights'} from ${from} to ${to}`
+                  : `Flights from ${from} to ${to}`}
+                <span className="ml-2 font-sans text-sm font-normal text-muted-foreground">
+                  {cabinLabel[cabin]} · prices are estimates
+                </span>
+              </h1>
+              <SegmentedControl<Sort>
+                label="Sort by departure"
+                size="sm"
+                value={sort}
+                onValueChange={(value) => update({ sort: value })}
+                options={[
+                  { value: 'departureTime,asc', label: 'Earliest first' },
+                  { value: 'departureTime,desc', label: 'Latest first' },
+                ]}
+              />
             </div>
-          )}
-        </>
-      )}
-    </Page>
+
+            {query.isPending ? (
+              <LoadingRegion label="Loading flights">
+                <div className="flex flex-col gap-3">
+                  {[0, 1, 2].map((i) => (
+                    <SkeletonCard key={i} className="h-[214px] md:h-[150px]" />
+                  ))}
+                </div>
+              </LoadingRegion>
+            ) : query.isError ? (
+              <ErrorState error={query.error} onRetry={() => void query.refetch()} title="We couldn’t load flights" />
+            ) : flights.length === 0 ? (
+              <EmptyState
+                title="No flights on this day"
+                description={`There are no bookable flights from ${from} to ${to} on this date. Try a nearby day, or another route.`}
+                action={
+                  <>
+                    {neighbours.map((day) => (
+                      <Button key={day} variant="outline" onClick={() => update({ date: day })}>
+                        Try {format(localDateFromIso(day)!, 'EEE d MMM')}
+                      </Button>
+                    ))}
+                    <Button asChild variant="ghost">
+                      <Link to="/">Change route</Link>
+                    </Button>
+                  </>
+                }
+              />
+            ) : (
+              <div className="flex flex-col gap-3">
+                {flights.map((flight, index) => (
+                  <Stagger key={flight.id} index={index}>
+                    <FlightCard
+                      flight={flight}
+                      price={
+                        <PriceTag
+                          amount={estimatePrice(flight, cabin).amount}
+                          currency={flight.currency}
+                          size="large"
+                          label="Estimated"
+                        />
+                      }
+                      action={<ResultAction flight={flight} cabin={cabin} />}
+                    />
+                  </Stagger>
+                ))}
+                {query.hasNextPage && (
+                  <Button
+                    variant="outline"
+                    className="self-center"
+                    loading={query.isFetchingNextPage}
+                    onClick={() => void query.fetchNextPage()}
+                  >
+                    Load more
+                  </Button>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </Page>
+    </>
   )
 }

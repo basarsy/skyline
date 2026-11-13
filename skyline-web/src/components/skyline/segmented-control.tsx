@@ -40,7 +40,7 @@ export function SegmentedControl<T extends string>({
       onValueChange={(next) => onValueChange(next as T)}
       aria-label={label}
       orientation="horizontal"
-      className={cn('inline-flex rounded-full bg-elevated p-1', className)}
+      className={cn('inline-flex rounded-lg bg-elevated p-1', className)}
     >
       {options.map((option) => {
         const active = option.value === value
@@ -49,7 +49,7 @@ export function SegmentedControl<T extends string>({
             key={option.value}
             value={option.value}
             className={cn(
-              'relative flex-1 cursor-pointer rounded-full font-medium whitespace-nowrap focus-ring transition-colors duration-200 outline-none',
+              'relative flex-1 cursor-pointer rounded-md font-medium whitespace-nowrap focus-ring transition-colors duration-200 outline-none',
               size === 'sm' ? 'h-9 px-3.5 text-sm' : 'h-10 px-4 text-sm',
               active ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
             )}
@@ -58,7 +58,7 @@ export function SegmentedControl<T extends string>({
               <m.span
                 layoutId={reduce ? undefined : layoutId}
                 aria-hidden
-                className="absolute inset-0 rounded-full bg-primary"
+                className="absolute inset-0 rounded-md bg-primary"
                 transition={{ type: 'spring', stiffness: 500, damping: 40 }}
               />
             )}

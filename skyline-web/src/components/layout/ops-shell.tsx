@@ -44,7 +44,7 @@ function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
             onClick={onNavigate}
             aria-current={active ? 'page' : undefined}
             className={cn(
-              'flex h-11 items-center gap-3 rounded-full px-4 text-sm font-medium focus-ring transition-colors duration-200 outline-none',
+              'flex h-11 items-center gap-3 rounded-md px-4 text-sm font-medium focus-ring transition-colors duration-200 outline-none',
               active
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:bg-elevated hover:text-foreground',

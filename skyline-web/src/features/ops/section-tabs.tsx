@@ -5,7 +5,7 @@ import { cn } from '@/lib/cn'
 /** Pill tabs between sibling ops pages (Aircraft / Aircraft types, Airports / Routes). Real links: deep-linkable. */
 export function SectionTabs({ label, tabs }: { label: string; tabs: { to: string; label: string }[] }) {
   return (
-    <nav aria-label={label} className="mb-6 inline-flex rounded-full bg-elevated p-1">
+    <nav aria-label={label} className="mb-6 inline-flex rounded-lg bg-elevated p-1">
       {tabs.map((tab) => (
         <NavLink
           key={tab.to}
@@ -13,7 +13,7 @@ export function SectionTabs({ label, tabs }: { label: string; tabs: { to: string
           end
           className={({ isActive }) =>
             cn(
-              'inline-flex h-10 items-center rounded-full px-4 text-sm font-medium focus-ring transition-colors duration-200',
+              'inline-flex h-10 items-center rounded-md px-4 text-sm font-medium focus-ring transition-colors duration-200',
               isActive ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
             )
           }

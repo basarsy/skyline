@@ -5,7 +5,7 @@ import { Link, useNavigate } from 'react-router'
 import { z } from 'zod'
 
 import { useAuth } from '@/auth/use-auth'
-import { Page } from '@/components/layout/app-shell'
+import { BandPage } from '@/components/layout/app-shell'
 import { CountdownTimer } from '@/components/skyline/countdown'
 import { flightTimes, RouteLabel } from '@/components/skyline/flight'
 import { FormErrorSummary, FormField } from '@/components/skyline/form'
@@ -82,17 +82,14 @@ export function Component() {
   const onSubmit = form.handleSubmit(({ pnr }) => navigate(`/checkin/${pnr}`))
 
   return (
-    <Page className="flex max-w-[560px] flex-col gap-8 py-12 sm:py-20">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-h1 font-semibold">Online check-in</h1>
-        <p className="text-muted-foreground">
-          Opens 48 hours and closes 1 hour before departure. Your seat is assigned when you check in.
-        </p>
-      </div>
+    <BandPage
+      title="Online check-in"
+      subtitle="Opens 48 hours and closes 1 hour before departure. Your seat is assigned when you check in."
+    >
       <form
         onSubmit={onSubmit}
         noValidate
-        className="flex flex-col gap-5 rounded-card border border-border bg-card p-5 sm:p-6"
+        className="flex flex-col gap-5 rounded-card border border-border bg-card p-5 shadow-float sm:p-6"
       >
         <FormErrorSummary errors={errors} submitCount={submitCount} labels={{ pnr: 'Booking reference' }} />
         <Controller
@@ -119,6 +116,6 @@ export function Component() {
         </Button>
       </form>
       {isPassenger && <UpcomingTrips />}
-    </Page>
+    </BandPage>
   )
 }

@@ -93,6 +93,16 @@ export function formatMoney(amount: number, currency: string | null | undefined,
   return formatter.format(amount)
 }
 
+/**
+ * A "from" price in whole units ("€120"), rounded up so it never shows less than the passenger would pay.
+ */
+export function formatMoneyFrom(amount: number, currency: string | null | undefined, locale?: string) {
+  const code = currency && /^[A-Z]{3}$/.test(currency) ? currency : 'EUR'
+  return new Intl.NumberFormat(locale, { style: 'currency', currency: code, maximumFractionDigits: 0 }).format(
+    Math.ceil(amount),
+  )
+}
+
 /** The same amount split for hero display: symbol/sign parts and digits rendered separately. */
 export function moneyParts(amount: number, currency: string | null | undefined, locale?: string) {
   const code = currency && /^[A-Z]{3}$/.test(currency) ? currency : 'EUR'

@@ -84,7 +84,7 @@ function StepIndicator({ step }: { step: Step }) {
             <span
               className={cn(
                 'h-1 rounded-full transition-colors duration-300',
-                state === 'todo' ? 'bg-elevated' : 'bg-foreground',
+                state === 'todo' ? 'bg-elevated' : 'bg-primary',
               )}
             />
             <span
@@ -146,14 +146,14 @@ function CabinStep({
               tabIndex={active ? 0 : -1}
               className={cn(
                 'flex cursor-pointer items-center gap-5 rounded-card border bg-card p-5 text-left focus-ring transition-[border-color,background-color,transform] duration-200 active:scale-[0.99] sm:p-6',
-                active ? 'border-foreground' : 'border-border hover:bg-elevated',
+                active ? 'border-primary ring-1 ring-primary' : 'border-border hover:bg-elevated',
               )}
             >
               <span
                 aria-hidden
                 className={cn(
                   'size-5 shrink-0 rounded-full border-2 transition-all',
-                  active ? 'border-[6px] border-foreground' : 'border-border',
+                  active ? 'border-[6px] border-primary' : 'border-border',
                 )}
               />
               <span className="flex min-w-0 flex-1 flex-col gap-1">

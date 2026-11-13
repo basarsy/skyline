@@ -9,6 +9,7 @@ import {
   arrivalDayOffset,
   formatDuration,
   formatMoney,
+  formatMoneyFrom,
   formatTimeInZone,
   parseUtc,
   toApiDateTime,
@@ -64,6 +65,12 @@ describe('time contract', () => {
     expect(formatDuration(45)).toBe('45m')
     expect(formatMoney(1234.5, 'EUR', 'en-GB')).toBe('€1,234.50')
     expect(formatMoney(99, 'TRY', 'en-GB')).toContain('99.00')
+  })
+
+  it('shows a "from" price in whole units, rounded up', () => {
+    expect(formatMoneyFrom(120, 'EUR', 'en-GB')).toBe('€120')
+    expect(formatMoneyFrom(119.2, 'EUR', 'en-GB')).toBe('€120')
+    expect(formatMoneyFrom(1499.01, 'GBP', 'en-GB')).toBe('£1,500')
   })
 })
 

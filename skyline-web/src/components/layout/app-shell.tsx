@@ -13,18 +13,19 @@ const UserMenu = React.lazy(() => import('./user-menu').then((module) => ({ defa
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   cn(
-    'inline-flex h-11 items-center rounded-full px-4 text-sm font-medium focus-ring transition-colors duration-200 outline-none',
-    isActive ? 'bg-elevated text-foreground' : 'text-muted-foreground hover:text-foreground',
+    'relative inline-flex h-16 items-center px-3 text-sm font-semibold focus-ring transition-colors duration-200 outline-none',
+    "after:absolute after:inset-x-3 after:bottom-0 after:h-[3px] after:rounded-t-sm after:content-['']",
+    isActive ? 'text-foreground after:bg-foreground' : 'text-muted-foreground hover:text-foreground',
   )
 
-/** Frosted sticky header with the wordmark, primary nav, and the account controls. */
+/** Solid brand-blue sticky header with the wordmark, primary nav, and the account controls. */
 function PublicHeader() {
   const { isAuthenticated, isPassenger, isLoading } = useAuth()
   return (
-    <header className="sticky top-0 z-40 border-b border-border frosted">
+    <header className="sticky top-0 z-40 brand-band on-band">
       <div className="mx-auto flex h-16 max-w-[1200px] items-center gap-6 px-4 sm:px-6">
         <Wordmark />
-        <nav aria-label="Main" className="hidden items-center gap-1 md:flex">
+        <nav aria-label="Main" className="hidden items-center gap-1 self-stretch md:flex">
           <NavLink to="/" end className={navLinkClass}>
             Book
           </NavLink>
@@ -64,7 +65,7 @@ function PublicHeader() {
 const tabClass = ({ isActive }: { isActive: boolean }) =>
   cn(
     'flex min-h-14 flex-1 flex-col items-center justify-center gap-1 rounded-2xl text-[0.6875rem] font-medium focus-ring outline-none',
-    isActive ? 'text-foreground' : 'text-muted-foreground',
+    isActive ? 'text-primary' : 'text-muted-foreground',
   )
 
 /** Loaded the first time the Account tab is opened (it pulls in the drawer). */
@@ -117,19 +118,41 @@ function MobileTabBar() {
   )
 }
 
+const footerLink = 'w-fit rounded focus-ring transition-colors duration-200 hover:text-foreground'
+
 function Footer() {
   return (
-    <footer className="border-t border-border">
-      <div className="mx-auto flex max-w-[1200px] flex-col gap-2 px-4 py-10 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6">
-        <span>© {new Date().getFullYear()} Skyline</span>
-        <nav aria-label="Footer" className="flex gap-6">
-          <Link to="/manage" className="rounded focus-ring hover:text-foreground">
-            Manage booking
-          </Link>
-          <Link to="/checkin" className="rounded focus-ring hover:text-foreground">
-            Online check-in
-          </Link>
-        </nav>
+    <footer className="on-footer">
+      <div className="mx-auto flex max-w-[1200px] flex-col gap-10 px-4 py-12 text-sm sm:px-6">
+        <div className="flex flex-col gap-10 sm:flex-row sm:justify-between">
+          <div className="flex max-w-xs flex-col gap-3">
+            <Wordmark />
+            <p className="text-muted-foreground">Search, book and check in for flights across our network.</p>
+          </div>
+          <nav aria-label="Footer" className="grid grid-cols-2 gap-x-16 gap-y-3 text-muted-foreground">
+            <span className="font-semibold text-foreground">Travel</span>
+            <span className="font-semibold text-foreground">Account</span>
+            <Link to="/" className={footerLink}>
+              Book a flight
+            </Link>
+            <Link to="/trips" className={footerLink}>
+              My trips
+            </Link>
+            <Link to="/manage" className={footerLink}>
+              Manage booking
+            </Link>
+            <Link to="/login" className={footerLink}>
+              Log in
+            </Link>
+            <Link to="/checkin" className={footerLink}>
+              Online check-in
+            </Link>
+            <Link to="/register" className={footerLink}>
+              Create an account
+            </Link>
+          </nav>
+        </div>
+        <div className="border-t border-border pt-6 text-muted-foreground">© {new Date().getFullYear()} Skyline</div>
       </div>
     </footer>
   )
@@ -152,6 +175,37 @@ export function AppShell() {
       <Footer />
       <MobileTabBar />
     </div>
+  )
+}
+
+/**
+ * A short task page (log in, manage booking, check-in): a brand-blue band with the title, and the content
+ * (usually one form card) overlapping its bottom edge.
+ */
+export function BandPage({
+  title,
+  subtitle,
+  width = 'max-w-[560px]',
+  children,
+}: {
+  title: string
+  subtitle?: React.ReactNode
+  /** Max width of the title and content column. */
+  width?: string
+  children: React.ReactNode
+}) {
+  return (
+    <>
+      <section className="brand-band on-band">
+        <div className={cn('mx-auto flex w-full flex-col gap-2 px-4 pt-10 pb-24 sm:pt-12 sm:pb-28', width)}>
+          <h1 className="text-h1 font-bold">{title}</h1>
+          {subtitle && <div className="text-muted-foreground">{subtitle}</div>}
+        </div>
+      </section>
+      <div className={cn('relative mx-auto -mt-16 flex w-full flex-col gap-6 px-4 pb-16 sm:pb-24', width)}>
+        {children}
+      </div>
+    </>
   )
 }
 

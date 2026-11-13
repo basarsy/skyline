@@ -22,12 +22,12 @@ function StateFrame({ icon, title, description, action, className }: StateProps)
   return (
     <div
       className={cn(
-        'flex flex-col items-center gap-4 rounded-card border border-dashed border-border px-6 py-14 text-center',
+        'relative flex flex-col items-center gap-4 overflow-hidden rounded-card border border-border bg-card px-6 py-14 text-center shadow-card',
         className,
       )}
     >
       {icon && (
-        <span className="grid size-12 place-items-center rounded-full bg-elevated text-foreground [&_svg]:size-5">
+        <span className="grid size-14 place-items-center rounded-2xl bg-brand-soft text-primary ring-8 ring-brand-soft/40 [&_svg]:size-6">
           {icon}
         </span>
       )}

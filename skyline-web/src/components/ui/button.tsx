@@ -11,7 +11,7 @@ import { cn } from '@/lib/cn'
  */
 const buttonVariants = cva(
   [
-    'relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-full font-medium whitespace-nowrap select-none',
+    'relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md font-semibold whitespace-nowrap select-none',
     'transition-[background-color,color,border-color,transform,opacity] duration-200 ease-out',
     'active:scale-[0.97] motion-reduce:active:scale-100',
     'focus-ring outline-none',
@@ -21,7 +21,7 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: 'bg-primary text-primary-foreground hover:bg-primary/85',
+        default: 'bg-primary text-primary-foreground shadow-card hover:bg-primary/90',
         secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/70',
         outline: 'border border-border bg-transparent text-foreground hover:bg-elevated',
         ghost: 'text-foreground hover:bg-elevated',

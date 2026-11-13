@@ -6,7 +6,7 @@ import type { BoardingPassResponse } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/cn'
 import { formatDateInZone, formatLocal, formatTimeInZone } from '@/lib/format'
-import { PlaneGlyph } from './brand'
+import { PlaneGlyph, SkylineMark } from './brand'
 
 interface BoardingPassProps {
   pass: BoardingPassResponse
@@ -102,9 +102,9 @@ export function BoardingPass({ pass, originZone, className, showActions = true }
       >
         <div className="flex flex-col gap-6 p-6">
           <div className="flex items-center justify-between">
-            <span className="inline-flex items-center gap-2 font-display text-lg font-bold tracking-[-0.04em]">
-              <PlaneGlyph className="size-4" />
-              skyline
+            <span className="inline-flex items-center gap-2 font-display text-lg font-bold tracking-[-0.02em]">
+              <SkylineMark className="size-5" />
+              Skyline
             </span>
             <span className="font-mono text-sm font-semibold">{pass.flightNumber}</span>
           </div>
@@ -186,7 +186,7 @@ function renderPassToPng(
   ctx.textBaseline = 'alphabetic'
 
   ctx.font = `700 40px ${display}`
-  ctx.fillText('skyline', 56, 100)
+  ctx.fillText('Skyline', 56, 100)
   ctx.font = `600 32px ${mono}`
   ctx.textAlign = 'right'
   ctx.fillText(pass.flightNumber, width - 56, 100)

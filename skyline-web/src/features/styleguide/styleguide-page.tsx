@@ -34,6 +34,10 @@ const TOKENS = [
   'ring',
   'destructive',
   'success',
+  'warning',
+  'brand-soft',
+  'brand-line',
+  'spark',
 ] as const
 
 /** Contrast pairs checked in both themes (see README, "Contrast"). */
@@ -44,6 +48,8 @@ const PAIRS = [
   ['muted-foreground', 'background'],
   ['muted-foreground', 'elevated'],
   ['primary-foreground', 'primary'],
+  ['primary', 'card'],
+  ['primary', 'brand-soft'],
   ['destructive', 'card'],
   ['success', 'card'],
 ] as const
@@ -268,7 +274,7 @@ function ThemePanel({ theme }: { theme: 'light' | 'dark' }) {
         <ErrorState error={new ApiError(503, 'Flight details unavailable, please retry')} onRetry={() => {}} />
       </Section>
 
-      <Section title="Boarding pass (always black on white)">
+      <Section title="Boarding pass (always dark on white)">
         <BoardingPass pass={makeBoardingPass()} originZone="Europe/Istanbul" showActions={false} />
       </Section>
     </div>

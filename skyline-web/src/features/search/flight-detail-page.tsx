@@ -140,7 +140,7 @@ export function Component() {
                 onClick={() => setCabin(option)}
                 className={cn(
                   'flex cursor-pointer flex-col gap-4 rounded-card border p-5 text-left focus-ring transition-colors duration-200',
-                  active ? 'border-foreground bg-card' : 'border-border bg-card hover:bg-elevated',
+                  active ? 'border-primary bg-card ring-1 ring-primary' : 'border-border bg-card hover:bg-elevated',
                 )}
               >
                 <span className="flex items-center justify-between">
@@ -149,7 +149,7 @@ export function Component() {
                     aria-hidden
                     className={cn(
                       'size-5 rounded-full border-2',
-                      active ? 'border-[6px] border-foreground' : 'border-border',
+                      active ? 'border-[6px] border-primary' : 'border-border',
                     )}
                   />
                 </span>

@@ -58,7 +58,7 @@ export async function logOut(page: Page) {
 }
 
 export async function register(page: Page, email: string, password = 'Passw0rd!!') {
-  await page.goto('/register')
+  await gotoStable(page, '/register')
   await page.getByLabel('Email').fill(email)
   await page.getByLabel('Password', { exact: true }).fill(password)
   await page.getByRole('button', { name: 'Create account' }).click()

@@ -88,14 +88,31 @@ e2e/            Playwright specs
   shows the server's answer and message.
 - **Bundle:** every screen is a lazy route. Pickers (Radix Popover, cmdk, react-day-picker), the account
   menu, the toaster, motion's animation features, zod for the search form and the PDF417 encoder all load on
-  demand. Initial JS (gzipped, before `load`): `/` 194 kB, `/flights` 195 kB, `/login` 184 kB.
+  demand. Initial JS (gzipped, before `load`): `/` 199 kB, `/flights` 198 kB, `/login` 187 kB.
 
 ## Design system
 
-Monochrome tokens in OKLCH for light and dark live only in `src/styles/globals.css` and are mapped through
-`@theme inline`; components use semantic classes (`bg-card`, `text-muted-foreground`). The theme follows the
-OS by default; logged-in users choose System / Light / Dark in the account menu (visitors cycle it from the
-header). An inline script in `index.html` applies it before first paint.
+Tokens in OKLCH for light and dark live only in `src/styles/globals.css` and are mapped through `@theme inline`;
+components use semantic classes (`bg-card`, `text-muted-foreground`, `bg-brand-soft`). The palette is cool,
+faintly blue-tinted neutrals with one brand hue (indigo-blue `primary`, with `brand-soft` / `brand-line` tints)
+and a warm `spark` accent used only as decoration. Status hues (`success`, `warning`, `destructive`) appear
+as small dots or text next to a label, so status never depends on color. Corners are squared off (6px inputs and
+buttons, 10px cards) and the layout is dense, the way airline sites are.
+
+- `brand-band` is the solid royal-blue strip behind the header, the results header and the short task pages
+  (`BandPage`: log in, sign up, manage booking, check-in). `on-band` and `on-footer` remap the semantic tokens
+  inside the band and the dark footer, so ordinary components read light-on-dark there without extra classes.
+- The home page leads with a photo (`hero-scrim` darkens it behind the headline) and a tabbed booking box
+  (Flights, Manage booking, Check-in; a small WAI-ARIA tabs implementation, and the last two forms load on
+  first use). "Where we fly" shows every airport with its photo (airports without one get a
+  `dest-art-0`...`dest-art-5` gradient) and a "from" price: once the cards scroll into view,
+  `useLowestFares` searches the next 7 days of each direct route (one request per route and day, since search
+  takes a single date) and shows the lowest estimated Economy fare, rounded up to whole units.
+- The logo (`SkylineMark` in `components/skyline/brand.tsx`, and `public/favicon.svg`) is a globe crossed by
+  two rising flight paths, cut out with a mask so it works on any background.
+
+The theme follows the OS by default; logged-in users choose System / Light / Dark in the account menu (visitors
+cycle it from the header). An inline script in `index.html` applies it before first paint.
 
 `/styleguide` (development only) shows every token, the type scale and each component state in both themes,
 and measures the contrast pairs below in the browser.
@@ -106,14 +123,20 @@ Measured WCAG ratios (target: 4.5:1 for text; 3:1 is the floor for the functiona
 
 | Text / surface                | Light   | Dark    |
 | ----------------------------- | ------- | ------- |
-| foreground / background       | 18.97:1 | 19.30:1 |
-| foreground / card             | 19.80:1 | 17.95:1 |
-| muted-foreground / card       | 6.01:1  | 6.49:1  |
-| muted-foreground / background | 5.76:1  | 6.98:1  |
-| muted-foreground / elevated   | 5.51:1  | 5.97:1  |
-| primary-foreground / primary  | 19.80:1 | 19.30:1 |
-| destructive / card            | 5.26:1  | 6.58:1  |
-| success / card                | 4.60:1  | 8.78:1  |
+| foreground / background       | 17.00:1 | 17.93:1 |
+| foreground / card             | 17.75:1 | 16.61:1 |
+| muted-foreground / card       | 6.00:1  | 7.04:1  |
+| muted-foreground / background | 5.75:1  | 7.59:1  |
+| muted-foreground / elevated   | 5.43:1  | 6.31:1  |
+| primary-foreground / primary  | 6.05:1  | 7.60:1  |
+| primary / card                | 6.05:1  | 7.20:1  |
+| primary / brand-soft          | 5.20:1  | 5.83:1  |
+| destructive / card            | 5.26:1  | 6.35:1  |
+| success / card                | 4.62:1  | 8.49:1  |
+| warning / card (dot only)     | 4.83:1  | 9.54:1  |
+| band-foreground / band        | 11.28:1 | 13.98:1 |
+| band-muted / band             | 7.36:1  | 9.13:1  |
+| footer-muted / footer         | 8.68:1  | 8.68:1  |
 
 ## Testing
 
@@ -125,7 +148,8 @@ pnpm e2e         # Playwright against the mocked API (starts `vite --mode msw` i
 
 The mocked suite covers the passenger journey, PNR lookup, the ops lifecycle, and an accessibility and layout
 sweep: axe (no serious or critical issues) on every route in both themes, no horizontal scroll at 375, 768,
-1024 and 1440px, and reduced motion. MSW only exists in `--mode msw`; it is not part of production builds.
+1024 and 1440px, and reduced motion. MSW only exists in `--mode msw`; it is not part of production builds. `e2e/screenshots.spec.ts` is skipped unless `SCREENSHOTS=1` is set; it regenerates the walkthrough images
+in the root README (`.github/screenshots`).
 
 ### Against the live stack
 
@@ -148,3 +172,13 @@ and tolerate data left by earlier runs; the mock-only specs are skipped.
 proxied to the gateway (`SKYLINE_GATEWAY_URL`, default `http://gateway-service:8000`), immutable caching for
 hashed assets, `no-cache` for `index.html`, gzip, and `/healthz`. In `docker compose` it is the `web` service
 on port 5173.
+
+## Photo credits
+
+Photos from [Unsplash](https://unsplash.com), used under the [Unsplash License](https://unsplash.com/license),
+resized to WebP in `src/assets/photos`:
+
+- Hero, airplane wing over clouds: [Johnny Goerend](https://unsplash.com/photos/KB9r_hTzyeQ)
+- Istanbul, Galata Tower: [Anna Berdnik](https://unsplash.com/photos/0n0AHB1fgTQ)
+- London, Tower Bridge: [Charles Postiaux](https://unsplash.com/photos/Q6UehpkBSnQ)
+- New York, Manhattan and the Brooklyn Bridge: [Patrick Tomasso](https://unsplash.com/photos/SVVTZtTGyaU)

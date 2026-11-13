@@ -41,7 +41,7 @@ function StrengthMeter({ password, id }: { password: string; id: string }) {
             key={step}
             className={cn(
               'h-1 rounded-full transition-colors duration-200',
-              score >= step ? 'bg-foreground' : 'bg-elevated',
+              score >= step ? 'bg-primary' : 'bg-elevated',
             )}
           />
         ))}

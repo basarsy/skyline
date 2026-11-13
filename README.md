@@ -11,7 +11,7 @@
 
 **Airline Management System**
 
-*A microservices-based REST API for end-to-end airline operations*
+*A full-stack airline platform: Spring Boot microservices behind a gateway, and a React web app for passengers and operations staff*
 
 ---
 
@@ -20,7 +20,14 @@
 ![Spring Cloud](https://img.shields.io/badge/Spring_Cloud-2025.0-000000?style=flat-square&logo=spring&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-000000?style=flat-square&logo=postgresql&logoColor=white)
 ![Apache Kafka](https://img.shields.io/badge/Kafka-7.6-000000?style=flat-square&logo=apachekafka&logoColor=white)
+![React](https://img.shields.io/badge/React-19-000000?style=flat-square&logo=react&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-6-000000?style=flat-square&logo=typescript&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-000000?style=flat-square&logo=tailwindcss&logoColor=white)
 ![Status](https://img.shields.io/badge/Status-In_Development-555555?style=flat-square)
+
+<br />
+
+<img src=".github/screenshots/01-home.png" alt="The Skyline home page: a photo of a plane wing over clouds, a tabbed booking box, and destination cards with fares" width="100%" />
 
 </div>
 
@@ -32,12 +39,94 @@ Skyline is a backend REST API that manages the full lifecycle of airline operati
 
 The project is built as a **microservices architecture**: each bounded context runs as an independent Spring Boot application with its own database, communicating over HTTP (OpenFeign) and asynchronous events (Kafka). A Spring Cloud Gateway provides a unified API entry point.
 
+**[skyline-web](skyline-web/README.md)** is the browser front-end on top of it: a React 19 + TypeScript single-page app with two faces. Passengers search flights, book, manage their trips, check in and get a boarding pass with a scannable PDF417 barcode. Operations staff run the flight board, walk flights through their status lifecycle, assign crew, and manage the fleet, network and user accounts. It talks to the gateway only, through the same `/api/v1` the services expose, and ships as an nginx container in the same `docker compose` stack.
+
+---
+
+## Walkthrough
+
+Every screenshot below comes from the real app, running against its mocked API so the data is the same every time. One command regenerates them: see [Regenerating the screenshots](#regenerating-the-screenshots).
+
+### Passenger journey
+
+**1. Find a flight.** The home page (above) leads with a tabbed booking box: search flights, look up a booking by reference and last name, or check in. "Where we fly" lists every airport the route service knows, with the lowest estimated Economy fare over the next 7 days, found by searching each direct route day by day.
+
+**2. Compare flights.** Results come from the schedule service (`GET /flights?origin=&destination=&date=`) and include delayed flights. Departures show in the origin airport's time zone and arrivals in the destination's, with `+1` when the local date changes. Prices are estimates that mirror the reservation service's rules, including the surcharge on nearly full flights. Hovering a nearby date prefetches its results.
+
+<img src=".github/screenshots/02-results.png" alt="Search results for Istanbul to London: a date strip and two flight cards with times, status and estimated prices" width="100%" />
+
+**3. Book in three steps.** Cabin, passenger, review. The cabin step previews the fare for each cabin (Economy 1×, Business 2.5×, First 4× the base fare). The passenger form validates as you go and links every error to its field.
+
+<table>
+  <tr>
+    <td width="50%"><img src=".github/screenshots/03-booking-cabin.png" alt="Choose your cabin: Economy, Business and First with prices, and the estimated total" /></td>
+    <td width="50%"><img src=".github/screenshots/04-booking-review.png" alt="Review your booking: flight times, passenger details, cabin, and a seat assigned at check-in" /></td>
+  </tr>
+</table>
+
+**4. Confirmed.** `POST /reservations` holds a seat in the flight's inventory (the schedule service, over an internal service-key endpoint), computes the price on the server, and issues a six-character booking reference (PNR). The confirmation page shows the server's total, offers an `.ics` calendar file, and tells you when check-in opens.
+
+<img src=".github/screenshots/05-confirmation.png" alt="Booking confirmation: the booking reference, flight times, total price, and a check-in button" width="100%" />
+
+**5. My trips.** Upcoming, past and cancelled bookings. Cancelling a booking frees its seat on the flight.
+
+<img src=".github/screenshots/06-trips.png" alt="My trips: an upcoming Istanbul to London booking with Check in and Cancel booking buttons" width="100%" />
+
+**6. Check in and board.** Check-in opens 48 hours before departure and closes 1 hour before. `POST /checkin` assigns a seat, marks the reservation `CHECKED_IN`, and returns the boarding pass. It's idempotent: checking in again returns the same pass. The pass carries a PDF417 barcode, prints cleanly, and downloads as an image.
+
+<table>
+  <tr>
+    <td width="68%"><img src=".github/screenshots/07-boarding-pass.png" alt="Boarding pass for Ada Lovelace, IST to LHR, gate G7, seat 1A, with a PDF417 barcode" /></td>
+    <td width="32%"><img src=".github/screenshots/12-mobile-boarding-pass.png" alt="The same boarding pass on a phone" /></td>
+  </tr>
+</table>
+
+### Operations console
+
+Staff and admins get a separate console at `/ops`, gated by role: a passenger who opens it sees an access-denied page.
+
+**7. Flight board.** Every flight on every status, filterable by date, route, status and flight number (`GET /flights/board`), with seats sold and base fares.
+
+<img src=".github/screenshots/08-ops-board.png" alt="Operations flight board: counts per status, and a table of flights with route, times, aircraft, status, seats left and base price" width="100%" />
+
+**8. Run a flight.** The status machine (`SCHEDULED → BOARDING → DEPARTED → ARRIVED`, with `DELAYED` and `CANCELLED` branches) offers only the moves allowed from the current state. Boarding is refused until a captain and a first officer are assigned (the schedule service checks with the crew service). Cancelling is admin-only, and every booking on the flight is cancelled through a Kafka event.
+
+<img src=".github/screenshots/09-ops-flight.png" alt="Flight SK101 in the ops console: status steps, a crew manifest missing its captain and first officer, seat inventory, and a cancel section" width="100%" />
+
+**9. Fleet, network, crew and users.** Aircraft and aircraft types (only `ACTIVE` aircraft can be scheduled), airports and routes, crew members with licence expiry dates, and staff accounts that an admin creates.
+
+<img src=".github/screenshots/10-ops-fleet.png" alt="Fleet page: three aircraft with type, seats, year and status" width="100%" />
+
+### Dark mode and phones
+
+The theme follows the system, or the account menu's System / Light / Dark switch. Every screen is laid out for phones down to 375px wide, with a bottom tab bar.
+
+<table>
+  <tr>
+    <td width="70%"><img src=".github/screenshots/11-home-dark.png" alt="The home page in dark mode" /></td>
+    <td width="30%"><img src=".github/screenshots/13-mobile-home.png" alt="The home page on a phone" /></td>
+  </tr>
+</table>
+
+### Regenerating the screenshots
+
+A Playwright spec drives the app against its mocked API and writes the images to `.github/screenshots`:
+
+```bash
+cd skyline-web
+SCREENSHOTS=1 pnpm exec playwright test e2e/screenshots.spec.ts
+```
+
 ---
 
 ## Architecture
 
 ```
-                         ┌──────────────┐
+                    ┌────────────────────────┐
+                    │  skyline-web (React)   │ :5173
+                    │  nginx, /api → gateway │
+                    └───────────┬────────────┘
+                         ┌──────┴───────┐
                          │   Gateway    │ :8000
                          │  (routing)   │
                          └──────┬───────┘
@@ -71,6 +160,8 @@ The project is built as a **microservices architecture**: each bounded context r
 | `skyline-reservation` | `com.basarsy.skyline.reservation` | Bookings, passengers, ticketing, PNR generation |
 | `skyline-checkin` | `com.basarsy.skyline.checkin` | Online check-in & boarding passes |
 | `skyline-crew` | `com.basarsy.skyline.crew` | Crew members & flight crew assignments |
+| `skyline-e2e` | `com.basarsy.skyline.e2e` | End-to-end API tests through the gateway (`-Pe2e`) |
+| `skyline-web` | — | React web app: passenger site and ops console ([README](skyline-web/README.md)) |
 
 Each service owns its own `entity`, `dto`, `mapper`, `repository`, `service`, and `controller` packages. Cross-service communication uses **OpenFeign** HTTP clients — no shared entity references, only IDs cross boundaries.
 
@@ -95,6 +186,10 @@ Each service owns its own `entity`, `dto`, `mapper`, `repository`, `service`, an
 | Build | Maven (multi-module aggregator) |
 | CI | GitHub Actions (`./mvnw -B verify`) |
 | Other | Lombok |
+| Web app | React 19, TypeScript, Vite, React Router 7, TanStack Query |
+| Web UI | Tailwind CSS 4, shadcn/ui (Radix), Motion, Lucide icons |
+| Web tests | Vitest, MSW, Playwright with axe accessibility checks |
+| Web serving | nginx (Docker), SPA fallback, `/api` proxied to the gateway |
 
 ---
 
@@ -302,7 +397,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The API Gateway will be available at `http://localhost:8000`.
+The web app is served at `http://localhost:5173` and the API Gateway at `http://localhost:8000`. Set `SKYLINE_ADMIN_EMAIL` and `SKYLINE_ADMIN_PASSWORD` in `.env` to get an admin account for the ops console; passengers register on the site.
 
 ### Run Locally (services on bare metal, infrastructure in Docker)
 
