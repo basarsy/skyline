@@ -145,6 +145,15 @@ Base path: `/api/v1`
 POST   /auth/register              Register passenger
 POST   /auth/login                 Login → JWT
 POST   /auth/refresh               Refresh token
+GET    /auth/me                    Current user                [any authenticated]
+```
+
+### Users (skyline-auth · :8083)
+```
+GET    /users                      Search users, paged (optional: email = contains,
+                                   case-insensitive; role)     [ADMIN]
+POST   /users                      Create a STAFF or ADMIN account
+                                   (password min 12; duplicate email: 409) [ADMIN]
 ```
 
 ### Flights (skyline-schedule · :8080)
@@ -362,7 +371,7 @@ Each service reads configuration from its own `application.yml`. Infrastructure 
 | `SKYLINE_ADMIN_PASSWORD` | (auth) Password for the initial ADMIN account (min 12 chars) | — (skipped) |
 | `SKYLINE_CORS_ALLOWED_ORIGINS` | (gateway) Comma-separated browser origins allowed by CORS | `http://localhost:5173` |
 
-> Public registration always creates `PASSENGER` accounts. Set `SKYLINE_ADMIN_EMAIL` / `SKYLINE_ADMIN_PASSWORD` on the auth service to bootstrap the first `ADMIN`.
+> Public registration always creates `PASSENGER` accounts. Set `SKYLINE_ADMIN_EMAIL` / `SKYLINE_ADMIN_PASSWORD` on the auth service to bootstrap the first `ADMIN`, who can then create further `STAFF` and `ADMIN` accounts with `POST /users`.
 
 ---
 
