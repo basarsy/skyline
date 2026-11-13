@@ -5,6 +5,7 @@ import com.basarsy.skyline.crew.dto.CrewMemberRequest;
 import com.basarsy.skyline.crew.dto.CrewMemberResponse;
 import com.basarsy.skyline.crew.dto.FlightCrewAssignmentRequest;
 import com.basarsy.skyline.crew.dto.FlightCrewResponse;
+import com.basarsy.skyline.crew.entity.CrewRole;
 import com.basarsy.skyline.crew.service.CrewService;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.RequestBody;
 
@@ -31,6 +33,21 @@ public class CrewController {
     @PreAuthorize("hasRole('ADMIN')")
     public ApiResponse<CrewMemberResponse> addCrewMember(@Valid @RequestBody CrewMemberRequest request) {
         return ApiResponse.success("Crew member added successfully", crewService.addCrewMember(request));
+    }
+
+    /** Crew directory sorted by last name; {@code q} matches first/last name or employee number. */
+    @GetMapping("/crew")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
+    public ApiResponse<List<CrewMemberResponse>> listCrewMembers(
+            @RequestParam(required = false) CrewRole role,
+            @RequestParam(required = false) String q) {
+        return ApiResponse.success("Crew members retrieved successfully", crewService.listCrewMembers(role, q));
+    }
+
+    @GetMapping("/crew/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
+    public ApiResponse<CrewMemberResponse> getCrewMember(@PathVariable UUID id) {
+        return ApiResponse.success("Crew member retrieved successfully", crewService.getCrewMember(id));
     }
 
     @PostMapping("/flights/{id}/crew")

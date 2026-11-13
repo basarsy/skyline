@@ -201,7 +201,10 @@ GET    /checkin/{pnr}/boarding-pass Download boarding pass
 
 ### Crew (skyline-crew · :8086)
 ```
-POST   /crew                       Add crew member             [ADMIN]
+GET    /crew                       Crew directory, sorted by last name [STAFF, ADMIN]
+                                   (optional: role, q = first/last name or employee number)
+GET    /crew/{id}                  Crew member detail          [STAFF, ADMIN]
+POST   /crew                       Add crew member             [ADMIN] (duplicate employee number: 409)
 POST   /flights/{id}/crew          Assign to flight            [STAFF, ADMIN]
 GET    /flights/{id}/crew          Crew manifest               [STAFF, ADMIN]
 DELETE /flights/{flightId}/crew/{crewMemberId}  Remove from flight [STAFF, ADMIN]
