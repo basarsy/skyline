@@ -1,13 +1,16 @@
 package com.basarsy.skyline.schedule.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.basarsy.skyline.common.exception.SkylineException;
 import com.basarsy.skyline.schedule.client.CrewClient;
 import com.basarsy.skyline.schedule.client.FleetClient;
 import com.basarsy.skyline.schedule.client.RouteClient;
@@ -18,6 +21,7 @@ import com.basarsy.skyline.schedule.client.dto.AirportSummary;
 import com.basarsy.skyline.schedule.client.dto.RouteResponse;
 import com.basarsy.skyline.schedule.dto.FlightBoardFilter;
 import com.basarsy.skyline.schedule.entity.Flight;
+import com.basarsy.skyline.schedule.event.FlightCancelledEvent;
 import com.basarsy.skyline.schedule.entity.FlightStatus;
 import com.basarsy.skyline.schedule.mapper.FlightMapper;
 import com.basarsy.skyline.schedule.mapper.FlightMapperImpl;
@@ -26,7 +30,9 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
@@ -34,6 +40,10 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 class FlightServiceImplTest {
 
@@ -100,6 +110,67 @@ class FlightServiceImplTest {
 
         assertThat(page.getContent().get(0).getRoute()).isNull();
         assertThat(page.getContent().get(0).getAircraft()).isNotNull();
+    }
+
+    @Test
+    void adminCancellingThroughStatusPatchRunsTheFullCancellation() {
+        loginAs("ROLE_ADMIN");
+        Flight flight = flight(FlightStatus.SCHEDULED);
+        flight.setAvailableSeats(120);
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+
+        var response = service.updateFlightStatus(flight.getId(), FlightStatus.CANCELLED);
+
+        assertThat(response.getStatus()).isEqualTo(FlightStatus.CANCELLED);
+        assertThat(flight.getAvailableSeats()).as("seats reset to capacity").isEqualTo(180);
+        verify(events).publishEvent(new FlightCancelledEvent(flight.getId()));
+    }
+
+    @Test
+    void staffCannotCancelThroughStatusPatch() {
+        loginAs("ROLE_STAFF");
+        Flight flight = flight(FlightStatus.SCHEDULED);
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+
+        assertThatThrownBy(() -> service.updateFlightStatus(flight.getId(), FlightStatus.CANCELLED))
+                .isInstanceOf(SkylineException.class)
+                .hasMessage("Only an admin can cancel a flight")
+                .extracting(e -> ((SkylineException) e).getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(flight.getStatus()).isEqualTo(FlightStatus.SCHEDULED);
+        verifyNoInteractions(events);
+    }
+
+    @Test
+    void otherStatusChangesStillWorkForStaff() {
+        loginAs("ROLE_STAFF");
+        Flight flight = flight(FlightStatus.SCHEDULED);
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+
+        assertThat(service.updateFlightStatus(flight.getId(), FlightStatus.DELAYED).getStatus())
+                .isEqualTo(FlightStatus.DELAYED);
+        verifyNoInteractions(events);
+    }
+
+    @Test
+    void anArrivedFlightCannotBeCancelledThroughStatusPatch() {
+        loginAs("ROLE_ADMIN");
+        Flight flight = flight(FlightStatus.ARRIVED);
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+
+        assertThatThrownBy(() -> service.updateFlightStatus(flight.getId(), FlightStatus.CANCELLED))
+                .isInstanceOf(SkylineException.class)
+                .extracting(e -> ((SkylineException) e).getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+        verifyNoInteractions(events);
+    }
+
+    static void loginAs(String role) {
+        SecurityContextHolder.getContext().setAuthentication(UsernamePasswordAuthenticationToken.authenticated(
+                "user@skyline.test", null, List.of(new SimpleGrantedAuthority(role))));
+    }
+
+    @AfterEach
+    void clearSecurity() {
+        SecurityContextHolder.clearContext();
     }
 
     // ------------------------------------------------------------------ fixtures

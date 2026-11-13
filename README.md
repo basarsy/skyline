@@ -157,7 +157,8 @@ GET    /flights/board              Operations flight board, every status [STAFF,
 GET    /flights/{id}               Flight detail
 POST   /flights                    Create flight               [STAFF, ADMIN]
 PUT    /flights/{id}               Update flight               [STAFF, ADMIN]
-PATCH  /flights/{id}/status        Update flight status        [STAFF, ADMIN]
+PATCH  /flights/{id}/status        Update flight status        [STAFF, ADMIN; CANCELLED: ADMIN only,
+                                   same full cancellation as DELETE]
 DELETE /flights/{id}               Cancel flight               [ADMIN]
 ```
 

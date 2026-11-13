@@ -32,6 +32,8 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -99,6 +101,15 @@ public class FlightServiceImpl implements FlightService {
     @Override
     @Transactional
     public FlightResponse updateFlightStatus(UUID id, FlightStatus status) {
+        if (status == FlightStatus.CANCELLED) {
+            // Same rule and same effect as DELETE /flights/{id}: seats reset, bookings cancelled via Kafka.
+            if (!callerIsAdmin()) {
+                throw new SkylineException("Only an admin can cancel a flight", HttpStatus.FORBIDDEN);
+            }
+            cancelFlight(id);
+            return enrichFlightResponse(getFlightEntity(id));
+        }
+
         Flight flight = getFlightEntity(id);
 
         // Basic state machine validation
@@ -219,6 +230,12 @@ public class FlightServiceImpl implements FlightService {
     @Transactional
     public void incrementSeat(UUID id) {
         flightRepository.incrementSeat(id);
+    }
+
+    private static boolean callerIsAdmin() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
     }
 
     private Flight getFlightEntity(UUID id) {
