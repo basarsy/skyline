@@ -45,6 +45,13 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.success(authService.refresh(request)));
     }
 
+    /** Always 204: logging out with an unknown, invalid or expired token (or none) is not an error. */
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(@RequestBody(required = false) RefreshTokenRequest request) {
+        authService.logout(request);
+        return ResponseEntity.noContent().build();
+    }
+
     /** The caller's account; any authenticated user (non-POST /auth/** requires a token). */
     @GetMapping("/me")
     public ApiResponse<UserResponse> me(@AuthenticationPrincipal SkylineUserDetails principal) {

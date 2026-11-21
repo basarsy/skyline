@@ -124,6 +124,31 @@ class UserEndpointsSecurityTest {
         verify(userService, org.mockito.Mockito.never()).createUser(isNull());
     }
 
+    @Test
+    void logoutNeedsNoTokenAndAlwaysAnswers204() throws Exception {
+        mvc.perform(post("/api/v1/auth/logout").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"whatever\"}"))
+                .andExpect(status().isNoContent());
+        mvc.perform(post("/api/v1/auth/logout").contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isNoContent());
+        mvc.perform(post("/api/v1/auth/logout")).andExpect(status().isNoContent());
+    }
+
+    @Test
+    void passwordsOverTheBcryptByteLimitAreA400() throws Exception {
+        // 25 x "€" is 25 characters (passes @Size) but 75 UTF-8 bytes.
+        String euros = "€".repeat(25);
+        mvc.perform(post("/api/v1/auth/register").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"pax@skyline.test\",\"password\":\"" + euros + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0]").value(org.hamcrest.Matchers.startsWith("password: ")));
+        mvc.perform(post("/api/v1/users").header(HttpHeaders.AUTHORIZATION, bearer("ROLE_ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"ops@skyline.test\",\"password\":\"" + "x".repeat(73) + "\",\"role\":\"STAFF\"}"))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(authService, userService);
+    }
+
     private String bearer(String role) {
         var user = new SkylineUserDetails(ME, "me@skyline.test", null, List.of(new SimpleGrantedAuthority(role)));
         return "Bearer " + jwtService.generateAccessToken(user);

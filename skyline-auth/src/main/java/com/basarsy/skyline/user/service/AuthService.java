@@ -13,4 +13,7 @@ public interface AuthService {
     AuthResponse login(LoginRequest request);
 
     AuthResponse refresh(RefreshTokenRequest request);
+
+    /** Revokes the refresh token's session. A no-op for a missing, unknown, invalid or expired token. */
+    void logout(RefreshTokenRequest request);
 }

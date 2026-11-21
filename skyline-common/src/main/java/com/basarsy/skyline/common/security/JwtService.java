@@ -5,6 +5,7 @@ import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
@@ -47,12 +48,33 @@ public class JwtService {
         return buildToken(extraClaims, userDetails.getUsername(), jwtProperties.accessTokenExpiryMs(), ACCESS_TOKEN_TYPE);
     }
 
-    public String generateRefreshToken(UserDetails userDetails) {
-        return buildToken(new HashMap<>(), userDetails.getUsername(), jwtProperties.refreshTokenExpiryMs(), REFRESH_TOKEN_TYPE);
+    /**
+     * A refresh token carrying {@code tokenId} as its {@code jti}, so the auth service can look it up, rotate and
+     * revoke it server-side.
+     */
+    public String generateRefreshToken(UserDetails userDetails, UUID tokenId) {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put(Claims.ID, tokenId.toString());
+        return buildToken(claims, userDetails.getUsername(), jwtProperties.refreshTokenExpiryMs(), REFRESH_TOKEN_TYPE);
+    }
+
+    public Duration refreshTokenExpiry() {
+        return Duration.ofMillis(jwtProperties.refreshTokenExpiryMs());
     }
 
     public String extractUsername(String token) {
         return parseClaims(token).getSubject();
+    }
+
+    /** The {@code jti} claim, or {@code null} when the token has none or it is not a UUID. */
+    public UUID extractTokenId(String token) {
+        String id = parseClaims(token).getId();
+        if (id == null) return null;
+        try {
+            return UUID.fromString(id);
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
     }
 
     public UUID extractUserId(String token) {
