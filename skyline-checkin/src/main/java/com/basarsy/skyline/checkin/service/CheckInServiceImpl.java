@@ -2,6 +2,7 @@ package com.basarsy.skyline.checkin.service;
 
 import com.basarsy.skyline.checkin.client.ReservationClient;
 import com.basarsy.skyline.checkin.client.dto.FlightResponse;
+import com.basarsy.skyline.checkin.client.dto.FlightStatus;
 import com.basarsy.skyline.checkin.client.dto.ReservationResponse;
 import com.basarsy.skyline.checkin.client.dto.ReservationStatus;
 import com.basarsy.skyline.checkin.client.dto.RouteResponse;
@@ -51,10 +52,11 @@ public class CheckInServiceImpl implements CheckInService {
 
         Optional<BoardingPass> existing = boardingPassRepository.findByReservationId(reservation.id());
         if (existing.isPresent()) {
-            return enrichBoardingPassResponse(existing.get(), reservation);
+            return enrichBoardingPassResponse(requireValid(existing.get(), reservation), reservation);
         }
 
         validateReservationStatus(reservation);
+        validateFlightOpenForCheckIn(reservation);
         validateCheckInWindow(reservation);
 
         ReservationResponse checkedIn = reservationClient.checkIn(reservation.id());
@@ -70,7 +72,22 @@ public class CheckInServiceImpl implements CheckInService {
         ReservationResponse reservation = findOwnedReservation(pnr);
         BoardingPass boardingPass = boardingPassRepository.findByReservationId(reservation.id())
                 .orElseThrow(() -> new ResourceNotFoundException("Boarding pass not found"));
-        return enrichBoardingPassResponse(boardingPass, reservation);
+        return enrichBoardingPassResponse(requireValid(boardingPass, reservation), reservation);
+    }
+
+    /**
+     * A stored boarding pass is only good while the reservation is still checked in and the flight still
+     * operates: a cancelled reservation (or flight) must not keep yielding a pass. It stays valid while
+     * boarding, when passengers need it most.
+     */
+    private static BoardingPass requireValid(BoardingPass boardingPass, ReservationResponse reservation) {
+        if (reservation.status() != ReservationStatus.CHECKED_IN) {
+            throw new CheckInWindowException("Boarding pass is no longer valid. Reservation status: " + reservation.status());
+        }
+        if (reservation.flight().getStatus() == FlightStatus.CANCELLED) {
+            throw new CheckInWindowException("Boarding pass is no longer valid: the flight is cancelled.");
+        }
+        return boardingPass;
     }
 
     /**
@@ -137,6 +154,14 @@ public class CheckInServiceImpl implements CheckInService {
         if (reservation.status() != ReservationStatus.CONFIRMED && reservation.status() != ReservationStatus.CHECKED_IN) {
             throw new CheckInWindowException(
                     "Check-in is only allowed for CONFIRMED reservations. Current status: " + reservation.status());
+        }
+    }
+
+    /** New passes are only issued while the flight still takes passengers. */
+    private static void validateFlightOpenForCheckIn(ReservationResponse reservation) {
+        FlightStatus status = reservation.flight().getStatus();
+        if (status != FlightStatus.SCHEDULED && status != FlightStatus.DELAYED) {
+            throw new CheckInWindowException("Check-in is closed for this flight. Flight status: " + status);
         }
     }
 
