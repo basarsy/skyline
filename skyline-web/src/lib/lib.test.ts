@@ -53,7 +53,10 @@ describe('time contract', () => {
     const now = new Date('2030-06-01T22:30:00Z')
     expect(todayIn('Europe/Istanbul', now)).toBe('2030-06-02')
     expect(todayIn('America/New_York', now)).toBe('2030-06-01')
-    expect(todayIn('Not/AZone', now)).toBe('2030-06-01') // unknown zone → UTC
+    // No or an unknown zone → UTC, as the API searches it (never the browser's today).
+    expect(todayIn('Not/AZone', now)).toBe('2030-06-01')
+    expect(todayIn(null, new Date('2030-06-01T23:30:00Z'))).toBe('2030-06-01')
+    expect(todayIn('', new Date('2030-06-01T23:30:00Z'))).toBe('2030-06-01')
   })
 
   it('adds calendar days across DST changes and month ends', () => {

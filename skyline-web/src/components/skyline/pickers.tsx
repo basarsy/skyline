@@ -7,7 +7,7 @@ import { networkKeys } from '@/api/query-keys'
 import type { AirportResponse } from '@/api/types'
 import { STATIC_STALE_TIME } from '@/app/query-client'
 import { cn } from '@/lib/cn'
-import { formatLocalDate, todayIn } from '@/lib/format'
+import { formatLocalDate, isoFromLocalDate, todayIn } from '@/lib/format'
 import { Combobox, type ComboboxOption } from './combobox'
 
 type ControlAria = { id?: string; 'aria-invalid'?: true | undefined; 'aria-describedby'?: string | undefined }
@@ -22,11 +22,13 @@ export function useAirports() {
 
 /**
  * Today at the airport with this IATA code ("2026-12-01"): the first day flight search can return from there.
- * The browser's today until the airport list has loaded (or for an unknown code).
+ * The browser's today until the airport list has loaded (or for no or an unknown code); UTC's for a known
+ * airport without a valid zone, matching the API.
  */
 export function useAirportToday(iata: string | null | undefined) {
   const { data } = useAirports()
-  return todayIn(iata ? data?.find((airport) => airport.iataCode === iata)?.timezone : undefined)
+  const airport = iata ? data?.find((candidate) => candidate.iataCode === iata) : undefined
+  return airport ? todayIn(airport.timezone) : isoFromLocalDate(new Date())
 }
 
 export function airportOption(

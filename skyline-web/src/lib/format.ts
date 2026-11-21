@@ -157,10 +157,10 @@ export function toUtcDay(date: Date) {
 
 /**
  * Today's date ("2026-12-01") at an airport: flight search dates are calendar days in the origin airport's
- * zone. Without a zone (airport not known yet), the browser's own today.
+ * zone. An airport with no or an unknown zone counts as UTC, as it does for the API's search.
  */
 export function todayIn(zone: string | null | undefined, now: Date = new Date()) {
-  return zone ? formatInTimeZone(now, safeZone(zone), 'yyyy-MM-dd') : format(now, 'yyyy-MM-dd')
+  return formatInTimeZone(now, safeZone(zone), 'yyyy-MM-dd')
 }
 
 /** "2026-12-01" + 2 → "2026-12-03": calendar arithmetic, so DST changes never skip or repeat a day. */

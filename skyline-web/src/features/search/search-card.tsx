@@ -9,7 +9,7 @@ import { AirportCombobox, DatePicker, useAirportToday } from '@/components/skyli
 import { SegmentedControl } from '@/components/skyline/segmented-control'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/cn'
-import { addIsoDays, todayIn } from '@/lib/format'
+import { addIsoDays, isoFromLocalDate } from '@/lib/format'
 import { cabinLabel, CABINS } from '@/lib/labels'
 
 import type { SearchValues } from './search-schema'
@@ -42,7 +42,7 @@ export function SearchCard({
   const [defaultValues] = React.useState<SearchValues>(() => ({
     from: initial?.from ?? '',
     to: initial?.to ?? '',
-    date: initial?.date ?? addIsoDays(todayIn(undefined), 1),
+    date: initial?.date ?? addIsoDays(isoFromLocalDate(new Date()), 1),
     cabin: (initial?.cabin as CabinClass | undefined) ?? 'ECONOMY',
   }))
   const form = useForm<SearchValues>({ resolver: lazyResolver, defaultValues })
@@ -131,6 +131,7 @@ export function SearchCard({
                   disablePast
                   today={originToday}
                   variant="pill"
+                  note="Dates are local to the departure airport"
                 />
               )}
             </FormField>
