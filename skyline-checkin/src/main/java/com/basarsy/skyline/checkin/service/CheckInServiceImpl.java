@@ -17,6 +17,7 @@ import com.basarsy.skyline.common.exception.SkylineException;
 import com.basarsy.skyline.common.security.SkylineUserDetails;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.EnumSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -33,6 +34,8 @@ public class CheckInServiceImpl implements CheckInService {
 
     private static final Set<String> STAFF_ROLES = Set.of("ROLE_STAFF", "ROLE_ADMIN");
     private static final int GATE_COUNT = 20;
+    /** Flights still taking passengers (the same statuses as booking). */
+    private static final Set<FlightStatus> CHECK_IN_STATUSES = EnumSet.of(FlightStatus.SCHEDULED, FlightStatus.DELAYED);
 
     private final ReservationClient reservationClient;
     private final BoardingPassRepository boardingPassRepository;
@@ -160,7 +163,7 @@ public class CheckInServiceImpl implements CheckInService {
     /** New passes are only issued while the flight still takes passengers. */
     private static void validateFlightOpenForCheckIn(ReservationResponse reservation) {
         FlightStatus status = reservation.flight().getStatus();
-        if (status != FlightStatus.SCHEDULED && status != FlightStatus.DELAYED) {
+        if (!CHECK_IN_STATUSES.contains(status)) {
             throw new CheckInWindowException("Check-in is closed for this flight. Flight status: " + status);
         }
     }
