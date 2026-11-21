@@ -2,6 +2,7 @@ package com.basarsy.skyline.reservation.dto;
 
 import com.basarsy.skyline.reservation.client.dto.FlightResponse;
 import com.basarsy.skyline.reservation.entity.CabinClass;
+import com.basarsy.skyline.reservation.entity.FareType;
 import com.basarsy.skyline.reservation.entity.ReservationStatus;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -23,7 +24,13 @@ public class ReservationResponse {
     private ReservationStatus status;
     private String seatNumber;
     private CabinClass cabinClass;
+    private FareType fareType;
+    /** The ticket alone. */
+    private BigDecimal farePrice;
+    /** Fare plus paid add-ons (seat, bags, ...). */
     private BigDecimal totalPrice;
+    /** Shared by reservations booked together; null for a single booking. */
+    private UUID bookingGroupId;
     /** ISO 4217 code of {@code totalPrice}. */
     private String currency;
     private LocalDateTime bookedAt;

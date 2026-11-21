@@ -12,6 +12,7 @@ import com.basarsy.skyline.reservation.dto.PassengerResponse;
 import com.basarsy.skyline.reservation.dto.ReservationRequest;
 import com.basarsy.skyline.reservation.dto.ReservationResponse;
 import com.basarsy.skyline.reservation.entity.CabinClass;
+import com.basarsy.skyline.reservation.entity.FareType;
 import com.basarsy.skyline.reservation.entity.Passenger;
 import com.basarsy.skyline.reservation.entity.Reservation;
 import com.basarsy.skyline.reservation.entity.ReservationStatus;
@@ -89,7 +90,10 @@ public class ReservationServiceImpl implements ReservationService {
         reservation.setPassenger(passenger);
         reservation.setBookedAt(LocalDateTime.now());
         reservation.setPnr(generateUniquePnr());
-        reservation.setTotalPrice(calculatePrice(flight, request.cabinClass()));
+        FareType fareType = request.fareType() == null ? FareType.STANDARD : request.fareType();
+        reservation.setFareType(fareType);
+        reservation.setFarePrice(calculatePrice(flight, request.cabinClass(), fareType));
+        reservation.setTotalPrice(reservation.getFarePrice());
 
         // In a real system, payment processing would happen here, and status would be CONFIRMED upon success
         reservation.setStatus(ReservationStatus.CONFIRMED);
@@ -180,30 +184,12 @@ public class ReservationServiceImpl implements ReservationService {
                 .orElseThrow(() -> new ResourceNotFoundException("Reservation not found with id: " + id));
     }
 
-    /**
-     * The calling user's id. Not every authenticated caller is a user: an internal service authenticated by
-     * API key has a plain string principal, and that is "not allowed" (403), not a server error.
-     */
     private UUID getCurrentUserId() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()
-                || authentication instanceof AnonymousAuthenticationToken) {
-            throw new SkylineException("User not authenticated", HttpStatus.UNAUTHORIZED);
-        }
-        if (!(authentication.getPrincipal() instanceof SkylineUserDetails user) || user.getId() == null) {
-            throw new SkylineException("This operation requires a user account", HttpStatus.FORBIDDEN);
-        }
-        return user.getId();
+        return CallerAccess.currentUserId();
     }
 
     private void verifyOwnership(Reservation reservation) {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        boolean isStaffOrAdmin = authentication != null && authentication.getAuthorities().stream()
-                .anyMatch(a -> a.getAuthority().equals("ROLE_STAFF") || a.getAuthority().equals("ROLE_ADMIN"));
-
-        if (!isStaffOrAdmin && !getCurrentUserId().equals(reservation.getPassenger().getUserId())) {
-            throw new SkylineException("You do not have permission to access this reservation", HttpStatus.FORBIDDEN);
-        }
+        CallerAccess.verifyOwnership(reservation);
     }
 
     private static boolean isPrivilegedCaller() {
@@ -237,30 +223,16 @@ public class ReservationServiceImpl implements ReservationService {
                 null, passenger.nationality());
     }
 
-    private BigDecimal calculatePrice(FlightResponse flight, CabinClass cabinClass) {
+    static BigDecimal calculatePrice(FlightResponse flight, CabinClass cabinClass, FareType fareType) {
         BigDecimal multiplier = switch (cabinClass) {
             case ECONOMY -> BigDecimal.valueOf(1.0);
             case BUSINESS -> BigDecimal.valueOf(2.5);
             case FIRST -> BigDecimal.valueOf(4.0);
         };
-        
-        AircraftResponse aircraft = flight.getAircraft();
-        int totalSeats = (aircraft != null && aircraft.aircraftType() != null)
-                ? aircraft.aircraftType().totalSeats()
-                : Math.max(flight.getAvailableSeats(), 180); // Default to standard capacity if aircraft not enriched
-        
-        int availableSeats = flight.getAvailableSeats();
-        double loadFactor = totalSeats > 0 ? (double) (totalSeats - availableSeats) / totalSeats : 0.0;
-        
-        BigDecimal loadFactorMultiplier = BigDecimal.valueOf(1.0);
-        if (loadFactor > 0.90) {
-            loadFactorMultiplier = BigDecimal.valueOf(1.30);
-        } else if (loadFactor > 0.80) {
-            loadFactorMultiplier = BigDecimal.valueOf(1.15);
-        }
 
         // Money has two decimals: multiplying by 2.5 and 1.15 would otherwise store e.g. 287.500.
-        return flight.getBasePrice().multiply(multiplier).multiply(loadFactorMultiplier)
+        return flight.getBasePrice().multiply(multiplier).multiply(fareType.multiplier())
+                .multiply(LoadFactorPricing.multiplier(flight))
                 .setScale(2, RoundingMode.HALF_UP);
     }
 

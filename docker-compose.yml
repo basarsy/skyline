@@ -266,7 +266,8 @@ services:
     ports:
       - "127.0.0.1:8084:8084"
     environment:
-      <<: *service-env
+      # Redis holds the short-lived seat holds made during seat selection.
+      <<: [*service-env, *redis-env]
       DATABASE_URL: jdbc:postgresql://reservation-db:5432/skyline_reservation
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       FLEET_SERVICE_URL: http://fleet-service:8081
@@ -274,6 +275,8 @@ services:
       SKYLINE_CURRENCY: ${SKYLINE_CURRENCY:-EUR}
     depends_on:
       reservation-db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       kafka:
         condition: service_healthy

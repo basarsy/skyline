@@ -67,7 +67,9 @@ spring:
             - id: reservation-service
               uri: ${RESERVATION_SERVICE_URL:http://localhost:8084}
               predicates:
-                - Path=/api/v1/reservations/**
+                # A flight's seat map is built from bookings and seat holds, so reservation serves it (ahead of
+                # the schedule route, like crew's /flights/*/crew), along with the seat and add-on catalogs.
+                - Path=/api/v1/reservations/**, /api/v1/flights/*/seat-map, /api/v1/seat-price-rules/**, /api/v1/ancillary-products/**
             - id: checkin-service
               uri: ${CHECKIN_SERVICE_URL:http://localhost:8085}
               predicates:

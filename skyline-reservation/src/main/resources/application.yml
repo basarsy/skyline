@@ -22,6 +22,11 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration/reservation
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:
@@ -43,6 +48,11 @@ skyline:
     currency: ${SKYLINE_CURRENCY:EUR}
   internal:
     api-key: ${SKYLINE_INTERNAL_API_KEY}
+  seats:
+    # How long a seat picked during booking or check-in stays held for that passenger.
+    hold-ttl: ${SKYLINE_SEAT_HOLD_TTL:PT15M}
+    # How long a fetched aircraft layout is reused before asking the fleet service again.
+    layout-cache-ttl: PT5M
 
 jwt:
   secret: ${JWT_SECRET}

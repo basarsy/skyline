@@ -40,8 +40,21 @@ public class Reservation extends BaseEntity {
     @Column(name = "cabin_class", nullable = false)
     private CabinClass cabinClass;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "fare_type", nullable = false)
+    private FareType fareType = FareType.STANDARD;
+
+    /** The ticket alone. */
+    @Column(name = "fare_price", nullable = false)
+    private BigDecimal farePrice;
+
+    /** The fare plus every paid add-on (seat, bags, ...); kept in step by the add-on services. */
     @Column(name = "total_price", nullable = false)
     private BigDecimal totalPrice;
+
+    /** Shared by the reservations booked together (several passengers and/or legs); null for a single booking. */
+    @Column(name = "booking_group_id")
+    private UUID bookingGroupId;
 
     @Column(name = "booked_at", nullable = false)
     private LocalDateTime bookedAt;
