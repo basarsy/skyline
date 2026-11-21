@@ -24,7 +24,14 @@ export async function startMockWorker() {
       // Storage full or unavailable: data just won't survive a reload.
     }
   })
-  await worker.start({ onUnhandledRequest: 'bypass', quiet: true })
+  await worker.start({
+    // Every API call the app makes has a handler, so an unhandled one is a missing mock: fail it loudly
+    // instead of letting it slip through to a back-end that isn't there. Modules, fonts and images pass.
+    onUnhandledRequest: (request, print) => {
+      if (new URL(request.url).pathname.startsWith('/api/')) print.error()
+    },
+    quiet: true,
+  })
 
   Object.assign(window, {
     __skylineResetMocks: () => {
