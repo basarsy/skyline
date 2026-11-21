@@ -131,7 +131,13 @@ class OutboxIntegrationTest {
         Flight flight = scheduledFlight();
         flightService.cancelFlight(flight.getId());
 
-        assertThat(publisher.publishPending()).isEqualTo(1);
+        // The first send to a fresh topic (or right after the broker was paused by another test) can outlast the
+        // producer's blocking timeout; the publisher then records a failure and retries with backoff, exactly as
+        // in production. Wait for delivery instead of assuming the first attempt wins.
+        Awaitility.await("published")
+                .atMost(Duration.ofSeconds(60))
+                .pollInterval(Duration.ofMillis(500))
+                .until(() -> publisher.publishPending() == 1);
 
         ConsumerRecord<String, String> record = consume(flight.getId());
         assertThat(record.value()).isEqualTo("{\"flightId\":\"" + flight.getId() + "\"}");
