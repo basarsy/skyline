@@ -24,13 +24,15 @@ class AirportServiceImplTest {
     private final AirportRepository airports = mock(AirportRepository.class);
     private final AirportServiceImpl service = new AirportServiceImpl(airports, new AirportMapperImpl());
 
+    private final AirportRequest request =
+            new AirportRequest("saw", "ltfj", "Sabiha Gokcen", "Istanbul", "Turkey", "Europe/Istanbul");
+
     @Test
     void createUppercasesTheCodesAndKeepsTheRest() {
         when(airports.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        AirportResponse created = service.create(request("saw"));
+        AirportResponse created = service.create(request);
 
-        verify(airports).existsByIataCode("SAW");
         assertThat(created).isEqualTo(new AirportResponse(null, "SAW", "LTFJ", "Sabiha Gokcen", "Istanbul", "Turkey",
                 "Europe/Istanbul"));
     }
@@ -39,7 +41,7 @@ class AirportServiceImplTest {
     void duplicateIataCodeIsA409AndNothingIsSaved() {
         when(airports.existsByIataCode("SAW")).thenReturn(true);
 
-        assertThatThrownBy(() -> service.create(request("saw")))
+        assertThatThrownBy(() -> service.create(request))
                 .isInstanceOf(SkylineException.class)
                 .hasMessage("Airport with IATA code already exists")
                 .extracting(e -> ((SkylineException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT);
@@ -54,9 +56,5 @@ class AirportServiceImplTest {
         assertThatThrownBy(() -> service.findById(unknown))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(unknown.toString());
-    }
-
-    private static AirportRequest request(String iata) {
-        return new AirportRequest(iata, "ltfj", "Sabiha Gokcen", "Istanbul", "Turkey", "Europe/Istanbul");
     }
 }

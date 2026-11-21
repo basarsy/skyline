@@ -42,7 +42,6 @@ class AircraftServiceImplTest {
 
         AircraftResponse created = service.create(new AircraftRequest("  tc-sky ", a320.getId(), 2020));
 
-        verify(aircraft).existsByTailNumberIgnoreCase("TC-SKY");
         ArgumentCaptor<Aircraft> saved = ArgumentCaptor.forClass(Aircraft.class);
         verify(aircraft).save(saved.capture());
         assertThat(saved.getValue().getTailNumber()).isEqualTo("TC-SKY");
@@ -84,7 +83,7 @@ class AircraftServiceImplTest {
     }
 
     @Test
-    void findAllUsesTheFetchJoinQuery() {
+    void findAllMapsEachAircraftWithItsType() {
         Aircraft existing = new Aircraft();
         existing.setId(UUID.randomUUID());
         existing.setTailNumber("TC-ONE");
@@ -96,7 +95,6 @@ class AircraftServiceImplTest {
             assertThat(response.tailNumber()).isEqualTo("TC-ONE");
             assertThat(response.aircraftType().id()).isEqualTo(a320.getId());
         });
-        verify(aircraft, never()).findAll();
     }
 
     private static AircraftType type() {

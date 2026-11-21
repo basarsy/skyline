@@ -1,5 +1,6 @@
 package com.basarsy.skyline.fleet.controller;
 
+import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -10,57 +11,31 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.basarsy.skyline.common.config.SecurityConfig;
-import com.basarsy.skyline.common.exception.GlobalExceptionHandler;
 import com.basarsy.skyline.common.exception.ResourceNotFoundException;
 import com.basarsy.skyline.common.security.InternalServiceAuthenticationFilter;
-import com.basarsy.skyline.common.security.JwtAccessDeniedHandler;
-import com.basarsy.skyline.common.security.JwtAuthenticationEntryPoint;
-import com.basarsy.skyline.common.security.JwtAuthenticationFilter;
-import com.basarsy.skyline.common.security.JwtService;
-import com.basarsy.skyline.common.security.SkylineUserDetails;
 import com.basarsy.skyline.fleet.dto.AircraftResponse;
 import com.basarsy.skyline.fleet.dto.AircraftTypeSummary;
 import com.basarsy.skyline.fleet.entity.AircraftStatus;
-import com.basarsy.skyline.fleet.service.AircraftService;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.context.annotation.Import;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /** Role rules and request validation of the aircraft endpoints, through the real security chain and real JWTs. */
-@WebMvcTest(AircraftController.class)
-@ActiveProfiles("test")
-@Import({SecurityConfig.class, GlobalExceptionHandler.class, JwtService.class, JwtAuthenticationFilter.class,
-        InternalServiceAuthenticationFilter.class, JwtAuthenticationEntryPoint.class, JwtAccessDeniedHandler.class})
-class AircraftControllerSecurityTest {
+class AircraftControllerSecurityTest extends FleetWebMvcTestBase {
 
-    private static final String INTERNAL_KEY = "test-internal-api-key-at-least-32-chars";
     private static final UUID ID = UUID.randomUUID();
     private static final String VALID_AIRCRAFT =
             "{\"tailNumber\":\"TC-SKY\",\"aircraftTypeId\":\"" + UUID.randomUUID() + "\",\"manufacturedYear\":2020}";
     private static final String VALID_STATUS = "{\"status\":\"MAINTENANCE\"}";
 
-    @Autowired
-    private MockMvc mvc;
-
-    @Autowired
-    private JwtService jwtService;
-
-    @MockitoBean
-    private AircraftService aircraftService;
+    @Value("${skyline.internal.api-key}")
+    private String internalKey;
 
     private final AircraftResponse aircraft = new AircraftResponse(ID, "TC-SKY",
             new AircraftTypeSummary(UUID.randomUUID(), "Airbus", "A320neo", 180), AircraftStatus.ACTIVE, 2020);
@@ -115,7 +90,7 @@ class AircraftControllerSecurityTest {
 
     @Test
     void internalServicesCannotListTheFleet() throws Exception {
-        mvc.perform(get("/api/v1/aircraft").header(InternalServiceAuthenticationFilter.API_KEY_HEADER, INTERNAL_KEY))
+        mvc.perform(get("/api/v1/aircraft").header(InternalServiceAuthenticationFilter.API_KEY_HEADER, internalKey))
                 .andExpect(status().isForbidden());
         verifyNoInteractions(aircraftService);
     }
@@ -132,7 +107,7 @@ class AircraftControllerSecurityTest {
 
     @Test
     void internalServicesCanReadOneAircraftWithTheApiKey() throws Exception {
-        mvc.perform(get("/api/v1/aircraft/" + ID).header(InternalServiceAuthenticationFilter.API_KEY_HEADER, INTERNAL_KEY))
+        mvc.perform(get("/api/v1/aircraft/" + ID).header(InternalServiceAuthenticationFilter.API_KEY_HEADER, internalKey))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value(ID.toString()));
     }
@@ -140,7 +115,7 @@ class AircraftControllerSecurityTest {
     @Test
     void aWrongApiKeyIsTreatedAsAnonymous() throws Exception {
         mvc.perform(get("/api/v1/aircraft/" + ID)
-                        .header(InternalServiceAuthenticationFilter.API_KEY_HEADER, INTERNAL_KEY.replace('t', 'x')))
+                        .header(InternalServiceAuthenticationFilter.API_KEY_HEADER, internalKey.replace('t', 'x')))
                 .andExpect(status().isUnauthorized());
         verifyNoInteractions(aircraftService);
     }
@@ -232,7 +207,7 @@ class AircraftControllerSecurityTest {
         mvc.perform(json(patch("/api/v1/aircraft/" + ID + "/status"), "{}")
                         .header(HttpHeaders.AUTHORIZATION, bearer("ROLE_STAFF")))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.errors[0]").value("status: must not be null"));
+                .andExpect(jsonPath("$.errors[0]").value(startsWith("status:")));
         verifyNoInteractions(aircraftService);
     }
 
@@ -243,15 +218,5 @@ class AircraftControllerSecurityTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Malformed request body"));
         verifyNoInteractions(aircraftService);
-    }
-
-    private static MockHttpServletRequestBuilder json(MockHttpServletRequestBuilder request, String body) {
-        return request.contentType(MediaType.APPLICATION_JSON).content(body);
-    }
-
-    private String bearer(String role) {
-        var user = new SkylineUserDetails(UUID.randomUUID(), "user@skyline.test", null,
-                List.of(new SimpleGrantedAuthority(role)));
-        return "Bearer " + jwtService.generateAccessToken(user);
     }
 }

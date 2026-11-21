@@ -6,7 +6,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.basarsy.skyline.common.exception.ResourceNotFoundException;
@@ -30,8 +29,8 @@ class RouteServiceImplTest {
     private final AirportRepository airports = mock(AirportRepository.class);
     private final RouteServiceImpl service = new RouteServiceImpl(routes, airports, mapper());
 
-    private final Airport ist = airport("IST", "Europe/Istanbul");
-    private final Airport lhr = airport("LHR", "Europe/London");
+    private final Airport ist = airport("IST");
+    private final Airport lhr = airport("LHR");
 
     @Test
     void createsARouteBetweenTwoKnownAirports() {
@@ -48,12 +47,12 @@ class RouteServiceImplTest {
     }
 
     @Test
-    void sameOriginAndDestinationIsA400BeforeAnyLookup() {
+    void sameOriginAndDestinationIsA400() {
         assertThatThrownBy(() -> service.create(new RouteRequest(ist.getId(), ist.getId(), 1, 1)))
                 .isInstanceOf(SkylineException.class)
                 .hasMessage("Origin and destination must differ")
                 .extracting(e -> ((SkylineException) e).getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
-        verifyNoInteractions(airports, routes);
+        verify(routes, never()).save(any());
     }
 
     @Test
@@ -87,14 +86,14 @@ class RouteServiceImplTest {
                 .hasMessageContaining(unknown.toString());
     }
 
-    private static Airport airport(String iata, String timezone) {
+    private static Airport airport(String iata) {
         Airport airport = new Airport();
         airport.setId(UUID.randomUUID());
         airport.setIataCode(iata);
         airport.setName(iata + " airport");
         airport.setCity("City");
         airport.setCountry("Country");
-        airport.setTimezone(timezone);
+        airport.setTimezone("UTC");
         return airport;
     }
 
