@@ -95,7 +95,8 @@
 				<skyline.e2e.baseUrl>http://localhost:8000/api/v1</skyline.e2e.baseUrl>
 				<skyline.e2e.adminEmail>${env.SKYLINE_ADMIN_EMAIL}</skyline.e2e.adminEmail>
 				<skyline.e2e.adminPassword>${env.SKYLINE_ADMIN_PASSWORD}</skyline.e2e.adminPassword>
-				<skyline.e2e.authDbUrl>jdbc:postgresql://localhost:5433/skyline_auth</skyline.e2e.authDbUrl>
+				<!-- The password goes in the URL: pgjdbc lets URL parameters override the credentials the tests pass. -->
+				<skyline.e2e.authDbUrl>jdbc:postgresql://localhost:5433/skyline_auth?password=${env.POSTGRES_PASSWORD}</skyline.e2e.authDbUrl>
 			</properties>
 		</profile>
 	</profiles>
