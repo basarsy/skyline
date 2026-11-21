@@ -21,7 +21,7 @@ const user = { sub: 'ada@skyline.test', userId: 'e0000000-0000-4000-8000-0000000
 const tokens = (refreshToken: string) => ({
   accessToken: fakeJwt(user),
   refreshToken,
-  tokenType: 'Bearer',
+  tokenType: 'Bearer' as const,
   expiresIn: 900,
 })
 
