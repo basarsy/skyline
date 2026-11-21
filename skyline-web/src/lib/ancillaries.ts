@@ -17,6 +17,11 @@ import type {
 const MAX_CHECKED_BAGS = 3
 const MAX_MEALS = 1
 
+/** Hours from now until a UTC API date-time (negative once it has passed). */
+export function hoursUntil(utc: string, now = Date.now()) {
+  return (new Date(`${utc}Z`).getTime() - now) / 3_600_000
+}
+
 export function routeScope(flight: Pick<FlightResponse, 'route'>): RouteScope {
   const route = flight.route
   if (!route?.origin.country || !route.destination.country) return 'INTERNATIONAL'
@@ -33,13 +38,17 @@ export function includedFor(catalog: AncillaryProductResponse[], cabin: CabinCla
     .filter((item) => item.quantity > 0)
 }
 
-/** @param chosen product code → quantity already picked for this passenger in this booking */
+/**
+ * @param chosen           product code → quantity already picked for this passenger in this booking
+ * @param hoursToDeparture online sales close `cutoffHours` before departure (24h for meals)
+ */
 export function estimateOffers(
   catalog: AncillaryProductResponse[],
   cabin: CabinClass,
   fare: FareType,
   scope: RouteScope,
   chosen: Record<string, number>,
+  hoursToDeparture = Infinity,
 ): AncillaryOffer[] {
   const included = Object.fromEntries(includedFor(catalog, cabin, fare).map((item) => [item.code, item.quantity]))
   const byType = (type: AncillaryType) =>
@@ -56,17 +65,21 @@ export function estimateOffers(
       if (product.type === 'MEAL') room = Math.min(room, MAX_MEALS - byType('MEAL'))
       if (product.type === 'EXTRA_WEIGHT') room = Math.min(room, checkedBags - byType('EXTRA_WEIGHT'))
       const price = product.prices.find((p) => p.routeScope === scope)
+      const closed = hoursToDeparture <= product.cutoffHours
+      if (closed) room = 0
       const reason = !price
         ? 'Not sold on this route'
-        : room > 0 || mine > 0
-          ? null
-          : inc > 0
-            ? 'Included in your fare'
-            : product.type === 'EXTRA_WEIGHT' && checkedBags === 0
-              ? 'Add a checked bag first'
-              : product.type === 'MEAL' && byType('MEAL') > 0
-                ? 'One meal per passenger'
-                : 'You have the maximum for this flight'
+        : closed && mine === 0
+          ? `Online sales closed ${product.cutoffHours}h before departure`
+          : room > 0 || mine > 0
+            ? null
+            : inc > 0
+              ? 'Included in your fare'
+              : product.type === 'EXTRA_WEIGHT' && checkedBags === 0
+                ? 'Add a checked bag first'
+                : product.type === 'MEAL' && byType('MEAL') > 0
+                  ? 'One meal per passenger'
+                  : 'You have the maximum for this flight'
       return {
         code: product.code,
         type: product.type,

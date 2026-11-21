@@ -138,6 +138,13 @@ test('check-in: choose and pay for a seat, add a bag, and the pass shows the sea
   await seat(page, '26A').click() // exit row
   await page.getByRole('button', { name: /^Pay €\d+\.\d{2} for 26A$/ }).click()
   await expect(page.getByText('Seat 26A is yours')).toBeVisible()
+  // A paid seat isn't given back by a tap, and removing it asks first.
+  await seat(page, '26A').click()
+  await expect(page.getByRole('region', { name: 'Seat summary' })).toContainText('26A')
+  await page.getByRole('button', { name: /^Remove seat 26A/ }).click()
+  await expect(page.getByRole('alertdialog')).toContainText('refunded only on Flex fares')
+  await page.getByRole('button', { name: 'Keep it' }).click()
+  await expect(page.getByRole('region', { name: 'Seat summary' })).toContainText('26A')
 
   await page.getByRole('button', { name: 'Add bags' }).click()
   await page.getByRole('button', { name: 'Add one Checked bag 20 kg' }).click()

@@ -68,6 +68,7 @@ export function ReservationSeatPicker({ reservation }: { reservation: Reservatio
           params: { reservationId: reservation.id },
           seat,
           price: seat ? price : null,
+          confirmed: !held && Boolean(reservation.seatNumber),
         },
       ]}
       currency={reservation.currency}

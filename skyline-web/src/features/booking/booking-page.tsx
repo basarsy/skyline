@@ -24,7 +24,7 @@ import { EmptyState, ErrorState, LoadingRegion, SkeletonCard } from '@/component
 import { FlightStatusBadge } from '@/components/skyline/status-badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { estimateOffers, FARE_TYPES, fareCopy, fareLabel, includedFor, routeScope } from '@/lib/ancillaries'
+import { estimateOffers, FARE_TYPES, fareCopy, fareLabel, hoursUntil, includedFor, routeScope } from '@/lib/ancillaries'
 import { cn } from '@/lib/cn'
 import { isBookable } from '@/lib/flight-status'
 import { formatLocalDate, formatMoney, isoFromLocalDate } from '@/lib/format'
@@ -355,9 +355,10 @@ export function Component() {
         known,
       )
       if (isApiError(err) && err.hasFieldErrors && !message) setStep(1)
-      // A seat hold that lapsed: back to the seat map.
-      if (isApiError(err) && err.status === 409) {
-        setSeats({})
+      // A seat hold that lapsed (or a seat taken meanwhile): release them all and go back to the seat map. Any
+      // other conflict (a cabin or flight sold out) stays on the review step with its message.
+      if (isApiError(err) && err.status === 409 && /hold on seat|just taken/.test(err.message)) {
+        releaseSeats(Object.keys(seats).map(Number))
         setStep(2)
       }
       setServerError(message)
@@ -406,7 +407,9 @@ export function Component() {
 
   const scope = routeScope(flight)
   const offersFor = (index: number) =>
-    catalog.data ? estimateOffers(catalog.data, cabin, fare, scope, extras[index] ?? {}) : []
+    catalog.data
+      ? estimateOffers(catalog.data, cabin, fare, scope, extras[index] ?? {}, hoursUntil(flight.departureTime))
+      : []
   const included = catalog.data ? includedFor(catalog.data, cabin, fare) : []
   const farePerPassenger = estimatePrice(flight, cabin, fare)
   const fareTotal = farePerPassenger.amount * passengerCount

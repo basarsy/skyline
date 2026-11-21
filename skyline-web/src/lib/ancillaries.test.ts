@@ -55,3 +55,14 @@ describe('add-on estimates before booking', () => {
     expect(estimatePrice(flight, 'ECONOMY', 'FLEX').amount).toBe(130)
   })
 })
+
+describe('online sales cut-off', () => {
+  it('closes meals a day before departure and bags an hour before', () => {
+    const at = (hours: number, code: string) =>
+      estimateOffers(CATALOG, 'ECONOMY', 'BASIC', 'INTERNATIONAL', {}, hours).find((o) => o.code === code)!
+    expect(at(30, 'MEAL_HOT').available).toBe(true)
+    expect(at(20, 'MEAL_HOT').reason).toBe('Online sales closed 24h before departure')
+    expect(at(20, 'CHECKED_BAG_20').available).toBe(true)
+    expect(at(0.5, 'CHECKED_BAG_20').available).toBe(false)
+  })
+})

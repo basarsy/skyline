@@ -22,7 +22,7 @@ import type {
   UserRole,
 } from '@/api/types'
 import { formatDateInZone, toApiDateTime } from '@/lib/format'
-import { estimateOffers, includedFor } from '@/lib/ancillaries'
+import { estimateOffers, hoursUntil, includedFor } from '@/lib/ancillaries'
 import { estimatePrice, loadFactor, loadMultiplier } from '@/lib/pricing'
 import { CATALOG } from './catalog'
 import { expandLayout, LAYOUTS, SEAT_PRICES } from './seat-layouts'
@@ -328,7 +328,8 @@ function releaseHold(flightId: string, owner: string) {
 }
 
 function recalcTotal(reservation: ReservationResponse) {
-  const extras = (reservation.ancillaries ?? []).filter((l) => l.status === 'ACTIVE').reduce((s, l) => s + l.price, 0)
+  // What was paid and kept: every line not refunded (as the reservation service computes it).
+  const extras = (reservation.ancillaries ?? []).filter((l) => l.status !== 'REFUNDED').reduce((s, l) => s + l.price, 0)
   reservation.totalPrice = Math.round((reservation.farePrice + extras) * 100) / 100
 }
 
@@ -367,20 +368,25 @@ function purchased(reservation: ReservationResponse) {
 function optionsFor(reservation: ReservationResponse) {
   const flight = findFlight(reservation.flight!.id)!
   const bought = purchased(reservation)
-  const offers = estimateOffers(CATALOG, reservation.cabinClass, reservation.fareType, scopeOf(flight), bought).map(
-    (offer) => {
-      const mine = bought[offer.code] ?? 0
-      const more = Math.max(0, offer.maxAdditional - mine)
-      return {
-        ...offer,
-        purchasedQuantity: mine,
-        maxAdditional: more,
-        available: offer.price !== null && more > 0,
-        reason:
-          offer.price !== null && more === 0 ? (offer.reason ?? 'You have the maximum for this flight') : offer.reason,
-      }
-    },
-  )
+  const offers = estimateOffers(
+    CATALOG,
+    reservation.cabinClass,
+    reservation.fareType,
+    scopeOf(flight),
+    bought,
+    hoursUntil(flight.departureTime),
+  ).map((offer) => {
+    const mine = bought[offer.code] ?? 0
+    const more = Math.max(0, offer.maxAdditional - mine)
+    return {
+      ...offer,
+      purchasedQuantity: mine,
+      maxAdditional: more,
+      available: offer.price !== null && more > 0,
+      reason:
+        offer.price !== null && more === 0 ? (offer.reason ?? 'You have the maximum for this flight') : offer.reason,
+    }
+  })
   return {
     reservationId: reservation.id,
     flightId: flight.id,
@@ -1074,6 +1080,7 @@ export const handlers = [
     for (const line of reservation.ancillaries ?? []) {
       if (line.status === 'ACTIVE') line.status = line.refundable ? 'REFUNDED' : 'CANCELLED'
     }
+    recalcTotal(reservation)
     if (flight) flight.availableSeats += 1
     return ok(null, 'Reservation cancelled successfully')
   }),

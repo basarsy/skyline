@@ -7,6 +7,7 @@ import type { SeatMapParams } from '@/api/endpoints/seats'
 import { isApiError } from '@/api/http'
 import { seatKeys } from '@/api/query-keys'
 import type { SeatView } from '@/api/types'
+import { ConfirmDialog } from '@/components/skyline/confirm-dialog'
 import { SeatMap } from '@/components/skyline/seat-map/seat-map'
 import { ErrorState, LoadingRegion, SkeletonCard } from '@/components/skyline/states'
 import { Button } from '@/components/ui/button'
@@ -27,6 +28,11 @@ export interface SeatSlot {
   params: SeatMapParams
   seat: string | null
   price: number | null
+  /**
+   * The seat is booked (paid), not just held. Tapping it then does nothing, and removing it asks first: a paid
+   * seat is refunded only on Flex fares.
+   */
+  confirmed?: boolean
 }
 
 interface SeatSelectorProps {
@@ -59,6 +65,7 @@ export function SeatSelector({
   const [activeKey, setActiveKey] = React.useState(slots[0]?.key)
   const active = slots.find((slot) => slot.key === activeKey) ?? slots[0]
   const [pending, setPending] = React.useState<string | null>(null)
+  const [confirmRemove, setConfirmRemove] = React.useState<SeatSlot | null>(null)
   const map = useSeatMap(active?.flightId, active?.params ?? { reservationId: '' }, Boolean(active))
 
   if (!active) return null
@@ -70,8 +77,21 @@ export function SeatSelector({
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: seatKeys.flight(active.flightId) })
 
+  const clear = async (slot: SeatSlot) => {
+    setPending(slot.seat)
+    try {
+      await onClear(slot)
+    } catch (error) {
+      toast.error(isApiError(error) ? error.message : 'That didn’t work, please try again.')
+    } finally {
+      setPending(null)
+      await queryClient.invalidateQueries({ queryKey: seatKeys.flight(slot.flightId) })
+    }
+  }
+
   const choose = async (seat: SeatView) => {
-    if (pending) return
+    // A booked seat is never given back by a tap; the summary's Remove button asks first.
+    if (pending || (seat.code === active.seat && active.confirmed)) return
     setPending(seat.code)
     try {
       if (seat.code === active.seat) await onClear(active)
@@ -173,17 +193,7 @@ export function SeatSelector({
                   className="size-7"
                   aria-label={`Remove seat ${slot.seat} for ${slot.passengerLabel}`}
                   disabled={Boolean(pending)}
-                  onClick={async () => {
-                    setPending(slot.seat)
-                    try {
-                      await onClear(slot)
-                    } catch (error) {
-                      toast.error(isApiError(error) ? error.message : 'That didn’t work, please try again.')
-                    } finally {
-                      setPending(null)
-                      await queryClient.invalidateQueries({ queryKey: seatKeys.flight(slot.flightId) })
-                    }
-                  }}
+                  onClick={() => (slot.confirmed ? setConfirmRemove(slot) : void clear(slot))}
                 >
                   <X strokeWidth={1.75} aria-hidden />
                 </Button>
@@ -191,6 +201,23 @@ export function SeatSelector({
             </li>
           ))}
         </ul>
+        <ConfirmDialog
+          open={confirmRemove !== null}
+          onOpenChange={(open) => !open && setConfirmRemove(null)}
+          title={`Give back seat ${confirmRemove?.seat ?? ''}?`}
+          description={
+            <p>
+              It goes back on sale and you’ll get a free seat at check-in. A paid seat is refunded only on Flex fares.
+            </p>
+          }
+          confirmLabel="Give back seat"
+          destructive
+          loading={Boolean(pending)}
+          onConfirm={async () => {
+            if (confirmRemove) await clear(confirmRemove)
+            setConfirmRemove(null)
+          }}
+        />
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
           <span className="text-sm">
             Seats <span className="font-semibold tabular">{formatMoney(seatTotal, currency)}</span>
