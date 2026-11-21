@@ -4,15 +4,16 @@ server:
 spring:
   application:
     name: skyline-reservation
+  config:
+    import: classpath:skyline-common.yml
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5437/skyline_reservation}
     username: ${DATABASE_USERNAME:skyline_user}
-    password: ${DATABASE_PASSWORD:skyline_pass}
+    password: ${DATABASE_PASSWORD:${POSTGRES_PASSWORD:}}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
       ddl-auto: validate
-    show-sql: true
     open-in-view: false
     properties:
       hibernate:
