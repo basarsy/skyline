@@ -7,12 +7,11 @@ spring:
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5433/skyline_auth}
     username: ${DATABASE_USERNAME:skyline_user}
-    password: ${DATABASE_PASSWORD:skyline_pass}
+    password: ${DATABASE_PASSWORD:${POSTGRES_PASSWORD:}}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
       ddl-auto: validate
-    show-sql: true
     open-in-view: false
     properties:
       hibernate:
@@ -34,3 +33,31 @@ jwt:
   secret: ${JWT_SECRET}
   access-token-expiry-ms: ${JWT_EXPIRY_MS:900000}
   refresh-token-expiry-ms: ${JWT_REFRESH_EXPIRY_MS:604800000}
+
+management:
+  health:
+    # Redis is on the classpath (skyline-common) but this service does not use it.
+    redis:
+      enabled: false
+  endpoints:
+    web:
+      exposure:
+        # Only health (incl. the liveness/readiness groups) and info are reachable over HTTP.
+        include: health, info
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState, db
+
+---
+# Local debugging: SPRING_PROFILES_ACTIVE=dev logs every SQL statement.
+spring:
+  config:
+    activate:
+      on-profile: dev
+  jpa:
+    show-sql: true

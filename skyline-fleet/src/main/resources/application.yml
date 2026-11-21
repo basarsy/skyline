@@ -7,12 +7,11 @@ spring:
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5434/skyline_fleet}
     username: ${DATABASE_USERNAME:skyline_user}
-    password: ${DATABASE_PASSWORD:skyline_pass}
+    password: ${DATABASE_PASSWORD:${POSTGRES_PASSWORD:}}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
       ddl-auto: validate
-    show-sql: true
     open-in-view: false
     properties:
       hibernate:
@@ -25,14 +24,40 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
   cache:
     type: redis
-    redis:
-      time-to-live: 15m
 
 skyline:
+  cache:
+    # Turns on skyline-common's Redis CacheConfig (@Cacheable lookups).
+    enabled: true
   internal:
     api-key: ${SKYLINE_INTERNAL_API_KEY}
 
 jwt:
   secret: ${JWT_SECRET}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Only health (incl. the liveness/readiness groups) and info are reachable over HTTP.
+        include: health, info
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState, db
+
+---
+# Local debugging: SPRING_PROFILES_ACTIVE=dev logs every SQL statement.
+spring:
+  config:
+    activate:
+      on-profile: dev
+  jpa:
+    show-sql: true
