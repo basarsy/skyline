@@ -1,7 +1,7 @@
 version: 2
 
 updates:
-  # The root aggregator pom lists every module, so Dependabot picks up each module's pom from here.
+  # The root pom is the parent of every module and holds the shared versions, so Dependabot covers them all from here.
   - package-ecosystem: maven
     directory: /
     schedule:
