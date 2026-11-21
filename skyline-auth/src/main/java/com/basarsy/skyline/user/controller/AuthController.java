@@ -13,6 +13,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -45,9 +46,20 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.success(authService.refresh(request)));
     }
 
+    /** Always 204: logging out with an unknown, invalid or expired token (or none) is not an error. */
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(@RequestBody(required = false) RefreshTokenRequest request) {
+        authService.logout(request);
+        return ResponseEntity.noContent().build();
+    }
+
     /** The caller's account; any authenticated user (non-POST /auth/** requires a token). */
     @GetMapping("/me")
     public ApiResponse<UserResponse> me(@AuthenticationPrincipal SkylineUserDetails principal) {
+        // Null when the caller is not a user, e.g. a service authenticated by the internal key.
+        if (principal == null || principal.getId() == null) {
+            throw new AuthenticationCredentialsNotFoundException("Not a user");
+        }
         return ApiResponse.success(userService.getCurrentUser(principal.getId()));
     }
 }
