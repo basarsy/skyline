@@ -18,6 +18,8 @@
 		<!-- Nothing to package or deploy: this module only holds tests. -->
 		<maven.install.skip>true</maven.install.skip>
 		<maven.deploy.skip>true</maven.deploy.skip>
+		<!-- No main code to measure: the tests run against the deployed containers. -->
+		<jacoco.skip>true</jacoco.skip>
 	</properties>
 
 	<dependencies>

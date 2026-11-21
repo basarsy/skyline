@@ -35,8 +35,9 @@ RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -q dependency:go-offline -pl $
 COPY skyline-common/src skyline-common/src
 COPY ${MODULE}/src ${MODULE}/src
 
-# Build the target module (and skyline-common as a transitive dependency)
-RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -pl ${MODULE} -am -DskipTests package
+# Build the target module (and skyline-common as a transitive dependency). Coverage and the enforcer rules
+# belong to `./mvnw verify` in CI, not to the image build.
+RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -pl ${MODULE} -am -DskipTests -Djacoco.skip=true -Denforcer.skip=true package
 
 # ── Runtime stage ────────────────────────────────────────────────
 FROM eclipse-temurin:21-jre-jammy AS runtime
