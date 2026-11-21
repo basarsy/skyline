@@ -4,6 +4,8 @@ server:
 spring:
   application:
     name: skyline-route
+  config:
+    import: classpath:skyline-common.yml
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5435/skyline_route}
     username: ${DATABASE_USERNAME:skyline_user}
@@ -31,35 +33,8 @@ spring:
     type: redis
 
 skyline:
-  cache:
-    # Turns on skyline-common's Redis CacheConfig (@Cacheable lookups).
-    enabled: true
   internal:
     api-key: ${SKYLINE_INTERNAL_API_KEY}
 
 jwt:
   secret: ${JWT_SECRET}
-
-management:
-  endpoints:
-    web:
-      exposure:
-        # Only health (incl. the liveness/readiness groups) and info are reachable over HTTP.
-        include: health, info
-  endpoint:
-    health:
-      show-details: never
-      probes:
-        enabled: true
-      group:
-        readiness:
-          include: readinessState, db
-
----
-# Local debugging: SPRING_PROFILES_ACTIVE=dev logs every SQL statement.
-spring:
-  config:
-    activate:
-      on-profile: dev
-  jpa:
-    show-sql: true

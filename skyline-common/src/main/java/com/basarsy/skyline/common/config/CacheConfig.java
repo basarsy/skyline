@@ -16,9 +16,9 @@ import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSeriali
 import org.springframework.data.redis.serializer.RedisSerializationContext;
 import org.springframework.data.redis.serializer.RedisSerializer;
 
-/** Redis-backed {@code @Cacheable} support, for the services that cache ({@code skyline.cache.enabled=true}). */
+/** Redis-backed {@code @Cacheable} support, for the services that cache ({@code spring.cache.type: redis}). */
 @Configuration
-@ConditionalOnProperty(prefix = "skyline.cache", name = "enabled", havingValue = "true")
+@ConditionalOnProperty(name = "spring.cache.type", havingValue = "redis")
 @EnableCaching
 public class CacheConfig {
 

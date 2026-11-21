@@ -64,7 +64,8 @@ COPY --from=build --chown=skyline:skyline /workspace/${MODULE}/target/*.jar app.
 
 EXPOSE ${APP_PORT}
 
-HEALTHCHECK --interval=10s --timeout=3s --start-period=60s --retries=5 \
+# Probe every 2s while starting, so dependants waiting on service_healthy are released promptly.
+HEALTHCHECK --interval=10s --start-interval=2s --timeout=3s --start-period=90s --retries=5 \
   CMD curl -fsS "http://127.0.0.1:${APP_PORT}/actuator/health/readiness" > /dev/null || exit 1
 
 ENTRYPOINT ["java", "-Duser.timezone=UTC", "-jar", "app.jar"]

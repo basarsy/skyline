@@ -22,7 +22,7 @@ public class RateLimitConfig {
      * their own key.
      */
     @Bean
-    KeyResolver clientIpKeyResolver(@Value("${skyline.rate-limit.trusted-proxies:0}") int trustedProxies) {
+    KeyResolver clientIpKeyResolver(@Value("${skyline.rate-limit.trusted-proxies}") int trustedProxies) {
         RemoteAddressResolver resolver = trustedProxies > 0
                 ? XForwardedRemoteAddressResolver.maxTrustedIndex(trustedProxies)
                 : new RemoteAddressResolver() {};

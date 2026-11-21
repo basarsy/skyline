@@ -52,7 +52,7 @@ jobs:
 
       - name: Build all modules
         if: matrix.build-mode == 'manual'
-        run: ./mvnw -B -DskipTests package
+        run: ./mvnw -B test-compile
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v3
