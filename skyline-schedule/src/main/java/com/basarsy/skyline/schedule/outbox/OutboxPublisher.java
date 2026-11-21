@@ -8,6 +8,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.event.Level;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionOperations;
@@ -38,7 +39,7 @@ public class OutboxPublisher {
 
     /** Publishes one batch of due rows and returns how many were sent. */
     public int publishPending() {
-        Integer published = transactions.execute(status -> {
+        int published = transactions.execute(status -> {
             List<OutboxEvent> batch = repository.claimBatch(properties.batchSize());
             List<UUID> sent = new ArrayList<>(batch.size());
             for (OutboxEvent event : batch) {
@@ -56,16 +57,15 @@ public class OutboxPublisher {
             repository.markPublished(sent);
             return sent.size();
         });
-        if (published != null && published > 0) {
+        if (published > 0) {
             log.info("Published {} outbox event(s) to Kafka", published);
         }
-        return published == null ? 0 : published;
+        return published;
     }
 
     /** Deletes published rows older than the retention and returns how many were deleted. */
     public int deletePublished() {
-        Integer deleted = transactions.execute(status -> repository.deletePublishedBefore(properties.retention()));
-        return deleted == null ? 0 : deleted;
+        return transactions.execute(status -> repository.deletePublishedBefore(properties.retention()));
     }
 
     private void send(OutboxEvent event) throws Exception {
@@ -80,13 +80,12 @@ public class OutboxPublisher {
     private void recordFailure(OutboxEvent event, Exception cause) {
         int attempts = event.attempts() + 1;
         Duration backoff = properties.backoffAfter(attempts);
-        repository.markFailed(event.id(), cause.toString(), backoff);
-        if (attempts >= properties.errorAfterAttempts()) {
-            log.error("OUTBOX_PUBLISH_FAILING event {} for {} to {} failed {} times, retrying in {}: {}",
-                    event.id(), event.aggregateId(), event.topic(), attempts, backoff, cause.toString());
-        } else {
-            log.warn("Publishing outbox event {} for {} to {} failed (attempt {}), retrying in {}: {}",
-                    event.id(), event.aggregateId(), event.topic(), attempts, backoff, cause.toString());
-        }
+        repository.markFailed(event.id(), attempts, cause.toString(), backoff);
+        // ERROR (with a stable marker for alerting) once a row keeps failing; it is still retried.
+        boolean stuck = attempts >= properties.errorAfterAttempts();
+        log.atLevel(stuck ? Level.ERROR : Level.WARN).log(
+                "{}Publishing outbox event {} for {} to {} failed (attempt {}), retrying in {}: {}",
+                stuck ? "OUTBOX_PUBLISH_FAILING " : "", event.id(), event.aggregateId(), event.topic(), attempts,
+                backoff, cause.toString());
     }
 }

@@ -23,9 +23,9 @@ public record OutboxProperties(
         int errorAfterAttempts,
         Duration retention) {
 
-    /** Delay before the next attempt of a row that has now failed {@code attempts} times. */
+    /** Delay before the next attempt of a row that has now failed {@code attempts} (at least 1) times. */
     Duration backoffAfter(int attempts) {
-        int doublings = Math.min(Math.max(attempts - 1, 0), 30);
+        int doublings = Math.min(attempts - 1, 30);
         Duration delay = retryBackoff.multipliedBy(1L << doublings);
         return delay.compareTo(maxRetryBackoff) > 0 ? maxRetryBackoff : delay;
     }

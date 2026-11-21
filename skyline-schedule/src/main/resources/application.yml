@@ -46,7 +46,6 @@ skyline:
     api-key: ${SKYLINE_INTERNAL_API_KEY}
   # Transactional outbox for Kafka events (see OutboxPublisher).
   outbox:
-    scheduling-enabled: true
     publish-interval: PT1S
     batch-size: 100
     # At least delivery.timeout.ms above, so the producer gives up before the publisher stops waiting.

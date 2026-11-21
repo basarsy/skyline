@@ -45,12 +45,12 @@ class OutboxRepository {
                 ids.stream().map(id -> new Object[] {id}).toList());
     }
 
-    void markFailed(UUID id, String error, Duration backoff) {
+    void markFailed(UUID id, int attempts, String error, Duration backoff) {
         jdbc.update("""
                 UPDATE outbox_events
-                SET attempts = attempts + 1, last_error = ?, next_attempt_at = now() + ? * INTERVAL '1 millisecond'
+                SET attempts = ?, last_error = ?, next_attempt_at = now() + ? * INTERVAL '1 millisecond'
                 WHERE id = ?""",
-                error, backoff.toMillis(), id);
+                attempts, error, backoff.toMillis(), id);
     }
 
     int deletePublishedBefore(Duration retention) {

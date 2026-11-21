@@ -2,6 +2,7 @@ package com.basarsy.skyline.schedule.outbox;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
@@ -43,7 +44,7 @@ class OutboxPublisherTest {
         verify(kafka).send(first.topic(), first.aggregateId().toString(), first.payload());
         verify(kafka).send(second.topic(), second.aggregateId().toString(), second.payload());
         verify(repository).markPublished(List.of(first.id(), second.id()));
-        verify(repository, never()).markFailed(any(), anyString(), any());
+        verify(repository, never()).markFailed(any(), anyInt(), anyString(), any());
     }
 
     @Test
@@ -59,7 +60,8 @@ class OutboxPublisherTest {
         assertThat(publisher.publishPending()).isEqualTo(1);
 
         verify(repository).markPublished(List.of(sent.id()));
-        verify(repository).markFailed(eq(failing.id()), contains("broker unavailable"), eq(Duration.ofSeconds(1)));
+        verify(repository).markFailed(
+                eq(failing.id()), eq(1), contains("broker unavailable"), eq(Duration.ofSeconds(1)));
         verify(kafka, never()).send(anyString(), eq(untried.aggregateId().toString()), anyString());
     }
 
@@ -71,7 +73,7 @@ class OutboxPublisherTest {
 
         assertThat(publisher.publishPending()).isZero();
 
-        verify(repository).markFailed(eq(event.id()), contains("metadata timeout"), eq(Duration.ofSeconds(1)));
+        verify(repository).markFailed(eq(event.id()), eq(1), contains("metadata timeout"), eq(Duration.ofSeconds(1)));
         verify(repository).markPublished(List.of());
     }
 
@@ -83,13 +85,13 @@ class OutboxPublisherTest {
 
         assertThat(publisher.publishPending()).isZero();
 
-        verify(repository).markFailed(eq(event.id()), contains("Timeout"), any());
+        verify(repository).markFailed(eq(event.id()), eq(1), contains("Timeout"), any());
     }
 
     @Test
     void aRowThatFailedBeforeIsSentOnALaterRun() {
         OutboxEvent event = event(0);
-        when(repository.claimBatch(10)).thenReturn(List.of(event), List.of(event(1, event)));
+        when(repository.claimBatch(10)).thenReturn(List.of(event), List.of(event));
         when(kafka.send(anyString(), anyString(), anyString()))
                 .thenReturn(CompletableFuture.failedFuture(new KafkaException("down")), acked());
 
@@ -109,7 +111,7 @@ class OutboxPublisherTest {
         publisher.publishPending();
 
         // Fifth failure: 1s * 2^4.
-        verify(repository).markFailed(eq(event.id()), anyString(), eq(Duration.ofSeconds(16)));
+        verify(repository).markFailed(eq(event.id()), eq(5), anyString(), eq(Duration.ofSeconds(16)));
         assertThat(PROPERTIES.backoffAfter(1)).isEqualTo(Duration.ofSeconds(1));
         assertThat(PROPERTIES.backoffAfter(7)).isEqualTo(Duration.ofMinutes(1));
         assertThat(PROPERTIES.backoffAfter(10_000)).isEqualTo(Duration.ofMinutes(1));
@@ -134,10 +136,6 @@ class OutboxPublisherTest {
     private static OutboxEvent event(int attempts) {
         return new OutboxEvent(UUID.randomUUID(), UUID.randomUUID(), "skyline.flight.cancelled",
                 "{\"flightId\":\"" + UUID.randomUUID() + "\"}", attempts);
-    }
-
-    private static OutboxEvent event(int attempts, OutboxEvent same) {
-        return new OutboxEvent(same.id(), same.aggregateId(), same.topic(), same.payload(), attempts);
     }
 
     @SuppressWarnings("unchecked")

@@ -33,10 +33,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -60,18 +59,12 @@ import org.testcontainers.utility.DockerImageName;
 class OutboxIntegrationTest {
 
     @Container
+    @ServiceConnection
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(DockerImageName.parse("postgres:16-alpine"));
 
     @Container
+    @ServiceConnection
     static KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.0"));
-
-    @DynamicPropertySource
-    static void dynamicProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
-    }
 
     @MockitoBean
     FleetClient fleetClient;
@@ -123,7 +116,7 @@ class OutboxIntegrationTest {
         });
 
         assertThat(flightRepository.findById(flight.getId()).orElseThrow().getStatus()).isEqualTo(FlightStatus.SCHEDULED);
-        assertThat(outboxRows()).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM outbox_events", Integer.class)).isZero();
     }
 
     @Test
@@ -211,10 +204,6 @@ class OutboxIntegrationTest {
         flight.setAvailableSeats(179);
         flight.setBasePrice(new BigDecimal("100.00"));
         return flightRepository.saveAndFlush(flight);
-    }
-
-    private int outboxRows() {
-        return jdbc.queryForObject("SELECT count(*) FROM outbox_events", Integer.class);
     }
 
     /** Reads the topic from the start until the record keyed by {@code flightId} turns up. */

@@ -6,7 +6,10 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-/** Runs the outbox publisher and its cleanup on a timer; off with {@code skyline.outbox.scheduling-enabled=false}. */
+/**
+ * Runs the outbox publisher and its cleanup on a timer; off with {@code skyline.outbox.scheduling-enabled=false}.
+ * A failed run (e.g. the database is down) is logged by Spring's scheduler and simply tried again next time.
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -17,12 +20,7 @@ class OutboxScheduler {
 
     @Scheduled(fixedDelayString = "${skyline.outbox.publish-interval}")
     void publish() {
-        try {
-            publisher.publishPending();
-        } catch (RuntimeException e) {
-            // E.g. the database is down: nothing was claimed, the next run tries again.
-            log.warn("Outbox publisher run failed: {}", e.toString());
-        }
+        publisher.publishPending();
     }
 
     @Scheduled(fixedDelayString = "${skyline.outbox.cleanup-interval}",
