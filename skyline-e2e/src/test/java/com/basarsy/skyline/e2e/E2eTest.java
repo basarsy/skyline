@@ -148,7 +148,7 @@ abstract class E2eTest {
         LocalDateTime departure = departureUtc.truncatedTo(ChronoUnit.MINUTES);
         return api(adminToken)
                 .body(Map.of(
-                        "flightNumber", "E2E" + shortId().substring(0, 4),
+                        "flightNumber", flightNumber(),
                         "routeId", istToLhrRoute(),
                         "aircraftId", aircraftId,
                         "departureTime", departure.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
@@ -192,6 +192,14 @@ abstract class E2eTest {
     /** The API speaks UTC; the machine running the tests may not. */
     static LocalDateTime nowUtc() {
         return LocalDateTime.now(ZoneOffset.UTC);
+    }
+
+    /**
+     * Flight numbers are unique per departure minute ({@code uq_flight_number_departure}) and most test flights
+     * leave at the same "now + 24h" minute, so they need the full {@link #shortId()} entropy.
+     */
+    static String flightNumber() {
+        return "E2E" + shortId();
     }
 
     static String shortId() {
