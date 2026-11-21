@@ -1,11 +1,23 @@
 version: 2
 
+# Major versions (and the Spring Cloud release train, see below) are upgraded deliberately on their own branch,
+# with the full e2e run, rather than through weekly bot PRs: they carry breaking changes and usually need code
+# changes too. Dependabot keeps everything else current. GitHub Actions majors are still proposed, because CI
+# exercises every action on the PR itself.
+
 updates:
   # The root pom is the parent of every module and holds the shared versions, so Dependabot covers them all from here.
   - package-ecosystem: maven
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+      # Spring Cloud's calendar versions hide compatibility jumps: each release train (2025.0, 2025.1, ...) targets
+      # one Spring Boot generation (2025.1 needs Boot 4), so a "minor" bump is really part of the Boot upgrade.
+      - dependency-name: "org.springframework.cloud:spring-cloud-dependencies"
+        update-types: ["version-update:semver-minor"]
     groups:
       maven-minor-and-patch:
         update-types: [minor, patch]
@@ -14,16 +26,24 @@ updates:
     directory: /skyline-web
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       web-minor-and-patch:
         update-types: [minor, patch]
 
+  # Base images: stay on the LTS lines (Java 21, Node 24) until a deliberate upgrade. Majors would also pull in
+  # short-lived releases (JDK 22) and breaking image changes (Node 25+ no longer ships corepack).
   - package-ecosystem: docker
     directories:
       - /
       - /skyline-web
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       docker-images:
         patterns: ["*"]
@@ -33,6 +53,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       compose-images:
         patterns: ["*"]

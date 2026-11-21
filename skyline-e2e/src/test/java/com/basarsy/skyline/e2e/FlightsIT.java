@@ -87,7 +87,7 @@ class FlightsIT extends E2eTest {
 
         String departure = nowUtc().plusDays(3).withNano(0).toString();
         String message = api(adminToken)
-                .body(Map.of("flightNumber", "E2E" + shortId().substring(0, 4), "routeId", istToLhrRoute(),
+                .body(Map.of("flightNumber", flightNumber(), "routeId", istToLhrRoute(),
                         "aircraftId", aircraftId, "departureTime", departure,
                         "arrivalTime", nowUtc().plusDays(3).plusHours(4).withNano(0).toString(), "basePrice", 100))
                 .post("/flights").then().statusCode(400).extract().path("message");
