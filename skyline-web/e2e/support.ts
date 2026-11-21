@@ -86,6 +86,11 @@ export function utcIn(hours: number) {
   return date.toISOString().slice(0, 19)
 }
 
+/** The date in Istanbul ("yyyy-MM-dd") of a UTC API date-time: IST → LHR is searched by Istanbul's calendar. */
+export function istanbulDate(utc: string) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Istanbul' }).format(new Date(`${utc}Z`))
+}
+
 async function apiLogin(request: APIRequestContext, email: string, password: string) {
   const response = await request.post('/api/v1/auth/login', { data: { email, password } })
   expect(response.ok(), await response.text()).toBeTruthy()
@@ -101,7 +106,7 @@ export async function bookableFlight(
   hours = 24,
 ): Promise<{ id: string; flightNumber: string; date: string }> {
   if (!live) {
-    return { id: 'f0000000-0000-4000-8000-000000000001', flightNumber: 'SK101', date: utcIn(24).slice(0, 10) }
+    return { id: 'f0000000-0000-4000-8000-000000000001', flightNumber: 'SK101', date: istanbulDate(utcIn(24)) }
   }
   const token = await apiLogin(request, ADMIN.email, ADMIN.password)
   const headers = { Authorization: `Bearer ${token}` }
@@ -143,7 +148,11 @@ export async function bookableFlight(
     },
   })
   expect(flight.ok(), await flight.text()).toBeTruthy()
-  return { id: ((await flight.json()) as { data: { id: string } }).data.id, flightNumber, date: departure.slice(0, 10) }
+  return {
+    id: ((await flight.json()) as { data: { id: string } }).data.id,
+    flightNumber,
+    date: istanbulDate(departure),
+  }
 }
 
 /** Books the flight through the API as the logged-in passenger (the booking UI has its own spec). */

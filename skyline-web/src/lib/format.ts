@@ -1,4 +1,4 @@
-import { differenceInCalendarDays, format, isValid, parseISO } from 'date-fns'
+import { addDays, differenceInCalendarDays, format, isValid, parseISO } from 'date-fns'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
 
 /**
@@ -17,13 +17,21 @@ export function parseUtc(value: string): Date {
 /** A zone that Intl can use; falls back to UTC for null or unknown ids. */
 export function safeZone(zone: string | null | undefined): string {
   if (!zone) return 'UTC'
-  try {
-    new Intl.DateTimeFormat('en', { timeZone: zone })
-    return zone
-  } catch {
-    return 'UTC'
+  let safe = checkedZones.get(zone)
+  if (safe === undefined) {
+    try {
+      new Intl.DateTimeFormat('en', { timeZone: zone })
+      safe = zone
+    } catch {
+      safe = 'UTC'
+    }
+    checkedZones.set(zone, safe)
   }
+  return safe
 }
+
+/** Zone id → itself or 'UTC': building an Intl.DateTimeFormat to validate one is costly on hot render paths. */
+const checkedZones = new Map<string, string>()
 
 /** "14:30" in the given zone. */
 export function formatTimeInZone(utc: string, zone: string | null | undefined) {
@@ -142,9 +150,23 @@ export function zoneOffsetLabel(zone: string | null | undefined, at: Date = new 
   return `UTC${offset[0]}${Number(hours)}${minutes === '00' ? '' : `:${minutes}`}`
 }
 
-/** "2026-12-01" for a Date, in UTC: search dates are UTC calendar days. */
+/** "2026-12-01" for a Date, in UTC: the flight board's dates are UTC calendar days. */
 export function toUtcDay(date: Date) {
   return formatInTimeZone(date, 'UTC', 'yyyy-MM-dd')
+}
+
+/**
+ * Today's date ("2026-12-01") at an airport: flight search dates are calendar days in the origin airport's
+ * zone. Without a zone (airport not known yet), the browser's own today.
+ */
+export function todayIn(zone: string | null | undefined, now: Date = new Date()) {
+  return zone ? formatInTimeZone(now, safeZone(zone), 'yyyy-MM-dd') : format(now, 'yyyy-MM-dd')
+}
+
+/** "2026-12-01" + 2 → "2026-12-03": calendar arithmetic, so DST changes never skip or repeat a day. */
+export function addIsoDays(value: string, days: number) {
+  const date = localDateFromIso(value)
+  return date ? isoFromLocalDate(addDays(date, days)) : value
 }
 
 /** A LocalDate ("1990-05-14") formatted without any zone conversion. */

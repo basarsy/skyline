@@ -7,6 +7,7 @@ import com.basarsy.skyline.common.config.JpaAuditingConfig;
 import com.basarsy.skyline.schedule.dto.FlightBoardFilter;
 import com.basarsy.skyline.schedule.entity.Flight;
 import com.basarsy.skyline.schedule.entity.FlightStatus;
+import com.basarsy.skyline.schedule.service.DepartureDay;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.EnumSet;
@@ -62,6 +63,21 @@ class FlightRepositoryTest {
                 EnumSet.of(FlightStatus.SCHEDULED, FlightStatus.DELAYED), PageRequest.of(0, 20)).getContent();
 
         assertThat(found).extracting(Flight::getId).containsExactlyInAnyOrder(scheduled.getId(), delayed.getId());
+    }
+
+    @Test
+    void searchingAnIstanbulDateFindsItsNightDeparturesStoredOnThePreviousUtcDay() {
+        // 1 June in Istanbul (UTC+3) runs from 31 May 21:00 to 1 June 21:00 UTC.
+        save("SK0", ROUTE, DAY.minusHours(3).minusMinutes(1), FlightStatus.SCHEDULED); // 23:59 on 31 May locally
+        Flight night = save("SK1", ROUTE, DAY.minusMinutes(90), FlightStatus.SCHEDULED); // 01:30 on 1 June locally
+        Flight evening = save("SK2", ROUTE, DAY.plusHours(20).plusMinutes(59), FlightStatus.SCHEDULED); // 23:59
+        save("SK3", ROUTE, DAY.plusHours(21), FlightStatus.SCHEDULED);                  // 00:00 on 2 June locally
+
+        DepartureDay june1 = DepartureDay.of(DAY.toLocalDate(), "Europe/Istanbul");
+        List<Flight> found = repository.searchFlights(List.of(ROUTE), june1.start(), june1.end(), BOOKABLE,
+                PageRequest.of(0, 20, Sort.by("departureTime"))).getContent();
+
+        assertThat(found).extracting(Flight::getId).containsExactly(night.getId(), evening.getId());
     }
 
     @Test

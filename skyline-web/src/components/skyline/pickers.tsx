@@ -7,7 +7,7 @@ import { networkKeys } from '@/api/query-keys'
 import type { AirportResponse } from '@/api/types'
 import { STATIC_STALE_TIME } from '@/app/query-client'
 import { cn } from '@/lib/cn'
-import { formatLocalDate } from '@/lib/format'
+import { formatLocalDate, todayIn } from '@/lib/format'
 import { Combobox, type ComboboxOption } from './combobox'
 
 type ControlAria = { id?: string; 'aria-invalid'?: true | undefined; 'aria-describedby'?: string | undefined }
@@ -18,6 +18,15 @@ export function useAirports() {
     queryFn: ({ signal }) => networkApi.airports(signal),
     staleTime: STATIC_STALE_TIME,
   })
+}
+
+/**
+ * Today at the airport with this IATA code ("2026-12-01"): the first day flight search can return from there.
+ * The browser's today until the airport list has loaded (or for an unknown code).
+ */
+export function useAirportToday(iata: string | null | undefined) {
+  const { data } = useAirports()
+  return todayIn(iata ? data?.find((airport) => airport.iataCode === iata)?.timezone : undefined)
 }
 
 export function airportOption(
@@ -144,6 +153,8 @@ export interface DatePickerProps extends ControlAria {
   value: string | null | undefined
   onChange: (value: string) => void
   disablePast?: boolean
+  /** Today as "yyyy-MM-dd", the first day disablePast leaves selectable. Default: the browser's today. */
+  today?: string
   disableFuture?: boolean
   note?: string
   placeholder?: string
@@ -176,7 +187,7 @@ const DatePickerImpl = React.lazy(() => loadDatePicker().then((module) => ({ def
 
 /**
  * Date picker for LocalDate values ("yyyy-MM-dd"), without zone conversion. The note renders under the
- * calendar (e.g. "Dates are in UTC" for search). Like Combobox, it renders a static trigger until the user
+ * calendar (e.g. "Dates are in UTC" on the flight board). Like Combobox, it renders a static trigger until the user
  * reaches for it; the popover and calendar load on hover or focus.
  */
 export function DatePicker(props: DatePickerProps) {

@@ -6,7 +6,7 @@ export interface FlightSearchParams extends PageParams {
   /** IATA */
   origin: string
   destination: string
-  /** A UTC calendar day, yyyy-MM-dd. */
+  /** A calendar day at the origin airport (its time zone), yyyy-MM-dd. */
   date: string
 }
 

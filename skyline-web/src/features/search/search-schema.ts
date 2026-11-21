@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 
-import { toUtcDay } from '@/lib/format'
+import { addIsoDays, toUtcDay } from '@/lib/format'
 
 /** Loaded on first validation (see SearchCard), so zod stays out of the home page's initial bundle. */
 export const searchSchema = z
@@ -11,7 +11,9 @@ export const searchSchema = z
     date: z
       .string({ error: 'Choose a date' })
       .min(1, 'Choose a date')
-      .refine((value) => value >= toUtcDay(new Date(Date.now() - 86_400_000)), 'Choose a date that isn’t in the past'),
+      // Dates are days at the origin airport, which is at most a day behind UTC (UTC−12): this rejects days
+      // that are past everywhere. The date picker holds the line at the origin's own today.
+      .refine((value) => value >= addIsoDays(toUtcDay(new Date()), -1), 'Choose a date that isn’t in the past'),
     cabin: z.enum(['ECONOMY', 'BUSINESS', 'FIRST']),
   })
   .refine((values) => values.from !== values.to, {

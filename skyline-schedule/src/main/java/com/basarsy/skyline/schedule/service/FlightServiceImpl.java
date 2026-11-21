@@ -9,6 +9,7 @@ import com.basarsy.skyline.schedule.client.RouteClient;
 import com.basarsy.skyline.schedule.client.CrewClient;
 import com.basarsy.skyline.schedule.client.dto.AircraftResponse;
 import com.basarsy.skyline.schedule.client.dto.AircraftStatus;
+import com.basarsy.skyline.schedule.client.dto.AirportSummary;
 import com.basarsy.skyline.schedule.client.dto.RouteResponse;
 import com.basarsy.skyline.schedule.dto.FlightBoardFilter;
 import com.basarsy.skyline.schedule.dto.FlightRequest;
@@ -22,7 +23,6 @@ import com.basarsy.skyline.schedule.repository.FlightSpecifications;
 import com.basarsy.skyline.schedule.event.FlightCancelledEvent;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
@@ -142,21 +142,17 @@ public class FlightServiceImpl implements FlightService {
     @Override
     @Transactional(readOnly = true)
     public Page<FlightResponse> searchFlights(String origin, String destination, LocalDate date, Pageable pageable) {
-        LocalDateTime startOfDay = date.atStartOfDay();
-        LocalDateTime endOfDay = date.atTime(LocalTime.MAX);
-        
-        List<UUID> matchingRouteIds = routeClient.searchRoutes(origin, destination).stream()
-                .map(RouteResponse::id)
-                .toList();
-
-        if (matchingRouteIds.isEmpty()) {
+        List<RouteResponse> routes = routeClient.searchRoutes(origin, destination);
+        if (routes.isEmpty()) {
             return Page.empty(pageable);
         }
-        
-        Page<Flight> flights = flightRepository.searchFlights(
-                matchingRouteIds, startOfDay, endOfDay, BOOKABLE_STATUSES, pageable);
-                
-        return enrichPage(flights);
+
+        // `date` is a calendar day at the origin airport. Every matching route leaves from that one airport.
+        AirportSummary originAirport = routes.get(0).origin();
+        DepartureDay day = DepartureDay.of(date, originAirport == null ? null : originAirport.timezone());
+        List<UUID> routeIds = routes.stream().map(RouteResponse::id).toList();
+
+        return enrichPage(flightRepository.searchFlights(routeIds, day.start(), day.end(), BOOKABLE_STATUSES, pageable));
     }
 
     @Override

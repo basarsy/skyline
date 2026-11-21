@@ -5,7 +5,7 @@ import { scheduleApi } from '@/api/endpoints/schedule'
 import { flightKeys } from '@/api/query-keys'
 import type { RouteResponse } from '@/api/types'
 import { isBookable } from '@/lib/flight-status'
-import { toUtcDay } from '@/lib/format'
+import { addIsoDays, todayIn } from '@/lib/format'
 import { estimatePrice } from '@/lib/pricing'
 
 /*
@@ -62,16 +62,18 @@ async function limited<T>(signal: AbortSignal, task: () => Promise<T>): Promise<
 }
 
 /**
- * The lowest estimated Economy fare over the next FARE_SCAN_DAYS UTC days, for a set of routes. Queries run
- * only while `enabled` (the cards are on screen).
+ * The lowest estimated Economy fare over the next FARE_SCAN_DAYS days at each route's origin (search dates are
+ * the origin airport's calendar days), for a set of routes. Queries run only while `enabled` (the cards are on
+ * screen).
  */
 export function useLowestFares(routes: RouteResponse[], enabled: boolean) {
   // The window is fixed when the page mounts.
-  const [days] = useState(() =>
-    Array.from({ length: FARE_SCAN_DAYS }, (_, i) => toUtcDay(new Date(Date.now() + i * 86_400_000))),
-  )
+  const [now] = useState(() => new Date())
   const scanned = routes.slice(0, MAX_SCANNED_ROUTES)
-  const pairs = scanned.flatMap((route) => days.map((date) => ({ route, date })))
+  const pairs = scanned.flatMap((route) => {
+    const today = todayIn(route.origin.timezone, now)
+    return Array.from({ length: FARE_SCAN_DAYS }, (_, i) => ({ route, date: addIsoDays(today, i) }))
+  })
   const results = useQueries({
     queries: pairs.map(({ route, date }) => ({
       queryKey: flightKeys.fareDay(route.origin.iataCode, route.destination.iataCode, date),
@@ -95,7 +97,7 @@ export function useLowestFares(routes: RouteResponse[], enabled: boolean) {
   })
 
   const daysByRoute = new Map(
-    scanned.map((route, index) => [route.id, results.slice(index * days.length, (index + 1) * days.length)]),
+    scanned.map((route, index) => [route.id, results.slice(index * FARE_SCAN_DAYS, (index + 1) * FARE_SCAN_DAYS)]),
   )
 
   /** The lowest fare over several routes (e.g. every direct route into one airport). */

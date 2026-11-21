@@ -2,7 +2,6 @@ package com.basarsy.skyline.e2e;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -11,13 +10,8 @@ class BookingFlowIT extends E2eTest {
     @Test
     void publicSearchFindsAScheduledFlightWithRouteAndAircraft() {
         String flightId = createFlight();
-        String date = LocalDate.now().plusDays(1).toString();
 
-        List<String> found = api(null)
-                .queryParam("origin", "IST").queryParam("destination", "LHR").queryParam("date", date)
-                .queryParam("size", 500)
-                .get("/flights").then().statusCode(200).extract().path("data.content.id");
-        assertThat(found).contains(flightId);
+        assertThat(FlightsIT.searchIstLhr(FlightsIT.istanbulDepartureDate(flightId))).contains(flightId);
 
         var flight = api(null).get("/flights/" + flightId).then().statusCode(200).extract().jsonPath();
         assertThat(flight.getString("data.status")).isEqualTo("SCHEDULED");

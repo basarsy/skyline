@@ -1,11 +1,12 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 
-import { animationsSettled, bookViaApi, freshApp, gotoStable, live, logIn, MOCK } from './support'
+import { animationsSettled, bookViaApi, freshApp, gotoStable, istanbulDate, live, logIn, MOCK, utcIn } from './support'
 
 test.skip(live, 'Accessibility and layout checks run against the mocked API')
 
-const tomorrow = () => new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
+/** The seeded SK101's departure date at its origin (it leaves in 24h). */
+const tomorrow = () => istanbulDate(utcIn(24))
 const FLIGHT = 'f0000000-0000-4000-8000-000000000001'
 
 const PUBLIC = [

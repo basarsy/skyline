@@ -81,8 +81,21 @@ class FlightServiceImplTest {
         var page = service.searchFlights("IST", "LHR", LocalDate.of(2030, 6, 1), PageRequest.of(0, 20));
 
         assertThat(page.getContent()).extracting(f -> f.getStatus()).containsExactly(FlightStatus.DELAYED);
-        verify(repository).searchFlights(eq(List.of(ROUTE_ID)), eq(LocalDate.of(2030, 6, 1).atStartOfDay()), any(),
+        // 1 June in Istanbul (UTC+3), the origin, as UTC times.
+        verify(repository).searchFlights(eq(List.of(ROUTE_ID)), eq(LocalDateTime.of(2030, 5, 31, 21, 0)),
+                eq(LocalDateTime.of(2030, 6, 1, 21, 0)),
                 eq(java.util.EnumSet.of(FlightStatus.SCHEDULED, FlightStatus.DELAYED)), any());
+    }
+
+    @Test
+    void searchTreatsTheDateAsAUtcDayWhenTheOriginZoneIsUnusable() {
+        when(routeClient.searchRoutes("IST", "LHR")).thenReturn(List.of(route("Not/AZone")));
+        when(repository.searchFlights(any(), any(), any(), any(), any())).thenReturn(new PageImpl<>(List.of()));
+
+        service.searchFlights("IST", "LHR", LocalDate.of(2030, 6, 1), PageRequest.of(0, 20));
+
+        verify(repository).searchFlights(eq(List.of(ROUTE_ID)), eq(LocalDateTime.of(2030, 6, 1, 0, 0)),
+                eq(LocalDateTime.of(2030, 6, 2, 0, 0)), any(), any());
     }
 
     @Test
@@ -298,8 +311,12 @@ class FlightServiceImplTest {
     // ------------------------------------------------------------------ fixtures
 
     static RouteResponse route() {
+        return route("Europe/Istanbul");
+    }
+
+    static RouteResponse route(String originZone) {
         return new RouteResponse(ROUTE_ID,
-                new AirportSummary(UUID.randomUUID(), "IST", "Istanbul Airport", "Istanbul", "Turkey", "Europe/Istanbul"),
+                new AirportSummary(UUID.randomUUID(), "IST", "Istanbul Airport", "Istanbul", "Turkey", originZone),
                 new AirportSummary(UUID.randomUUID(), "LHR", "Heathrow", "London", "UK", "Europe/London"), 2500, 240);
     }
 
