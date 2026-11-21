@@ -51,6 +51,15 @@ describe('refresh failures', () => {
     unsubscribe()
   }, 10_000)
 
+  it('keeps the session when the gateway rate-limits the refresh', async () => {
+    server.use(http.post('*/api/v1/auth/refresh', () => fail(429, 'Too many requests')))
+    setTokens(tokens('rt-1'))
+
+    await expect(refreshSession()).resolves.toBe(false)
+    expect(getAuthState().status).toBe('authenticated')
+    expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBe('rt-1')
+  }, 10_000)
+
   it('ends the session when the server refuses the token', async () => {
     server.use(http.post('*/api/v1/auth/refresh', () => fail(401, 'Invalid refresh token')))
     setTokens(tokens('rt-dead'))

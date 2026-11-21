@@ -221,9 +221,13 @@ async function rotateStoredToken(): Promise<AuthResponse> {
   }
 }
 
-/** A 4xx from /auth/refresh is the server's answer; anything else (network, 5xx) is transient. */
+/**
+ * A 4xx from /auth/refresh is the server's answer; anything else (network, 5xx) is transient. 429 is the
+ * gateway's rate limiter, not a verdict on the token: it is transient too, or a burst of refreshes behind one
+ * IP would log users out.
+ */
 function isRejected(error: unknown) {
-  return isApiError(error) && error.status >= 400 && error.status < 500
+  return isApiError(error) && error.status >= 400 && error.status < 500 && error.status !== 429
 }
 
 const RETRY_DELAYS_MS = [400, 1200]
