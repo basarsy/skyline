@@ -2,7 +2,7 @@ import path from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
-import { animationsSettled, bookableFlight, freshApp, live, logIn, MOCK, register } from './support'
+import { animationsSettled, bookableFlight, bookViaApi, freshApp, live, logIn, MOCK, register } from './support'
 
 /*
  * README screenshots. Not part of the normal suite: run with
@@ -32,6 +32,21 @@ async function shot(page: Page, name: string, options: { fullPage?: boolean } = 
   // Toasts are transient; keep them out of the pictures.
   await page.addStyleTag({ content: '[data-sonner-toaster] { display: none !important; }' })
   await page.screenshot({ path: path.join(OUT, `${name}.png`), fullPage: options.fullPage ?? false })
+}
+
+/**
+ * A seat map shot: a viewport tall enough for the whole map area and its price summary, so the sticky summary
+ * doesn't cover the plane. With blur, the details card of the focused seat is closed first.
+ */
+async function seatShot(page: Page, name: string, heading: string, options: { blur?: boolean } = {}) {
+  await page.setViewportSize({ width: 1440, height: 1600 })
+  if (options.blur) {
+    await page.mouse.move(0, 0)
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+  }
+  await page.getByRole('heading', { name: heading, exact: true }).scrollIntoViewIfNeeded()
+  await shot(page, name)
+  await page.setViewportSize({ width: 1440, height: 900 })
 }
 
 function openPopover(page: Page) {
@@ -80,11 +95,10 @@ test('passenger journey', async ({ page, request }) => {
   await expect(page.getByRole('group', { name: /^Seat map/ })).toBeVisible()
   await page.getByRole('button', { name: /^Seat 2A,/ }).click()
   await expect(page.getByRole('button', { name: /^Seat 2A,/, pressed: true })).toBeVisible()
-  await animationsSettled(page)
-  await shot(page, '14-seat-map', { fullPage: true })
+  await seatShot(page, '14-seat-map', 'Choose your seats', { blur: true })
   await page.getByRole('button', { name: 'Continue' }).first().click()
   await expect(page.getByRole('heading', { name: 'Bags and extras' })).toBeVisible()
-  await shot(page, '15-extras')
+  await shot(page, '15-extras', { fullPage: true })
   await page.getByRole('button', { name: 'Review booking' }).first().click()
   await expect(page.getByRole('heading', { name: 'Review your booking' })).toBeVisible()
   await shot(page, '04-booking-review')
@@ -102,13 +116,49 @@ test('passenger journey', async ({ page, request }) => {
   await page.getByRole('button', { name: 'Check in' }).click()
   const pass = page.getByRole('article', { name: /Boarding pass for Ada Lovelace/ })
   await expect(pass.getByRole('img', { name: /PDF417 barcode/ })).toBeVisible()
+  // The encoder loads on demand: the download button is enabled once the barcode is drawn.
+  await expect(page.getByRole('button', { name: 'Download as image' })).toBeEnabled({ timeout: 15_000 })
   await shot(page, '07-boarding-pass')
 
   // The same pass on a phone.
   await page.setViewportSize({ width: 390, height: 844 })
   await page.reload()
   await expect(page.getByRole('article', { name: /Boarding pass/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Download as image' })).toBeEnabled({ timeout: 15_000 })
   await shot(page, '12-mobile-boarding-pass')
+})
+
+test('seat maps: a wide-body, on a phone, and at check-in', async ({ page }) => {
+  await freshApp(page)
+  await register(page, 'grace.hopper@example.com')
+
+  // The 787-9 (SK201): Business 2-2-2 and Economy 3-3-3, drawn from the same component as the A321neo.
+  await page.goto('/book/f0000000-0000-4000-8000-000000000003?cabin=ECONOMY&fare=STANDARD')
+  await page.getByRole('button', { name: 'Continue' }).first().click()
+  await page.getByLabel('First name').fill('Grace')
+  await page.getByLabel('Last name').fill('Hopper')
+  await page.getByLabel('Passport number').fill('U7654321')
+  await pickBirthDate(page, '1985')
+  await page.getByRole('combobox', { name: 'Nationality' }).click()
+  await openPopover(page).getByPlaceholder('Search countries').fill('United States')
+  await openPopover(page).getByRole('option', { name: 'United States' }).click()
+  await page.getByRole('button', { name: 'Choose seats' }).first().click()
+  await expect(page.getByRole('group', { name: /^Seat map/ })).toBeVisible()
+  await page.getByRole('button', { name: /^Seat 12D,/ }).hover()
+  await seatShot(page, '16-seat-map-wide', 'Choose your seats')
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.getByRole('group', { name: /^Seat map/ }).scrollIntoViewIfNeeded()
+  await shot(page, '17-mobile-seat-map')
+  await page.setViewportSize({ width: 1440, height: 900 })
+
+  // Check-in on SK101 (A321neo), choosing a seat before checking in.
+  const booking = await bookViaApi(page, 'f0000000-0000-4000-8000-000000000001', 'Hopper')
+  await page.goto(`/checkin/${booking.pnr}`)
+  await page.getByRole('button', { name: 'Choose a seat' }).click()
+  await page.getByRole('button', { name: /^Seat 12A,/ }).click()
+  await expect(page.getByRole('button', { name: /^Pay €\d+\.\d{2} for 12A$/ })).toBeVisible()
+  await seatShot(page, '18-checkin-seat', 'Choose your seat')
 })
 
 test('ops console', async ({ page }) => {

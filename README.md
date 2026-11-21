@@ -57,16 +57,27 @@ Every screenshot below comes from the real app, running against its mocked API s
 
 **3. Book in five steps.** Cabin and fare, passengers, seats, extras, review. The cabin step previews the fare for each cabin the aircraft has (Economy 1×, Business 2.5×, First 4× the base fare) and each fare (Basic, Standard, Flex). Up to nine passengers book together; the form validates as you go and links every error to its field.
 
-**Seats.** A top-down seat map drawn from the aircraft's layout data (one generic component for every aircraft): fuselage, wings, exits, lavatories and galleys, cabin dividers, row numbers and aisles. Seats show their price category by colour and glyph, and their state (yours, a companion's, taken, being chosen by someone else) by icon and pattern, never by colour alone. Hover, focus or tap shows the seat's details; arrow keys move between seats. A chosen seat is held for 15 minutes; if someone else got it first, the map refreshes. Skipping is fine: check-in assigns a free seat next to the rest of the booking.
+<table>
+  <tr>
+    <td width="50%"><img src=".github/screenshots/03-booking-cabin.png" alt="Choose your cabin and fare: the cabins this aircraft has and Basic, Standard and Flex fares, with prices and the estimated total" /></td>
+    <td width="50%"><img src=".github/screenshots/04-booking-review.png" alt="Review your booking: flight times, passenger details, cabin and fare, the chosen seat and extras" /></td>
+  </tr>
+</table>
 
-**Extras.** Bags (cabin bag, checked bags, extra weight, sports equipment), priority boarding and meals, per passenger, with what the fare already includes shown first and the airport price for comparison.
+**Seats.** A top-down seat map drawn from the aircraft's layout data (one generic component for every aircraft): fuselage, wings, exits, lavatories and galleys, cabin dividers, row numbers and aisles. Seats show their price category by colour and glyph, and their state (yours, a companion's, taken, being chosen by someone else) by icon and pattern, never by colour alone. Hover, focus or tap shows the seat's details; arrow keys move between seats. A chosen seat is held for 15 minutes; if someone else got it first, the map refreshes. Skipping is fine: check-in assigns a free seat next to the rest of the booking. The same component draws a two-cabin narrow-body (A321neo, left) and a 3-3-3 wide-body (787-9, right):
 
 <table>
   <tr>
-    <td width="50%"><img src=".github/screenshots/03-booking-cabin.png" alt="Choose your cabin: Economy, Business and First with prices, and the estimated total" /></td>
-    <td width="50%"><img src=".github/screenshots/04-booking-review.png" alt="Review your booking: flight times, passenger details, cabin, and a seat assigned at check-in" /></td>
+    <td width="50%"><img src=".github/screenshots/14-seat-map.png" alt="A321neo seat map for a Business passenger: nose, galley and lavatory, Business 2-2 with seat 2A chosen, Economy 3-3 greyed out as another cabin, exit rows and wings, and a seat summary" /></td>
+    <td width="50%"><img src=".github/screenshots/16-seat-map-wide.png" alt="787-9 seat map for an Economy passenger: Business 2-2-2 greyed out, Economy 3-3-3 coloured by price category with exit, front-of-cabin and window or aisle glyphs, two exit doors, and a details card for seat 12D at 12 euros" /></td>
   </tr>
 </table>
+
+<img src=".github/screenshots/17-mobile-seat-map.png" alt="The 787-9 seat map on a phone, scrollable and zoomable, with the price and Skip seats button above the tab bar" width="32%" />
+
+**Extras.** Bags (cabin bag, checked bags, extra weight, sports equipment), priority boarding and meals, per passenger, with what the fare already includes shown first and the airport price for comparison.
+
+<img src=".github/screenshots/15-extras.png" alt="Bags and extras for a Business passenger: what the fare includes (cabin bag, two 30 kg bags, priority boarding, hot meal), bags with online and airport prices, and meals closed 24 hours before departure" width="100%" />
 
 **4. Confirmed.** `POST /reservations/group` (one reservation per passenger, sharing a booking group) holds a seat in the flight's inventory (the schedule service, over an internal service-key endpoint), computes the price on the server, and issues a six-character booking reference (PNR). The confirmation page shows the server's total, offers an `.ics` calendar file, and tells you when check-in opens.
 
@@ -78,9 +89,11 @@ Every screenshot below comes from the real app, running against its mocked API s
 
 **6. Check in and board.** Check-in opens 48 hours before departure and closes 1 hour before. Before checking in, a passenger can still choose (and pay for) a seat or add bags. `POST /checkin` keeps the chosen seat or assigns a free one, marks the reservation `CHECKED_IN`, and returns the boarding pass. It's idempotent: checking in again returns the same pass. The pass carries a PDF417 barcode, prints cleanly, and downloads as an image.
 
+<img src=".github/screenshots/18-checkin-seat.png" alt="Check-in seat choice on the A321neo: exit-row seat 12A held for 25 euros with its details card, the price legend and key, and a Pay 25 euros for 12A button" width="100%" />
+
 <table>
   <tr>
-    <td width="68%"><img src=".github/screenshots/07-boarding-pass.png" alt="Boarding pass for Ada Lovelace, IST to LHR, gate G7, seat 1A, with a PDF417 barcode" /></td>
+    <td width="68%"><img src=".github/screenshots/07-boarding-pass.png" alt="Boarding pass for Ada Lovelace, IST to LHR, gate G7, seat 2A, with a PDF417 barcode" /></td>
     <td width="32%"><img src=".github/screenshots/12-mobile-boarding-pass.png" alt="The same boarding pass on a phone" /></td>
   </tr>
 </table>
@@ -99,7 +112,7 @@ Staff and admins get a separate console at `/ops`, gated by role: a passenger wh
 
 **9. Fleet, network, crew and users.** Aircraft and aircraft types (only `ACTIVE` aircraft can be scheduled), airports and routes, crew members with licence expiry dates, and staff accounts that an admin creates.
 
-<img src=".github/screenshots/10-ops-fleet.png" alt="Fleet page: three aircraft with type, seats, year and status" width="100%" />
+<img src=".github/screenshots/10-ops-fleet.png" alt="Fleet page: four aircraft with type, seats, year and status" width="100%" />
 
 ### Dark mode and phones
 
