@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 
-import { bookViaApi, freshApp, gotoStable, live, logIn, MOCK } from './support'
+import { animationsSettled, bookViaApi, freshApp, gotoStable, live, logIn, MOCK } from './support'
 
 test.skip(live, 'Accessibility and layout checks run against the mocked API')
 
@@ -90,7 +90,8 @@ for (const theme of ['light', 'dark'] as const) {
       await page.getByRole('button', { name: 'Check in' }).click()
       await expect(page.getByRole('img', { name: /PDF417/ })).toBeVisible()
       // Measure at rest: a toast caught mid-animation has partial opacity.
-      await page.waitForTimeout(1000)
+      await expect(page.locator('[data-sonner-toast][data-mounted="true"]').first()).toBeVisible()
+      await animationsSettled(page)
       await axe(page, 'boarding pass')
     })
 

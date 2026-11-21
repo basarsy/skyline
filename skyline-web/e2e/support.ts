@@ -20,6 +20,20 @@ export function uniqueEmail(prefix: string) {
   return `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}@e2e.test`
 }
 
+/**
+ * Waits until no finite CSS/Web animation or transition is running (endless ones, like spinners and skeleton
+ * pulses, are ignored), so what is measured or photographed is at rest.
+ */
+export async function animationsSettled(page: Page) {
+  await page.waitForFunction(() =>
+    document
+      .getAnimations()
+      .every(
+        (animation) => animation.playState !== 'running' || animation.effect?.getComputedTiming().endTime === Infinity,
+      ),
+  )
+}
+
 /** Opens the app with a fresh mocked back-end (no-op against the live stack). */
 export async function freshApp(page: Page, path = '/') {
   await gotoStable(page, path)

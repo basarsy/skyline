@@ -22,6 +22,8 @@ import { useRoutes } from '@/features/search/queries'
 import { useFlightBoard } from '../queries'
 
 const PAGE_SIZE = 50
+/** The status tiles count at most this many flights (one request, no count endpoint). */
+const COUNTS_CAP = 500
 
 function useBoardParams() {
   const [params, setParams] = useSearchParams()
@@ -112,8 +114,11 @@ export function Component() {
     sort: `departureTime,${desc ? 'desc' : 'asc'}`,
   }
   const board = useFlightBoard(params)
-  // Exact per-status totals for the day (and route/number filters), independent of the status chips.
-  const totals = useFlightBoard({ ...params, status: undefined, page: 0, size: 500 })
+  // Per-status totals for the day (and route/number filters), independent of the status chips and the sort
+  // (which would only refetch the same set). The API has no count endpoint, so this pages in up to COUNTS_CAP
+  // flights and says so when the day holds more.
+  const totals = useFlightBoard({ ...params, status: undefined, sort: undefined, page: 0, size: COUNTS_CAP })
+  const totalsCapped = (totals.data?.totalElements ?? 0) > COUNTS_CAP
   const flights = board.data?.content ?? []
   const sorting: SortingState = [{ id: 'departure', desc }]
 
@@ -315,6 +320,11 @@ export function Component() {
 
       <section aria-label="Totals by status" className="mb-6">
         <StatTiles flights={totals.data?.content ?? []} loading={totals.isPending} />
+        {totalsCapped && (
+          <p className="mt-2 text-caption text-muted-foreground">
+            Counts cover the first {COUNTS_CAP} of {totals.data?.totalElements} flights.
+          </p>
+        )}
       </section>
 
       {board.isError ? (

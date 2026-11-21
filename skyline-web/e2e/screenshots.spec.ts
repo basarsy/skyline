@@ -2,7 +2,7 @@ import path from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
-import { bookableFlight, freshApp, live, logIn, MOCK, register } from './support'
+import { animationsSettled, bookableFlight, freshApp, live, logIn, MOCK, register } from './support'
 
 /*
  * README screenshots. Not part of the normal suite: run with
@@ -18,8 +18,13 @@ const OUT = path.join(process.cwd(), '..', '.github', 'screenshots')
 
 async function settle(page: Page) {
   await page.waitForLoadState('networkidle')
-  // Lazy chunks (pickers, barcode) and images finish after network idle; give them a beat.
-  await page.waitForTimeout(600)
+  // Fonts, images and lazy chunks (pickers, barcode) can finish after network idle: wait until they have.
+  await page.waitForFunction(async () => {
+    await document.fonts.ready
+    return Array.from(document.images).every((image) => image.complete)
+  })
+  await expect(page.locator('[aria-busy="true"]')).toHaveCount(0)
+  await animationsSettled(page)
 }
 
 async function shot(page: Page, name: string, options: { fullPage?: boolean } = {}) {

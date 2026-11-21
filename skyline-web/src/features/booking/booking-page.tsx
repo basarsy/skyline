@@ -13,6 +13,7 @@ import { reservationsApi } from '@/api/endpoints/reservations'
 import { isApiError } from '@/api/http'
 import { flightKeys, reservationKeys } from '@/api/query-keys'
 import type { CabinClass, FlightResponse, PassengerRequest } from '@/api/types'
+import { useAuthState } from '@/auth/auth-store'
 import { Page } from '@/components/layout/app-shell'
 import { FlightTimeline, flightTimes, RouteLabel } from '@/components/skyline/flight'
 import { applyServerErrors, FormErrorSummary, FormField } from '@/components/skyline/form'
@@ -26,12 +27,11 @@ import { cn } from '@/lib/cn'
 import { isBookable } from '@/lib/flight-status'
 import { formatLocalDate, isoFromLocalDate } from '@/lib/format'
 import { useDocumentTitle, usePrefersReducedMotion } from '@/lib/hooks'
+import { readLastPassenger, saveLastPassenger } from '@/lib/last-passenger'
 import { cabinLabel, CABINS } from '@/lib/labels'
 import { cabinMultiplierCopy, estimatePrice } from '@/lib/pricing'
 import { useFlight } from '@/features/search/queries'
 
-/** The last passenger this browser booked, to prefill the form the next time. */
-const LAST_PASSENGER_KEY = 'skyline.lastPassenger'
 const STEPS = ['Cabin', 'Passenger', 'Review'] as const
 /** The step buttons sit outside the form (shared with the mobile bar); they submit it via form=. */
 const PASSENGER_FORM_ID = 'passenger-form'
@@ -60,14 +60,6 @@ const PASSENGER_LABELS: Record<string, string> = {
   passportNumber: 'Passport number',
   dateOfBirth: 'Date of birth',
   nationality: 'Nationality',
-}
-
-function readLastPassenger(): Partial<PassengerValues> {
-  try {
-    return JSON.parse(localStorage.getItem(LAST_PASSENGER_KEY) ?? '{}') as Partial<PassengerValues>
-  } catch {
-    return {}
-  }
 }
 
 function StepIndicator({ step }: { step: Step }) {
@@ -180,6 +172,7 @@ export function Component() {
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const userId = useAuthState().user?.id
   const { data: flight, isPending, isError, error, refetch } = useFlight(flightId)
   useDocumentTitle('Book your flight')
 
@@ -198,6 +191,8 @@ export function Component() {
   const [step, setStep] = React.useState<Step>(0)
   const [serverError, setServerError] = React.useState<string | null>(null)
   const headingRef = React.useRef<HTMLDivElement>(null)
+  // Read once: defaultValues only matter on the first render, and the form re-renders on every keystroke.
+  const [prefill] = React.useState(() => readLastPassenger(userId))
 
   const form = useForm<PassengerValues>({
     resolver: zodResolver(passengerSchema),
@@ -207,7 +202,7 @@ export function Component() {
       passportNumber: '',
       dateOfBirth: '',
       nationality: '',
-      ...readLastPassenger(),
+      ...prefill,
     },
   })
   const { errors, submitCount } = form.formState
@@ -218,15 +213,12 @@ export function Component() {
     mutationFn: (passenger: PassengerRequest) =>
       reservationsApi.book({ flightId: flightId!, cabinClass: cabin, passenger }),
     onSuccess: async (result) => {
-      try {
-        localStorage.setItem(LAST_PASSENGER_KEY, JSON.stringify(form.getValues()))
-      } catch {
-        // Prefill is a convenience only.
-      }
+      saveLastPassenger(userId, form.getValues())
       toast.success(result.message ?? 'Flight booked')
+      // Seats changed: the flight, cached search results and the home page's fares are all stale now.
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: reservationKeys.myAll }),
-        queryClient.invalidateQueries({ queryKey: flightKeys.detail(flightId!) }),
+        queryClient.invalidateQueries({ queryKey: flightKeys.all }),
       ])
       queryClient.setQueryData(reservationKeys.detail(result.data.id), result.data)
       navigate(`/book/confirmation/${result.data.id}`, { replace: true })

@@ -2,15 +2,24 @@ import { authApi } from '@/api/endpoints/auth'
 import { isApiError } from '@/api/http'
 import type { LoginRequest, RegisterRequest, UserResponse } from '@/api/types'
 import { queryClient } from '@/app/query-client'
+import { clearLastPassengers } from '@/lib/last-passenger'
 import {
   clearSession,
   getAuthState,
   markAnonymous,
+  onSessionEnded,
   readRefreshToken,
   refreshSession,
+  revokeRefreshToken,
   setTokens,
   setUser,
 } from './auth-store'
+
+// However the session ended, nothing of that user's stays behind: cached responses and the booking prefill.
+onSessionEnded(() => {
+  queryClient.clear()
+  clearLastPassengers()
+})
 
 /** Loads GET /auth/me, the source of truth for email and role. */
 export async function loadCurrentUser(): Promise<UserResponse | null> {
@@ -53,10 +62,14 @@ export async function register(details: RegisterRequest): Promise<UserResponse |
   return login(details)
 }
 
-/** Client-side only: the API has no logout endpoint. */
+/**
+ * Logs out right away and revokes the refresh token on the server in the background. That call is
+ * best-effort: logging out never waits for it or fails because of it.
+ */
 export function logout() {
+  const refreshToken = readRefreshToken()
   clearSession()
-  queryClient.clear()
+  if (refreshToken) revokeRefreshToken(refreshToken)
 }
 
 export function isLoggedIn() {

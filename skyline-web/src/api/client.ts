@@ -31,8 +31,8 @@ async function send(path: string, options: RequestOptions, token: string | null)
 
 /**
  * Calls the API, unwraps the envelope's `data`, and throws a typed ApiError otherwise. A 401 on an
- * authenticated call triggers one (shared) token refresh and a single replay; if the refresh fails the
- * session is cleared and the 401 surfaces.
+ * authenticated call triggers one (shared) token refresh and a single replay; if the refresh fails the 401
+ * surfaces (and the session is cleared when the server refused the refresh token).
  */
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
   return (await apiRequest<T>(path, options)).data
@@ -44,10 +44,10 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   let response = await send(path, options, token)
 
   if (response.status === 401 && token && !NO_REFRESH_PATHS.includes(path)) {
-    const refreshed = await refreshSession()
-    if (refreshed) {
-      response = await send(path, options, getAccessToken())
-    }
+    // Another request may have refreshed while this one was out: then just replay with the new token.
+    let replayWith = getAccessToken()
+    if (!replayWith || replayWith === token) replayWith = (await refreshSession()) ? getAccessToken() : null
+    if (replayWith) response = await send(path, options, replayWith)
   }
 
   return readEnvelopeResult<T>(response)

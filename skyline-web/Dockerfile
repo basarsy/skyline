@@ -16,7 +16,6 @@ RUN pnpm build
 FROM nginx:1.29-alpine AS runtime
 # Upstream for /api; override at run time (e.g. a different host or port for the gateway).
 ENV SKYLINE_GATEWAY_URL=http://gateway-service:8000
-COPY nginx.conf /etc/nginx/templates/default.conf.template
-COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/templates/default.conf.templateCOPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 80
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 CMD wget -qO- http://127.0.0.1/healthz || exit 1

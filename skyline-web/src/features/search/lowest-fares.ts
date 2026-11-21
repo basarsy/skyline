@@ -8,60 +8,109 @@ import { isBookable } from '@/lib/flight-status'
 import { toUtcDay } from '@/lib/format'
 import { estimatePrice } from '@/lib/pricing'
 
-/* The home page's lowest-fare scan. Kept apart from ./queries so the results page doesn't load it. */
+/*
+ * The home page's lowest-fare scan. Kept apart from ./queries so the results page doesn't load it.
+ * Flight search only takes one day at a time, so this costs one request per route and day. Until the API has a
+ * lowest-fare endpoint, the scan is bounded: at most MAX_SCANNED_ROUTES routes, MAX_CONCURRENT requests at once.
+ */
 
 /** How many days ahead the home page looks for the lowest fare on a route. */
 export const FARE_SCAN_DAYS = 7
+const MAX_SCANNED_ROUTES = 8
+const MAX_CONCURRENT = 4
 
 export interface LowestFare {
   amount: number
   currency: string | null | undefined
 }
 
+export type FareResult =
+  | { state: 'loading' }
+  /** No bookable flight in the window. */
+  | { state: 'none' }
+  /** A lookup failed or the route wasn't scanned: there is no trustworthy figure to show. */
+  | { state: 'unknown' }
+  | ({ state: 'found' } & LowestFare)
+
+let active = 0
+const waiting: (() => void)[] = []
+
+/** Runs `task` once one of MAX_CONCURRENT slots is free; a slot passes straight to the next waiter. */
+async function limited<T>(signal: AbortSignal, task: () => Promise<T>): Promise<T> {
+  if (active < MAX_CONCURRENT) active += 1
+  else {
+    await new Promise<void>((resolve, reject) => {
+      const start = () => {
+        signal.removeEventListener('abort', cancel)
+        resolve()
+      }
+      const cancel = () => {
+        waiting.splice(waiting.indexOf(start), 1)
+        reject(signal.reason)
+      }
+      waiting.push(start)
+      signal.addEventListener('abort', cancel, { once: true })
+    })
+  }
+  try {
+    return await task()
+  } finally {
+    const next = waiting.shift()
+    if (next) next()
+    else active -= 1
+  }
+}
+
 /**
- * The lowest estimated Economy fare per route over the next FARE_SCAN_DAYS UTC days. Flight search only takes
- * one day at a time, so this runs one small query per route and day, and only while `enabled` (the cards are
- * on screen). Routes with no bookable flight in the window map to null; undefined means still loading.
+ * The lowest estimated Economy fare over the next FARE_SCAN_DAYS UTC days, for a set of routes. Queries run
+ * only while `enabled` (the cards are on screen).
  */
 export function useLowestFares(routes: RouteResponse[], enabled: boolean) {
   // The window is fixed when the page mounts.
   const [days] = useState(() =>
     Array.from({ length: FARE_SCAN_DAYS }, (_, i) => toUtcDay(new Date(Date.now() + i * 86_400_000))),
   )
-  const pairs = routes.flatMap((route) => days.map((date) => ({ route, date })))
+  const scanned = routes.slice(0, MAX_SCANNED_ROUTES)
+  const pairs = scanned.flatMap((route) => days.map((date) => ({ route, date })))
   const results = useQueries({
     queries: pairs.map(({ route, date }) => ({
       queryKey: flightKeys.fareDay(route.origin.iataCode, route.destination.iataCode, date),
       queryFn: ({ signal }: { signal: AbortSignal }) =>
-        scheduleApi.search(
-          {
-            origin: route.origin.iataCode,
-            destination: route.destination.iataCode,
-            date,
-            page: 0,
-            size: 20,
-            sort: 'departureTime,asc',
-          },
-          signal,
+        limited(signal, () =>
+          scheduleApi.search(
+            {
+              origin: route.origin.iataCode,
+              destination: route.destination.iataCode,
+              date,
+              page: 0,
+              size: 20,
+              sort: 'departureTime,asc',
+            },
+            signal,
+          ),
         ),
       enabled,
       staleTime: 5 * 60_000,
     })),
   })
 
-  const fares = new Map<string, LowestFare | null | undefined>()
-  routes.forEach((route, index) => {
-    const slice = results.slice(index * days.length, (index + 1) * days.length)
-    if (slice.some((result) => result.isPending)) return fares.set(route.id, undefined)
-    let best: LowestFare | null = null
-    for (const result of slice) {
-      for (const flight of result.data?.content ?? []) {
-        if (!isBookable(flight)) continue
-        const amount = estimatePrice(flight, 'ECONOMY').amount
-        if (!best || amount < best.amount) best = { amount, currency: flight.currency }
-      }
+  const daysByRoute = new Map(
+    scanned.map((route, index) => [route.id, results.slice(index * days.length, (index + 1) * days.length)]),
+  )
+
+  /** The lowest fare over several routes (e.g. every direct route into one airport). */
+  return (subset: RouteResponse[]): FareResult => {
+    const slices = subset.map((route) => daysByRoute.get(route.id))
+    // Unscanned routes and failed lookups alike leave the minimum unknown: a partial one could be wrong.
+    if (slices.some((slice) => !slice || slice.some((result) => result.isError))) return { state: 'unknown' }
+    const all = slices.flatMap((slice) => slice ?? [])
+    if (all.some((result) => result.isPending)) return { state: 'loading' }
+    let best: FareResult = { state: 'none' }
+    for (const flight of all.flatMap((result) => result.data?.content ?? [])) {
+      if (!isBookable(flight)) continue
+      const amount = estimatePrice(flight, 'ECONOMY').amount
+      if (best.state !== 'found' || amount < best.amount) best = { state: 'found', amount, currency: flight.currency }
     }
-    fares.set(route.id, best)
-  })
-  return fares
+    return best
+  }
 }

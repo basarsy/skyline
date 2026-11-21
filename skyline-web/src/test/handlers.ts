@@ -258,7 +258,14 @@ export const handlers = [
     const userId = db.refreshTokens.get(body.refreshToken ?? '')
     const user = db.users.find((u) => u.id === userId)
     if (!user) return fail(401, 'Invalid refresh token')
+    // Rotation, as the real API does: the old refresh token is revoked, a reuse gets a 401.
+    db.refreshTokens.delete(body.refreshToken!)
     return ok(issueTokens(user))
+  }),
+  http.post(`${API}/auth/logout`, async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as { refreshToken?: string }
+    db.refreshTokens.delete(body.refreshToken ?? '')
+    return new HttpResponse(null, { status: 204 })
   }),
   http.get(`${API}/auth/me`, ({ request }) => {
     const { denied, user } = guard(request)
