@@ -10,6 +10,9 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -27,6 +30,65 @@ jobs:
       - name: Build and test
         run: ./mvnw -B verify
 
+  # Lint, type-check, unit-test and build the front-end, then run its Playwright suite against the app with the
+  # API mocked in the browser (MSW), so it needs no backend.
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: skyline-web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          # Same version as skyline-web/Dockerfile.
+          version: 10.34.9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: skyline-web/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Type-check
+        run: pnpm typecheck
+
+      - name: Check formatting
+        run: pnpm format:check
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Playwright tests
+        run: pnpm e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            skyline-web/playwright-report/
+            skyline-web/test-results/
+          if-no-files-found: ignore
+
   # Boots the whole system with docker compose (real Dockerfile, Postgres, Redis, Kafka)
   # and drives it through the API gateway with the skyline-e2e suite.
   e2e:
@@ -35,6 +97,9 @@ jobs:
     timeout-minutes: 40
     env:
       SKYLINE_ADMIN_EMAIL: admin@skyline.local
+      # The suite logs in many times in quick succession: keep the gateway's rate limiter out of its way.
+      SKYLINE_RATE_LIMIT_REPLENISH: "1000"
+      SKYLINE_RATE_LIMIT_BURST: "2000"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -48,16 +113,18 @@ jobs:
 
       - name: Generate throwaway secrets for this run
         run: |
-          for name in JWT_SECRET SKYLINE_INTERNAL_API_KEY SKYLINE_ADMIN_PASSWORD; do
+          for name in JWT_SECRET SKYLINE_INTERNAL_API_KEY SKYLINE_ADMIN_PASSWORD POSTGRES_PASSWORD REDIS_PASSWORD; do
             value="$(openssl rand -hex 32)"
             echo "::add-mask::$value"
             echo "$name=$value" >> "$GITHUB_ENV"
           done
 
       - name: Start the stack
-        run: docker compose up -d --build
+        # --wait returns once every service's healthcheck passes (or fails the step if one never does).
+        run: docker compose up -d --build --wait --wait-timeout 600
 
       - name: Run end-to-end tests
+        # POSTGRES_PASSWORD reaches the suite's auth DB connection via skyline-e2e/pom.xml.
         run: ./mvnw -B -Pe2e verify -pl skyline-e2e
 
       - name: Service logs
