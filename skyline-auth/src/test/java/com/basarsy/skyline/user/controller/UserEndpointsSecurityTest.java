@@ -125,6 +125,14 @@ class UserEndpointsSecurityTest {
     }
 
     @Test
+    void meIsA401NotA500ForTheInternalServiceKey() throws Exception {
+        mvc.perform(get("/api/v1/auth/me")
+                        .header(InternalServiceAuthenticationFilter.API_KEY_HEADER, "test-internal-api-key-at-least-32-chars"))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(userService);
+    }
+
+    @Test
     void logoutNeedsNoTokenAndAlwaysAnswers204() throws Exception {
         mvc.perform(post("/api/v1/auth/logout").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"refreshToken\":\"whatever\"}"))

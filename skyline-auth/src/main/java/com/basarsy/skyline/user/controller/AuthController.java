@@ -1,5 +1,6 @@
 package com.basarsy.skyline.user.controller;
 
+import com.basarsy.skyline.common.exception.SkylineException;
 import com.basarsy.skyline.common.response.ApiResponse;
 import com.basarsy.skyline.user.dto.AuthResponse;
 import com.basarsy.skyline.user.dto.LoginRequest;
@@ -55,6 +56,10 @@ public class AuthController {
     /** The caller's account; any authenticated user (non-POST /auth/** requires a token). */
     @GetMapping("/me")
     public ApiResponse<UserResponse> me(@AuthenticationPrincipal SkylineUserDetails principal) {
+        // Null when the caller is not a user, e.g. a service authenticated by the internal key.
+        if (principal == null || principal.getId() == null) {
+            throw new SkylineException("Authentication required", HttpStatus.UNAUTHORIZED);
+        }
         return ApiResponse.success(userService.getCurrentUser(principal.getId()));
     }
 }
