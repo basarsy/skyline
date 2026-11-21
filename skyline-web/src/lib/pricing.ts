@@ -1,4 +1,5 @@
-import type { CabinClass, FlightResponse } from '@/api/types'
+import type { CabinClass, FareType, FlightResponse } from '@/api/types'
+import { fareMultiplier } from './ancillaries'
 
 /**
  * Client-side price preview, mirroring the reservation service. Guidance only: it's labelled "Estimated"
@@ -40,10 +41,11 @@ export interface PriceEstimate {
 export function estimatePrice(
   flight: Pick<FlightResponse, 'basePrice' | 'availableSeats' | 'aircraft'>,
   cabin: CabinClass,
+  fare: FareType = 'STANDARD',
 ): PriceEstimate {
   const cabinMultiplier = CABIN_MULTIPLIER[cabin]
   const multiplier = loadMultiplier(loadFactor(flight))
-  const amount = Math.round(flight.basePrice * cabinMultiplier * multiplier * 100) / 100
+  const amount = Math.round(flight.basePrice * cabinMultiplier * fareMultiplier[fare] * multiplier * 100) / 100
   return {
     amount,
     cabinMultiplier,

@@ -41,6 +41,17 @@ export const reservationKeys = {
   pnr: (pnr: string, lastName?: string) => ['reservations', 'pnr', pnr, lastName ?? null] as const,
 }
 
+export const seatKeys = {
+  all: ['seats'] as const,
+  flight: (flightId: string) => ['seats', flightId] as const,
+  map: (flightId: string, params: Record<string, string | number>) => ['seats', flightId, params] as const,
+}
+
+export const ancillaryKeys = {
+  catalog: ['ancillaries', 'catalog'] as const,
+  options: (reservationId: string) => ['ancillaries', 'options', reservationId] as const,
+}
+
 export const checkinKeys = {
   boardingPass: (pnr: string) => ['checkin', 'boarding-pass', pnr] as const,
 }

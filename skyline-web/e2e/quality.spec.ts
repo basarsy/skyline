@@ -78,6 +78,7 @@ for (const theme of ['light', 'dark'] as const) {
         ...PASSENGER,
         `/book/confirmation/${booking.id}`,
         `/trips/${booking.id}`,
+        `/trips/${booking.id}/extras`,
         `/manage/${booking.pnr}`,
         `/checkin/${booking.pnr}`,
       ]

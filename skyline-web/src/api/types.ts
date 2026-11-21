@@ -127,10 +127,18 @@ export interface ReservationResponse {
   passenger: PassengerResponse
   flight: FlightResponse | null
   status: ReservationStatus
-  /** Null until check-in assigns one. */
+  /** Null until chosen, or until check-in assigns one. */
   seatNumber: string | null
   cabinClass: CabinClass
+  fareType: FareType
+  /** The ticket alone. */
+  farePrice: number
+  /** Fare plus paid add-ons (seat, bags, ...). */
   totalPrice: number
+  /** Shared by reservations booked together; null for a single booking. */
+  bookingGroupId: UUID | null
+  /** Paid extras, every status, oldest first. */
+  ancillaries: AncillaryLine[] | null
   /** ISO 4217 */
   currency: string
   bookedAt: LocalDateTime
@@ -153,6 +161,131 @@ export interface BoardingPassResponse {
   /** "SKY-<PNR>-<8 hex>", encoded into the PDF417. */
   barcodeData: string
   issuedAt: LocalDateTime
+}
+
+// ------------------------------------------------------------------ seats
+
+export type FareType = 'BASIC' | 'STANDARD' | 'FLEX'
+export type SeatStatus = 'AVAILABLE' | 'HELD' | 'TAKEN' | 'BLOCKED'
+export type SeatPosition = 'WINDOW' | 'MIDDLE' | 'AISLE'
+export type SeatCategory = 'EXIT_ROW' | 'EXTRA_LEGROOM' | 'FRONT' | 'PREFERRED' | 'STANDARD'
+export type SeatFeature =
+  'EXIT_ROW' | 'BULKHEAD' | 'NEAR_LAVATORY' | 'NEAR_GALLEY' | 'LIMITED_RECLINE' | 'ACCESSIBLE' | 'OVER_WING'
+export type FacilityType = 'LAVATORY' | 'GALLEY' | 'CLOSET'
+export type FacilitySide = 'LEFT' | 'CENTER' | 'RIGHT' | 'FULL'
+
+export interface SeatView {
+  /** e.g. "12A" */
+  code: string
+  row: number
+  letter: string
+  cabin: CabinClass
+  position: SeatPosition
+  legroom: 'STANDARD' | 'EXTRA'
+  features: SeatFeature[]
+  category: SeatCategory
+  status: SeatStatus
+  /** This passenger's price; null outside their cabin. */
+  price: number | null
+  selectable: boolean
+  /** Held or booked by this passenger. */
+  mine: boolean
+}
+export interface SeatMapResponse {
+  flightId: UUID
+  flightNumber: string
+  aircraftTypeId: UUID
+  aircraftName: string
+  body: 'NARROW' | 'WIDE'
+  wing: { fromRow: number; toRow: number } | null
+  /** Cabins front to back, seat letters grouped by aisle. */
+  sections: { cabin: CabinClass; fromRow: number; toRow: number; columnGroups: string[][] }[]
+  rows: { number: number; cabin: CabinClass; exit: boolean; overWing: boolean }[]
+  /** afterRow 0 = in front of the first row. */
+  facilities: { type: FacilityType; afterRow: number; side: FacilitySide }[]
+  cabin: CabinClass
+  fareType: FareType
+  currency: string
+  /** Nearly-full surcharge included in paid seat prices (0, 15 or 30). */
+  surchargePercent: number
+  holdSeconds: number
+  legend: { category: SeatCategory; price: number; available: number }[]
+  seats: SeatView[]
+}
+export interface SeatHoldResponse {
+  flightId: UUID
+  seatNumber: string
+  category: SeatCategory
+  price: number
+  currency: string
+  expiresAt: LocalDateTime
+}
+
+// ------------------------------------------------------------------ add-ons
+
+export type AncillaryType =
+  | 'SEAT'
+  | 'CABIN_BAG'
+  | 'CHECKED_BAG'
+  | 'EXTRA_WEIGHT'
+  | 'SPORTS_EQUIPMENT'
+  | 'PRIORITY_BOARDING'
+  | 'MEAL'
+  | 'LEGROOM_BUNDLE'
+export type SalesChannel = 'ONLINE' | 'AIRPORT'
+export type RouteScope = 'DOMESTIC' | 'INTERNATIONAL'
+
+export interface AncillaryLine {
+  id: UUID
+  type: AncillaryType
+  productCode: string
+  description: string
+  seatNumber: string | null
+  quantity: number
+  price: number
+  channel: SalesChannel
+  status: 'ACTIVE' | 'CANCELLED' | 'REFUNDED'
+  refundable: boolean
+  createdAt: LocalDateTime
+}
+export interface AncillaryOffer {
+  code: string
+  type: AncillaryType
+  name: string
+  description: string
+  weightKg: number | null
+  includedQuantity: number
+  purchasedQuantity: number
+  maxAdditional: number
+  /** Unit price on this channel. */
+  price: number | null
+  onlinePrice: number | null
+  airportPrice: number | null
+  available: boolean
+  reason: string | null
+}
+export interface AncillaryOptionsResponse {
+  reservationId: UUID
+  flightId: UUID
+  routeScope: RouteScope
+  channel: SalesChannel
+  currency: string
+  included: { code: string; name: string; quantity: number }[]
+  offers: AncillaryOffer[]
+}
+export interface AncillaryProductResponse {
+  code: string
+  type: AncillaryType
+  name: string
+  description: string
+  weightKg: number | null
+  maxQuantity: number
+  cutoffHours: number
+  alwaysRefundable: boolean
+  active: boolean
+  prices: { routeScope: RouteScope; onlinePrice: number; airportPrice: number }[]
+  includedIn: { cabinClass: CabinClass; fareType: FareType; quantity: number }[]
+  currency: string
 }
 
 export interface CrewMemberResponse {
@@ -194,6 +327,31 @@ export interface ReservationRequest {
   flightId: UUID
   passenger: PassengerRequest
   cabinClass: CabinClass
+  fareType?: FareType
+}
+/** Several passengers on one or more legs, all or nothing; seats must be held first. */
+export interface GroupReservationRequest {
+  passengers: PassengerRequest[]
+  legs: { flightId: UUID; cabinClass: CabinClass; fareType: FareType }[]
+  seats?: { passengerIndex: number; flightId: UUID; seatNumber: string }[]
+  extras?: { passengerIndex: number; flightId: UUID; productCode: string; quantity: number }[]
+}
+export interface GroupReservationResponse {
+  bookingGroupId: UUID
+  reservations: ReservationResponse[]
+  totalPrice: number
+  currency: string
+}
+export interface SeatHoldRequest {
+  flightId: UUID
+  seatNumber: string
+  passengerIndex: number
+  cabinClass: CabinClass
+  fareType: FareType
+}
+export interface AncillaryPurchaseRequest {
+  items: { productCode: string; quantity: number }[]
+  channel?: SalesChannel
 }
 export interface CheckInRequest {
   pnr: string

@@ -19,6 +19,7 @@ import { checkinWindow } from '@/lib/checkin-window'
 import { useDocumentTitle } from '@/lib/hooks'
 import { cabinLabel } from '@/lib/labels'
 import { normalizePnr } from '@/lib/pnr'
+import { ReservationExtras, ReservationSeatPicker } from '@/features/seats/reservation-extras'
 import { useBoardingPass, useReservationByPnr } from '@/features/trips/queries'
 
 /** A dedicated state card (not a toast) for window/eligibility answers, including the server's 422s. */
@@ -31,6 +32,41 @@ function StateCard({ icon, title, children }: { icon: React.ReactNode; title: st
       <span className="grid size-12 place-items-center rounded-full bg-elevated [&_svg]:size-5">{icon}</span>
       <h2 className="text-h2 font-semibold">{title}</h2>
       {children}
+    </section>
+  )
+}
+
+/** A card that reveals its content on demand (the seat map and extras are optional at check-in). */
+function Disclosure({
+  title,
+  description,
+  action,
+  children,
+}: {
+  title: string
+  description: string
+  action: string
+  children: React.ReactNode
+}) {
+  const [open, setOpen] = React.useState(false)
+  const id = React.useId()
+  return (
+    <section
+      aria-labelledby={`${id}-title`}
+      className="flex flex-col gap-4 rounded-card border border-border bg-card p-5 sm:p-6"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <h2 id={`${id}-title`} className="text-h3 font-semibold">
+            {title}
+          </h2>
+          <p className="text-sm text-muted-foreground">{description}</p>
+        </div>
+        <Button variant="outline" aria-expanded={open} aria-controls={id} onClick={() => setOpen((v) => !v)}>
+          {open ? 'Close' : action}
+        </Button>
+      </div>
+      {open && <div id={id}>{children}</div>}
     </section>
   )
 }
@@ -173,6 +209,24 @@ export function Component() {
       ) : (
         <>
           <Summary reservation={reservation} />
+          <Disclosure
+            title={reservation.seatNumber ? `Seat ${reservation.seatNumber}` : 'Choose your seat'}
+            description={
+              reservation.seatNumber
+                ? 'Change it until you check in.'
+                : 'Optional. Skip it and we’ll assign a free seat, close to your travel companions.'
+            }
+            action={reservation.seatNumber ? 'Change seat' : 'Choose a seat'}
+          >
+            <ReservationSeatPicker reservation={reservation} />
+          </Disclosure>
+          <Disclosure
+            title="Bags and extras"
+            description="Add a bag now: it costs more at the airport."
+            action="Add bags"
+          >
+            <ReservationExtras reservation={reservation} />
+          </Disclosure>
           <form
             className="flex flex-col gap-5 rounded-card border border-border bg-card p-5 sm:p-6"
             onSubmit={(event) => {
@@ -180,7 +234,11 @@ export function Component() {
               if (consent && !checkIn.isPending) checkIn.mutate()
             }}
           >
-            <p className="text-sm text-muted-foreground">Your seat is assigned when you check in.</p>
+            <p className="text-sm text-muted-foreground">
+              {reservation.seatNumber
+                ? `Your seat: ${reservation.seatNumber}.`
+                : 'No seat chosen: we’ll assign you a free seat when you check in.'}
+            </p>
             <div className="flex items-start gap-3">
               <Checkbox
                 id={consentId}

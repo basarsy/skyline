@@ -1,6 +1,14 @@
 import { http, HttpResponse, type JsonBodyType } from 'msw'
 
 import type {
+  AncillaryLine,
+  AncillaryPurchaseRequest,
+  GroupReservationRequest,
+  SeatHoldRequest,
+  CabinClass,
+  FareType,
+  RouteScope,
+  SeatCategory,
   AircraftResponse,
   AircraftTypeResponse,
   AirportResponse,
@@ -14,7 +22,10 @@ import type {
   UserRole,
 } from '@/api/types'
 import { formatDateInZone, toApiDateTime } from '@/lib/format'
-import { CABIN_MULTIPLIER, estimatePrice } from '@/lib/pricing'
+import { estimateOffers, includedFor } from '@/lib/ancillaries'
+import { estimatePrice, loadFactor, loadMultiplier } from '@/lib/pricing'
+import { CATALOG } from './catalog'
+import { expandLayout, LAYOUTS, SEAT_PRICES } from './seat-layouts'
 import {
   aircraft as seedAircraft,
   aircraftTypes,
@@ -51,6 +62,8 @@ interface Db {
   passes: Map<string, BoardingPassResponse>
   crew: CrewMemberResponse[]
   manifests: Map<string, FlightCrewResponse[]>
+  /** flight id → seat → hold owner ("userId:slot"); holds never expire in the mock */
+  holds: Map<string, Map<string, string>>
 }
 
 let counter = 0
@@ -61,7 +74,14 @@ const uuid = () => {
 
 function seedFlights(): FlightResponse[] {
   return [
-    makeFlight({ id: 'f0000000-0000-4000-8000-000000000001', flightNumber: 'SK101', departureTime: hoursFromNow(24) }),
+    // On the two-cabin A321neo, so the booking flow can sell Business and draw a Business section.
+    makeFlight({
+      id: 'f0000000-0000-4000-8000-000000000001',
+      flightNumber: 'SK101',
+      departureTime: hoursFromNow(24),
+      aircraft: seedAircraft[3]!,
+      availableSeats: 160,
+    }),
     makeFlight({
       id: 'f0000000-0000-4000-8000-000000000002',
       flightNumber: 'SK103',
@@ -112,6 +132,7 @@ function freshDb(): Db {
     passes: new Map(),
     crew: [],
     manifests: new Map(),
+    holds: new Map(),
   }
 }
 
@@ -209,14 +230,205 @@ function newPnr() {
 }
 
 const SEAT_LETTERS = 'ABCDEF'
-function nextSeat(flightId: string) {
-  const taken = new Set(
-    db.reservations.filter((r) => r.flight?.id === flightId && r.seatNumber).map((r) => r.seatNumber),
+
+function layoutOf(flight: FlightResponse) {
+  const layout = LAYOUTS[flight.aircraft?.aircraftType.id ?? '']
+  return layout ? expandLayout(layout) : null
+}
+
+function takenSeats(flightId: string) {
+  return new Set(
+    db.reservations
+      .filter((r) => r.flight?.id === flightId && r.seatNumber && r.status !== 'CANCELLED')
+      .map((r) => r.seatNumber!),
   )
+}
+
+/** A free seat at check-in: the first free ordinary seat in the cabin (the real service picks at random). */
+function nextSeat(flight: FlightResponse, cabin: CabinClass) {
+  const taken = takenSeats(flight.id)
+  const held = db.holds.get(flight.id) ?? new Map<string, string>()
+  const layout = layoutOf(flight)
+  if (layout) {
+    const free = layout.seats.filter((s) => s.cabin === cabin && !taken.has(s.code) && !held.has(s.code))
+    const ordinary = free.filter((s) => s.category === 'STANDARD' || s.category === 'PREFERRED' || cabin !== 'ECONOMY')
+    return (ordinary[0] ?? free[0])?.code ?? null
+  }
   for (let index = 0; ; index += 1) {
     const seat = `${Math.floor(index / 6) + 1}${SEAT_LETTERS[index % 6]}`
     if (!taken.has(seat)) return seat
   }
+}
+
+function seatPrice(flight: FlightResponse, cabin: CabinClass, fare: FareType, category: SeatCategory) {
+  const base = cabin === 'ECONOMY' ? SEAT_PRICES[fare]![category] : 0
+  if (base === undefined) return null
+  return base === 0 ? 0 : Math.round(base * loadMultiplier(loadFactor(flight)) * 100) / 100
+}
+
+function seatMapFor(flight: FlightResponse, cabin: CabinClass, fare: FareType, owner: string, booked: string | null) {
+  const layout = layoutOf(flight)
+  if (!layout) return null
+  const taken = takenSeats(flight.id)
+  const held = db.holds.get(flight.id) ?? new Map<string, string>()
+  const seats = layout.seats.map((seat) => {
+    const holder = held.get(seat.code)
+    const mine = seat.code === booked || holder === owner
+    const status = taken.has(seat.code) ? 'TAKEN' : holder ? 'HELD' : 'AVAILABLE'
+    const price = seat.cabin === cabin ? seatPrice(flight, cabin, fare, seat.category) : null
+    return {
+      ...seat,
+      status,
+      price,
+      selectable: price !== null && (status === 'AVAILABLE' || (status === 'HELD' && mine)),
+      mine,
+    } as const
+  })
+  const categories = [...new Set(layout.seats.filter((s) => s.cabin === cabin).map((s) => s.category))]
+  return {
+    flightId: flight.id,
+    flightNumber: flight.flightNumber,
+    aircraftTypeId: flight.aircraft!.aircraftType.id,
+    aircraftName: `${flight.aircraft!.aircraftType.manufacturer} ${flight.aircraft!.aircraftType.model}`,
+    body: layout.body,
+    wing: layout.wing,
+    sections: layout.sections,
+    rows: layout.rows,
+    facilities: layout.facilities,
+    cabin,
+    fareType: fare,
+    currency: flight.currency,
+    surchargePercent: Math.round((loadMultiplier(loadFactor(flight)) - 1) * 100),
+    holdSeconds: 900,
+    legend: categories
+      .map((category) => ({
+        category,
+        price: seatPrice(flight, cabin, fare, category) ?? 0,
+        available: seats.filter((s) => s.category === category && s.selectable).length,
+      }))
+      .sort((a, b) => a.price - b.price),
+    seats,
+  }
+}
+
+/** Holds a seat for an owner ("userId:slot"), releasing the owner's previous seat on that flight. */
+function holdSeat(flight: FlightResponse, seat: string, owner: string) {
+  const held = db.holds.get(flight.id) ?? new Map<string, string>()
+  db.holds.set(flight.id, held)
+  if (takenSeats(flight.id).has(seat) || (held.get(seat) && held.get(seat) !== owner)) return false
+  for (const [code, holder] of held) if (holder === owner) held.delete(code)
+  held.set(seat, owner)
+  return true
+}
+
+function releaseHold(flightId: string, owner: string) {
+  const held = db.holds.get(flightId)
+  if (!held) return
+  for (const [code, holder] of held) if (holder === owner) held.delete(code)
+}
+
+function recalcTotal(reservation: ReservationResponse) {
+  const extras = (reservation.ancillaries ?? []).filter((l) => l.status === 'ACTIVE').reduce((s, l) => s + l.price, 0)
+  reservation.totalPrice = Math.round((reservation.farePrice + extras) * 100) / 100
+}
+
+function addLine(
+  reservation: ReservationResponse,
+  line: Omit<AncillaryLine, 'id' | 'createdAt' | 'channel' | 'status'>,
+) {
+  reservation.ancillaries = [
+    ...(reservation.ancillaries ?? []),
+    { ...line, id: uuid(), channel: 'ONLINE', status: 'ACTIVE', createdAt: now() },
+  ]
+  recalcTotal(reservation)
+}
+
+function endSeatLine(reservation: ReservationResponse) {
+  for (const line of reservation.ancillaries ?? []) {
+    if (line.type === 'SEAT' && line.status === 'ACTIVE') line.status = line.refundable ? 'REFUNDED' : 'CANCELLED'
+  }
+}
+
+function scopeOf(flight: FlightResponse): RouteScope {
+  const route = flight.route
+  return route && route.origin.country === route.destination.country ? 'DOMESTIC' : 'INTERNATIONAL'
+}
+
+function purchased(reservation: ReservationResponse) {
+  const map: Record<string, number> = {}
+  for (const line of reservation.ancillaries ?? []) {
+    if (line.type !== 'SEAT' && line.status === 'ACTIVE')
+      map[line.productCode] = (map[line.productCode] ?? 0) + line.quantity
+  }
+  return map
+}
+
+/** Offers for a booked passenger: the estimate rules, with what they already bought counted in. */
+function optionsFor(reservation: ReservationResponse) {
+  const flight = findFlight(reservation.flight!.id)!
+  const bought = purchased(reservation)
+  const offers = estimateOffers(CATALOG, reservation.cabinClass, reservation.fareType, scopeOf(flight), bought).map(
+    (offer) => {
+      const mine = bought[offer.code] ?? 0
+      const more = Math.max(0, offer.maxAdditional - mine)
+      return {
+        ...offer,
+        purchasedQuantity: mine,
+        maxAdditional: more,
+        available: offer.price !== null && more > 0,
+        reason:
+          offer.price !== null && more === 0 ? (offer.reason ?? 'You have the maximum for this flight') : offer.reason,
+      }
+    },
+  )
+  return {
+    reservationId: reservation.id,
+    flightId: flight.id,
+    routeScope: scopeOf(flight),
+    channel: 'ONLINE' as const,
+    currency: flight.currency,
+    included: includedFor(CATALOG, reservation.cabinClass, reservation.fareType),
+    offers,
+  }
+}
+
+function newReservation(
+  flight: FlightResponse,
+  passenger: Omit<ReservationResponse['passenger'], 'id' | 'userId'>,
+  userId: string,
+  cabin: CabinClass,
+  fare: FareType,
+  groupId: string | null,
+): ReservationResponse {
+  const price = estimatePrice(flight, cabin, fare).amount
+  return {
+    id: uuid(),
+    pnr: newPnr(),
+    passenger: { ...passenger, id: uuid(), userId },
+    flight,
+    status: 'CONFIRMED',
+    seatNumber: null,
+    cabinClass: cabin,
+    fareType: fare,
+    farePrice: price,
+    totalPrice: price,
+    bookingGroupId: groupId,
+    ancillaries: [],
+    currency: flight.currency,
+    bookedAt: now(),
+    createdAt: now(),
+    updatedAt: now(),
+  }
+}
+
+function ownReservation(request: Request, id: string) {
+  const { denied, user } = guard(request)
+  if (denied) return { denied, reservation: null, user: null }
+  const reservation = db.reservations.find((r) => r.id === id)
+  if (!reservation || (user!.role === 'PASSENGER' && reservation.passenger.userId !== user!.id)) {
+    return { denied: fail(404, 'Reservation not found'), reservation: null, user }
+  }
+  return { denied: null, reservation, user: user! }
 }
 
 function validationErrors(body: Record<string, unknown>, required: string[]) {
@@ -571,24 +783,250 @@ export const handlers = [
     if (flight.status !== 'SCHEDULED' && flight.status !== 'DELAYED')
       return fail(400, 'Cannot book a flight that is not scheduled')
     if (flight.availableSeats <= 0) return fail(400, 'Flight is fully booked')
-    const price = estimatePrice(flight, body.cabinClass).amount
     flight.availableSeats -= 1
-    const reservation: ReservationResponse = {
-      id: uuid(),
-      pnr: newPnr(),
-      passenger: { ...body.passenger, id: uuid(), userId: user!.id },
-      flight,
-      status: 'CONFIRMED',
-      seatNumber: null,
-      cabinClass: body.cabinClass,
-      totalPrice: price || flight.basePrice * CABIN_MULTIPLIER[body.cabinClass],
-      currency: flight.currency,
-      bookedAt: now(),
-      createdAt: now(),
-      updatedAt: now(),
-    }
+    const reservation = newReservation(flight, body.passenger, user!.id, body.cabinClass, 'STANDARD', null)
     db.reservations.push(reservation)
     return ok(withFlight(reservation), 'Flight booked successfully', 201)
+  }),
+  http.post(`${API}/reservations/group`, async ({ request }) => {
+    const { denied, user } = guard(request, ['PASSENGER'])
+    if (denied) return denied
+    const body = (await request.json()) as GroupReservationRequest
+    const errors = body.passengers.flatMap((p, i) =>
+      validationErrors(p as unknown as Record<string, unknown>, [
+        'firstName',
+        'lastName',
+        'passportNumber',
+        'dateOfBirth',
+        'nationality',
+      ]).map((e) => `passengers[${i}].${e}`),
+    )
+    if (errors.length) return fail(400, 'Validation failed', errors)
+    const groupId = uuid()
+    const booked: ReservationResponse[] = []
+    for (const leg of body.legs) {
+      const flight = findFlight(leg.flightId)
+      if (!flight) return fail(404, 'Flight not found')
+      if (flight.availableSeats < body.passengers.length) return fail(400, 'Flight is fully booked')
+      const layout = layoutOf(flight)
+      if (layout && !layout.seats.some((s) => s.cabin === leg.cabinClass)) {
+        return fail(
+          422,
+          `This aircraft has no ${leg.cabinClass.charAt(0)}${leg.cabinClass.slice(1).toLowerCase()} cabin`,
+        )
+      }
+      for (const seat of body.seats ?? []) {
+        if (seat.flightId !== leg.flightId) continue
+        if (db.holds.get(flight.id)?.get(seat.seatNumber) !== `${user!.id}:p${seat.passengerIndex}`) {
+          return fail(409, `Your hold on seat ${seat.seatNumber} has expired; please choose a seat again`)
+        }
+      }
+      body.passengers.forEach((passenger, index) => {
+        flight.availableSeats -= 1
+        const reservation = newReservation(flight, passenger, user!.id, leg.cabinClass, leg.fareType, groupId)
+        const seat = body.seats?.find((s) => s.passengerIndex === index && s.flightId === flight.id)
+        if (seat && layout) {
+          const category = layout.seats.find((s) => s.code === seat.seatNumber)!.category
+          reservation.seatNumber = seat.seatNumber
+          addLine(reservation, {
+            type: 'SEAT',
+            productCode: `SEAT_${category}`,
+            description: `Seat ${seat.seatNumber}`,
+            seatNumber: seat.seatNumber,
+            quantity: 1,
+            price: seatPrice(flight, leg.cabinClass, leg.fareType, category) ?? 0,
+            refundable: leg.fareType === 'FLEX',
+          })
+          releaseHold(flight.id, `${user!.id}:p${index}`)
+        }
+        for (const extra of body.extras ?? []) {
+          if (extra.passengerIndex !== index || extra.flightId !== flight.id) continue
+          const product = CATALOG.find((p) => p.code === extra.productCode)!
+          const unit = product.prices.find((p) => p.routeScope === scopeOf(flight))!.onlinePrice
+          addLine(reservation, {
+            type: product.type,
+            productCode: product.code,
+            description: product.name,
+            seatNumber: null,
+            quantity: extra.quantity,
+            price: unit * extra.quantity,
+            refundable: leg.fareType === 'FLEX' || product.alwaysRefundable,
+          })
+        }
+        db.reservations.push(reservation)
+        booked.push(withFlight(reservation))
+      })
+    }
+    const totalPrice = booked.reduce((sum, r) => sum + r.totalPrice, 0)
+    return ok(
+      { bookingGroupId: groupId, reservations: booked, totalPrice, currency: booked[0]!.currency },
+      'Booking confirmed',
+      201,
+    )
+  }),
+
+  // ---- seats
+  http.get(`${API}/flights/:id/seat-map`, ({ request, params }) => {
+    const { denied, user } = guard(request)
+    if (denied) return denied
+    const flight = findFlight(String(params.id))
+    if (!flight) return fail(404, 'Flight not found')
+    const url = new URL(request.url)
+    const reservationId = url.searchParams.get('reservationId')
+    const reservation = reservationId ? db.reservations.find((r) => r.id === reservationId) : null
+    const cabin = (reservation?.cabinClass ?? url.searchParams.get('cabin') ?? 'ECONOMY') as CabinClass
+    const fare = (reservation?.fareType ?? url.searchParams.get('fareType') ?? 'STANDARD') as FareType
+    const owner = reservation
+      ? `${user!.id}:${reservation.id}`
+      : `${user!.id}:p${url.searchParams.get('passenger') ?? 0}`
+    const map = seatMapFor(flight, cabin, fare, owner, reservation?.seatNumber ?? null)
+    return map ? ok(map) : fail(404, 'Seat selection is not available on this aircraft; a seat is assigned at check-in')
+  }),
+  http.post(`${API}/reservations/seat-holds`, async ({ request }) => {
+    const { denied, user } = guard(request, ['PASSENGER'])
+    if (denied) return denied
+    const body = (await request.json()) as SeatHoldRequest
+    const flight = findFlight(body.flightId)
+    const seat = flight && layoutOf(flight)?.seats.find((s) => s.code === body.seatNumber)
+    if (!flight || !seat) return fail(422, `Seat ${body.seatNumber} does not exist on this aircraft`)
+    if (seat.cabin !== body.cabinClass) {
+      return fail(422, `Seat ${seat.code} is in ${seat.cabin}; you can only choose a seat in ${body.cabinClass}`)
+    }
+    if (!holdSeat(flight, seat.code, `${user!.id}:p${body.passengerIndex}`)) {
+      return fail(
+        409,
+        `Seat ${seat.code} was just taken by another passenger; the seat map has been updated, please choose another`,
+      )
+    }
+    const price = seatPrice(flight, body.cabinClass, body.fareType, seat.category) ?? 0
+    return ok(
+      {
+        flightId: flight.id,
+        seatNumber: seat.code,
+        category: seat.category,
+        price,
+        currency: flight.currency,
+        expiresAt: hoursFromNow(0.25),
+      },
+      'Seat held',
+      201,
+    )
+  }),
+  http.delete(`${API}/reservations/seat-holds`, ({ request }) => {
+    const { denied, user } = guard(request, ['PASSENGER'])
+    if (denied) return denied
+    const url = new URL(request.url)
+    releaseHold(url.searchParams.get('flightId') ?? '', `${user!.id}:p${url.searchParams.get('passenger') ?? 0}`)
+    return ok(null, 'Seat released')
+  }),
+  http.post(`${API}/reservations/:id/seat-hold`, async ({ request, params }) => {
+    const { denied, reservation, user } = ownReservation(request, String(params.id))
+    if (denied) return denied
+    if (reservation.status === 'CHECKED_IN') {
+      return fail(422, 'You are checked in: your seat is on your boarding pass and can’t be changed')
+    }
+    const { seatNumber } = (await request.json()) as { seatNumber: string }
+    const flight = findFlight(reservation.flight!.id)!
+    const seat = layoutOf(flight)?.seats.find((s) => s.code === seatNumber)
+    if (!seat) return fail(422, `Seat ${seatNumber} does not exist on this aircraft`)
+    if (seat.cabin !== reservation.cabinClass) {
+      return fail(422, `Seat ${seat.code} is in ${seat.cabin}; you can only choose a seat in ${reservation.cabinClass}`)
+    }
+    if (!holdSeat(flight, seat.code, `${user.id}:${reservation.id}`)) {
+      return fail(
+        409,
+        `Seat ${seat.code} was just taken by another passenger; the seat map has been updated, please choose another`,
+      )
+    }
+    const price = seatPrice(flight, reservation.cabinClass, reservation.fareType, seat.category) ?? 0
+    return ok(
+      {
+        flightId: flight.id,
+        seatNumber: seat.code,
+        category: seat.category,
+        price,
+        currency: flight.currency,
+        expiresAt: hoursFromNow(0.25),
+      },
+      'Seat held',
+      201,
+    )
+  }),
+  http.delete(`${API}/reservations/:id/seat-hold`, ({ request, params }) => {
+    const { denied, reservation, user } = ownReservation(request, String(params.id))
+    if (denied) return denied
+    releaseHold(reservation.flight!.id, `${user.id}:${reservation.id}`)
+    return ok(null, 'Seat released')
+  }),
+  http.put(`${API}/reservations/:id/seat`, async ({ request, params }) => {
+    const { denied, reservation, user } = ownReservation(request, String(params.id))
+    if (denied) return denied
+    const { seatNumber } = (await request.json()) as { seatNumber: string }
+    const flight = findFlight(reservation.flight!.id)!
+    if (db.holds.get(flight.id)?.get(seatNumber) !== `${user.id}:${reservation.id}`) {
+      return fail(409, `Your hold on seat ${seatNumber} has expired; please choose a seat again`)
+    }
+    const category = layoutOf(flight)!.seats.find((s) => s.code === seatNumber)!.category
+    endSeatLine(reservation)
+    reservation.seatNumber = seatNumber
+    addLine(reservation, {
+      type: 'SEAT',
+      productCode: `SEAT_${category}`,
+      description: `Seat ${seatNumber}`,
+      seatNumber,
+      quantity: 1,
+      price: seatPrice(flight, reservation.cabinClass, reservation.fareType, category) ?? 0,
+      refundable: reservation.fareType === 'FLEX',
+    })
+    releaseHold(flight.id, `${user.id}:${reservation.id}`)
+    return ok(withFlight(reservation), 'Seat confirmed')
+  }),
+  http.delete(`${API}/reservations/:id/seat`, ({ request, params }) => {
+    const { denied, reservation } = ownReservation(request, String(params.id))
+    if (denied) return denied
+    endSeatLine(reservation)
+    reservation.seatNumber = null
+    recalcTotal(reservation)
+    return ok(withFlight(reservation), 'Seat removed')
+  }),
+
+  // ---- add-ons
+  http.get(`${API}/ancillary-products`, ({ request }) => guard(request).denied ?? ok(CATALOG)),
+  http.get(`${API}/reservations/:id/ancillaries/options`, ({ request, params }) => {
+    const { denied, reservation } = ownReservation(request, String(params.id))
+    if (denied) return denied
+    return ok(optionsFor(reservation))
+  }),
+  http.post(`${API}/reservations/:id/ancillaries`, async ({ request, params }) => {
+    const { denied, reservation } = ownReservation(request, String(params.id))
+    if (denied) return denied
+    const body = (await request.json()) as AncillaryPurchaseRequest
+    for (const item of body.items) {
+      const offer = optionsFor(reservation).offers.find((o) => o.code === item.productCode)
+      if (!offer || !offer.available || item.quantity > offer.maxAdditional) {
+        return fail(422, `${offer?.name ?? item.productCode}: ${offer?.reason ?? 'not available'}`)
+      }
+      const product = CATALOG.find((p) => p.code === item.productCode)!
+      addLine(reservation, {
+        type: product.type,
+        productCode: product.code,
+        description: product.name,
+        seatNumber: null,
+        quantity: item.quantity,
+        price: (offer.price ?? 0) * item.quantity,
+        refundable: reservation.fareType === 'FLEX' || product.alwaysRefundable,
+      })
+    }
+    return ok(withFlight(reservation), 'Add-ons added')
+  }),
+  http.delete(`${API}/reservations/:id/ancillaries/:lineId`, ({ request, params }) => {
+    const { denied, reservation } = ownReservation(request, String(params.id))
+    if (denied) return denied
+    const line = reservation.ancillaries?.find((l) => l.id === params.lineId)
+    if (!line || line.status !== 'ACTIVE') return fail(404, 'Add-on not found on this reservation')
+    line.status = line.refundable ? 'REFUNDED' : 'CANCELLED'
+    recalcTotal(reservation)
+    return ok(withFlight(reservation), 'Add-on removed')
   }),
   http.get(`${API}/reservations/my`, ({ request }) => {
     const { denied, user } = guard(request, ['PASSENGER'])
@@ -633,6 +1071,9 @@ export const handlers = [
       return fail(400, 'Cannot cancel a reservation for this flight')
     reservation.status = 'CANCELLED'
     reservation.seatNumber = null
+    for (const line of reservation.ancillaries ?? []) {
+      if (line.status === 'ACTIVE') line.status = line.refundable ? 'REFUNDED' : 'CANCELLED'
+    }
     if (flight) flight.availableSeats += 1
     return ok(null, 'Reservation cancelled successfully')
   }),
@@ -655,7 +1096,8 @@ export const handlers = [
     const departure = new Date(`${flight.departureTime}Z`).getTime()
     if (Date.now() < departure - 48 * 3_600_000) return fail(422, 'Check-in opens 48 hours before departure.')
     if (Date.now() > departure - 3_600_000) return fail(422, 'Check-in closes 1 hour before departure.')
-    reservation.seatNumber = nextSeat(flight.id)
+    reservation.seatNumber ??= nextSeat(flight, reservation.cabinClass)
+    if (!reservation.seatNumber) return fail(409, 'No seats left in your cabin on this flight')
     reservation.status = 'CHECKED_IN'
     const pass: BoardingPassResponse = {
       pnr,
@@ -740,11 +1182,12 @@ export function issueSessionFor(email: string) {
 
 // ------------------------------------------------------------------ persistence (browser mode)
 
-interface SerializedDb extends Omit<Db, 'tokens' | 'refreshTokens' | 'passes' | 'manifests'> {
+interface SerializedDb extends Omit<Db, 'tokens' | 'refreshTokens' | 'passes' | 'manifests' | 'holds'> {
   tokens: [string, string][]
   refreshTokens: [string, string][]
   passes: [string, BoardingPassResponse][]
   manifests: [string, FlightCrewResponse[]][]
+  holds?: [string, [string, string][]][]
   counter: number
 }
 
@@ -756,6 +1199,7 @@ export function exportDb(): string {
     refreshTokens: [...db.refreshTokens],
     passes: [...db.passes],
     manifests: [...db.manifests],
+    holds: [...db.holds].map(([flightId, seats]) => [flightId, [...seats]]),
     counter,
   }
   return JSON.stringify(snapshot)
@@ -770,5 +1214,6 @@ export function importDb(json: string) {
     refreshTokens: new Map(snapshot.refreshTokens),
     passes: new Map(snapshot.passes),
     manifests: new Map(snapshot.manifests),
+    holds: new Map((snapshot.holds ?? []).map(([flightId, seats]) => [flightId, new Map(seats)])),
   }
 }

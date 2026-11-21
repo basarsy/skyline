@@ -1,10 +1,18 @@
 import { api, command } from '../client'
 import { parsePage } from '../page'
-import type { PageParams, ReservationRequest, ReservationResponse } from '../types'
+import type {
+  GroupReservationRequest,
+  GroupReservationResponse,
+  PageParams,
+  ReservationRequest,
+  ReservationResponse,
+} from '../types'
 
 /** skyline-reservation: bookings. */
 export const reservationsApi = {
   book: (body: ReservationRequest) => command.post<ReservationResponse>('/reservations', body),
+  /** Several passengers (and/or legs) with their held seats and add-ons, all or nothing. */
+  bookGroup: (body: GroupReservationRequest) => command.post<GroupReservationResponse>('/reservations/group', body),
   byId: (id: string, signal?: AbortSignal) => api.get<ReservationResponse>(`/reservations/${id}`, { signal }),
   /** Full view with the owner's (or staff) token; otherwise lastName is required and the view is redacted. */
   byPnr: (pnr: string, lastName?: string, signal?: AbortSignal) =>

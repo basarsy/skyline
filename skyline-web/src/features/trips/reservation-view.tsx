@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Eye, EyeOff, Ticket, TicketCheck, X } from 'lucide-react'
+import { Armchair, Eye, EyeOff, Ticket, TicketCheck, X } from 'lucide-react'
 import { useNavigate } from 'react-router'
 
 import { isApiError } from '@/api/http'
@@ -13,7 +13,8 @@ import { FlightStatusBadge, ReservationStatusBadge } from '@/components/skyline/
 import { Button } from '@/components/ui/button'
 import { checkinWindow, isCancellable } from '@/lib/checkin-window'
 import { cn } from '@/lib/cn'
-import { formatLocal, formatLocalDate } from '@/lib/format'
+import { fareLabel } from '@/lib/ancillaries'
+import { formatLocal, formatLocalDate, formatMoney } from '@/lib/format'
 import { cabinLabel } from '@/lib/labels'
 import { CABIN_MULTIPLIER } from '@/lib/pricing'
 import { useCancelReservation } from './queries'
@@ -67,6 +68,12 @@ export function TripActions({
           Boarding pass
         </Button>
       )}
+      {reservation.status === 'CONFIRMED' && isCancellable(reservation) && (
+        <Button size={size} variant="outline" onClick={() => navigate(`/trips/${reservation.id}/extras`)}>
+          <Armchair strokeWidth={1.75} aria-hidden />
+          Seat and bags
+        </Button>
+      )}
       {isCancellable(reservation) && (
         <>
           <Button size={size} variant="destructive" onClick={() => setConfirmOpen(true)}>
@@ -93,7 +100,10 @@ export function TripActions({
                   on <span className="font-medium text-foreground">{date}</span>, booking{' '}
                   <span className="font-mono font-semibold text-foreground">{reservation.pnr}</span>.
                 </p>
-                <p>Your seat will be released. This can’t be undone.</p>
+                <p>
+                  Your seat will be released. Seat and bag fees are refunded on Flex fares (and meals on every fare).
+                  This can’t be undone.
+                </p>
               </>
             }
             confirmLabel="Cancel booking"
@@ -214,11 +224,24 @@ export function ReservationView({ reservation, redacted }: { reservation: Reserv
             Price
           </h2>
           <dl>
-            <Row label="Cabin">{cabinLabel[reservation.cabinClass]}</Row>
+            <Row label="Cabin">
+              {cabinLabel[reservation.cabinClass]}
+              {reservation.fareType && ` · ${fareLabel[reservation.fareType]}`}
+            </Row>
             <Row label="Cabin multiplier">× {CABIN_MULTIPLIER[reservation.cabinClass].toFixed(1)}</Row>
+            {reservation.farePrice != null && (
+              <Row label="Fare">{formatMoney(reservation.farePrice, reservation.currency)}</Row>
+            )}
             <Row label="Seat">
               {reservation.seatNumber ?? <span className="text-muted-foreground">Assigned at check-in</span>}
             </Row>
+            {(reservation.ancillaries ?? [])
+              .filter((line) => line.status === 'ACTIVE' && (line.price > 0 || line.type !== 'SEAT'))
+              .map((line) => (
+                <Row key={line.id} label={`${line.description}${line.quantity > 1 ? ` × ${line.quantity}` : ''}`}>
+                  {formatMoney(line.price, reservation.currency)}
+                </Row>
+              ))}
           </dl>
           <PriceTag
             amount={reservation.totalPrice}

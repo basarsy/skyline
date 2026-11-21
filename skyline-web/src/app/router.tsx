@@ -48,6 +48,7 @@ const routes: RouteObject[] = [
             element: <RequireAuth />,
             children: [
               { path: 'trips/:reservationId', ...page(() => import('@/features/trips/trip-detail-page')) },
+              { path: 'trips/:reservationId/extras', ...page(() => import('@/features/trips/trip-extras-page')) },
               { path: 'checkin', ...page(() => import('@/features/checkin/checkin-entry-page')) },
               { path: 'checkin/:pnr', ...page(() => import('@/features/checkin/checkin-flow-page')) },
             ],
