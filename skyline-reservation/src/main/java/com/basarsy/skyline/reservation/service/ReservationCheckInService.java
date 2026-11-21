@@ -10,8 +10,14 @@ import com.basarsy.skyline.reservation.entity.ReservationStatus;
 import com.basarsy.skyline.reservation.mapper.ReservationMapper;
 import com.basarsy.skyline.reservation.repository.ReservationRepository;
 import com.basarsy.skyline.reservation.client.dto.FlightStatus;
+import com.basarsy.skyline.reservation.client.dto.SeatLayout;
+import com.basarsy.skyline.reservation.repository.BlockedSeatRepository;
 import java.security.SecureRandom;
 import java.util.EnumSet;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.random.RandomGenerator;
@@ -45,6 +51,11 @@ public class ReservationCheckInService {
     private final ScheduleClient scheduleClient;
     private final ReservationMapper reservationMapper;
     private final TransactionTemplate transactionTemplate;
+    private final SeatLayoutProvider layouts;
+    private final SeatPricing seatPricing;
+    private final SeatHoldStore holds;
+    private final BlockedSeatRepository blockedSeats;
+    private final SeatSelectionService seatLines;
     private final RandomGenerator random;
 
     @Autowired
@@ -52,8 +63,14 @@ public class ReservationCheckInService {
             ReservationRepository reservationRepository,
             ScheduleClient scheduleClient,
             ReservationMapper reservationMapper,
-            PlatformTransactionManager transactionManager) {
-        this(reservationRepository, scheduleClient, reservationMapper, transactionManager, new SecureRandom());
+            PlatformTransactionManager transactionManager,
+            SeatLayoutProvider layouts,
+            SeatPricing seatPricing,
+            SeatHoldStore holds,
+            BlockedSeatRepository blockedSeats,
+            SeatSelectionService seatLines) {
+        this(reservationRepository, scheduleClient, reservationMapper, transactionManager, layouts, seatPricing, holds,
+                blockedSeats, seatLines, new SecureRandom());
     }
 
     ReservationCheckInService(
@@ -61,11 +78,21 @@ public class ReservationCheckInService {
             ScheduleClient scheduleClient,
             ReservationMapper reservationMapper,
             PlatformTransactionManager transactionManager,
+            SeatLayoutProvider layouts,
+            SeatPricing seatPricing,
+            SeatHoldStore holds,
+            BlockedSeatRepository blockedSeats,
+            SeatSelectionService seatLines,
             RandomGenerator random) {
         this.reservationRepository = reservationRepository;
         this.scheduleClient = scheduleClient;
         this.reservationMapper = reservationMapper;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.layouts = layouts;
+        this.seatPricing = seatPricing;
+        this.holds = holds;
+        this.blockedSeats = blockedSeats;
+        this.seatLines = seatLines;
         this.random = random;
     }
 
@@ -104,13 +131,44 @@ public class ReservationCheckInService {
         }
 
         if (reservation.getSeatNumber() == null) {
-            String seat = SeatMap.randomFree(totalSeats(flight),
-                            reservationRepository.findAssignedSeats(reservation.getFlightId()), random)
-                    .orElseThrow(() -> new SkylineException("No seats left on this flight", HttpStatus.CONFLICT));
-            reservation.setSeatNumber(seat);
+            reservation.setSeatNumber(assignSeat(reservation, flight));
+            seatLines.recordAssignedSeat(reservation);
         }
         reservation.setStatus(ReservationStatus.CHECKED_IN);
         return toResponse(reservationRepository.saveAndFlush(reservation), flight);
+    }
+
+    /**
+     * A free seat for a passenger who didn't choose one: from the aircraft's layout when it has one (own cabin,
+     * free standard seats, close to the rest of the booking), else the legacy 6-abreast numbering.
+     */
+    private String assignSeat(Reservation reservation, FlightResponse flight) {
+        Set<String> taken = reservationRepository.findAssignedSeats(reservation.getFlightId());
+        Optional<SeatLayout> layout = layouts.forFlight(flight);
+        if (layout.isEmpty()) {
+            return SeatMap.randomFree(totalSeats(flight), taken, random).orElseThrow(CheckInSeatErrors::noSeatsLeft);
+        }
+
+        Set<String> unavailable = new HashSet<>(taken);
+        unavailable.addAll(blockedSeats.findSeatNumbers(flight.getId()));
+        holds.holdsOnFlight(flight.getId()).keySet().forEach(unavailable::add);
+        List<String> companions = reservation.getBookingGroupId() == null ? List.of()
+                : reservationRepository.findByBookingGroupIdAndFlightId(reservation.getBookingGroupId(), flight.getId())
+                        .stream()
+                        .filter(other -> !other.getId().equals(reservation.getId()))
+                        .map(Reservation::getSeatNumber)
+                        .filter(Objects::nonNull)
+                        .toList();
+        SeatPricing.PriceList prices = seatPricing.priceList(flight, reservation.getCabinClass(), reservation.getFareType());
+        return SeatAssigner.pick(layout.get(), seat -> seat.cabin() == reservation.getCabinClass(),
+                        prices::autoAssignable, unavailable, companions, random)
+                .orElseThrow(CheckInSeatErrors::noSeatsLeft);
+    }
+
+    private static final class CheckInSeatErrors {
+        static SkylineException noSeatsLeft() {
+            return new SkylineException("No seats left in your cabin on this flight", HttpStatus.CONFLICT);
+        }
     }
 
     private static int totalSeats(FlightResponse flight) {

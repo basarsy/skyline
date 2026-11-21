@@ -163,6 +163,20 @@ public class SeatSelectionService {
         releaseAfterCommit(flight.getId(), owner);
     }
 
+    /** A seat handed out free at check-in is a zero-price line, so every seated passenger has a seat line. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    void recordAssignedSeat(Reservation reservation) {
+        ReservationAncillary line = new ReservationAncillary();
+        line.setReservation(reservation);
+        line.setType(AncillaryType.SEAT);
+        line.setProductCode("SEAT_ASSIGNED");
+        line.setDescription("Seat " + reservation.getSeatNumber() + " (assigned at check-in)");
+        line.setSeatNumber(reservation.getSeatNumber());
+        line.setPrice(BigDecimal.ZERO.setScale(2));
+        line.setRefundable(false);
+        ancillaryRepository.save(line);
+    }
+
     /** Total = fare + every active line item. */
     void recalculateTotal(Reservation reservation) {
         BigDecimal extras = reservation.getId() == null ? BigDecimal.ZERO : ancillaryRepository.sumActive(reservation.getId());
