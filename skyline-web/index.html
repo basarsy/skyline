@@ -8,19 +8,8 @@
     <meta name="theme-color" content="#112669" media="(prefers-color-scheme: dark)" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Skyline</title>
-    <script>
-      // Apply the theme before first paint so the page never flashes. Same key as src/lib/theme.ts.
-      ;(function () {
-        try {
-          var stored = localStorage.getItem('skyline.theme')
-          var dark =
-            stored === 'dark' || (stored !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)
-          var root = document.documentElement
-          if (dark) root.classList.add('dark')
-          root.style.colorScheme = dark ? 'dark' : 'light'
-        } catch (e) {}
-      })()
-    </script>
+    <!-- Classic blocking script: sets the theme before first paint. Not inline, so the CSP needs no hash. -->
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>
