@@ -115,7 +115,8 @@ class AircraftControllerSecurityTest extends FleetWebMvcTestBase {
     @Test
     void aWrongApiKeyIsTreatedAsAnonymous() throws Exception {
         mvc.perform(get("/api/v1/aircraft/" + ID)
-                        .header(InternalServiceAuthenticationFilter.API_KEY_HEADER, internalKey.replace('t', 'x')))
+                        // Always differs from the real key, whatever characters it is made of.
+                        .header(InternalServiceAuthenticationFilter.API_KEY_HEADER, "wrong-" + internalKey))
                 .andExpect(status().isUnauthorized());
         verifyNoInteractions(aircraftService);
     }
