@@ -31,7 +31,7 @@ class SecurityIT extends E2eTest {
     void disabledAccountCannotLogInOrRefresh() throws Exception {
         User user = registerPassenger("disabled");
 
-        try (var connection = DriverManager.getConnection(AUTH_DB_URL, "skyline_user", "skyline_pass");
+        try (var connection = DriverManager.getConnection(AUTH_DB_URL, AUTH_DB_USER, AUTH_DB_PASSWORD);
                 var statement = connection.prepareStatement("UPDATE users SET is_enabled = false WHERE email = ?")) {
             statement.setString(1, user.email());
             assertThat(statement.executeUpdate()).isEqualTo(1);

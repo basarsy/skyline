@@ -28,6 +28,8 @@ abstract class E2eTest {
     static final String ADMIN_EMAIL = property("skyline.e2e.adminEmail", "admin@skyline.local");
     static final String ADMIN_PASSWORD = property("skyline.e2e.adminPassword", null);
     static final String AUTH_DB_URL = property("skyline.e2e.authDbUrl", "jdbc:postgresql://localhost:5433/skyline_auth");
+    static final String AUTH_DB_USER = property("skyline.e2e.authDbUser", "skyline_user");
+    static final String AUTH_DB_PASSWORD = property("skyline.e2e.authDbPassword", null);
 
     /** Seeded by the route service's V2 migration. */
     static final String IST = "11111111-1111-1111-1111-111111111101";

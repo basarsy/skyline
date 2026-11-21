@@ -32,6 +32,11 @@ spring:
         # Consumers bind to their own DTOs; don't leak producer class names into headers.
         spring.json.add.type.headers: false
         enable.idempotence: true
+        # KafkaNotificationBridge retries each send on the request thread after commit; with the 60s default a
+        # broker outage would stall a flight cancellation for minutes. Fail fast instead and let the bridge retry.
+        max.block.ms: 5000
+        delivery.timeout.ms: 9000
+        request.timeout.ms: 4000
 
 skyline:
   pricing:
