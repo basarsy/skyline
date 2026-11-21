@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.basarsy.skyline.common.exception.SkylineException;
+import com.basarsy.skyline.common.notification.config.KafkaTopicConfig;
 import com.basarsy.skyline.common.pricing.PricingProperties;
 import com.basarsy.skyline.schedule.client.CrewClient;
 import com.basarsy.skyline.schedule.client.FleetClient;
@@ -27,6 +28,7 @@ import com.basarsy.skyline.schedule.event.FlightCancelledEvent;
 import com.basarsy.skyline.schedule.entity.FlightStatus;
 import com.basarsy.skyline.schedule.mapper.FlightMapper;
 import com.basarsy.skyline.schedule.mapper.FlightMapperImpl;
+import com.basarsy.skyline.schedule.outbox.Outbox;
 import com.basarsy.skyline.schedule.repository.FlightRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -37,7 +39,6 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -57,13 +58,13 @@ class FlightServiceImplTest {
     final RouteClient routeClient = mock(RouteClient.class);
     final CrewClient crewClient = mock(CrewClient.class);
     final FlightMapper mapper = new FlightMapperImpl();
-    final ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
+    final Outbox outbox = mock(Outbox.class);
 
     FlightServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new FlightServiceImpl(repository, fleetClient, routeClient, crewClient, mapper, events,
+        service = new FlightServiceImpl(repository, fleetClient, routeClient, crewClient, mapper, outbox,
                 new PricingProperties("EUR"));
         when(routeClient.getRoute(ROUTE_ID)).thenReturn(route());
         when(fleetClient.getAircraft(AIRCRAFT_ID)).thenReturn(aircraft(AIRCRAFT_ID, AircraftStatus.ACTIVE));
@@ -126,7 +127,8 @@ class FlightServiceImplTest {
 
         assertThat(response.getStatus()).isEqualTo(FlightStatus.CANCELLED);
         assertThat(flight.getAvailableSeats()).as("seats reset to capacity").isEqualTo(180);
-        verify(events).publishEvent(new FlightCancelledEvent(flight.getId()));
+        verify(outbox).append(KafkaTopicConfig.FLIGHT_CANCELLED_TOPIC, flight.getId(),
+                new FlightCancelledEvent(flight.getId()));
     }
 
     @Test
@@ -140,7 +142,7 @@ class FlightServiceImplTest {
                 .hasMessage("Only an admin can cancel a flight")
                 .extracting(e -> ((SkylineException) e).getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(flight.getStatus()).isEqualTo(FlightStatus.SCHEDULED);
-        verifyNoInteractions(events);
+        verifyNoInteractions(outbox);
     }
 
     @Test
@@ -151,7 +153,7 @@ class FlightServiceImplTest {
 
         assertThat(service.updateFlightStatus(flight.getId(), FlightStatus.DELAYED).getStatus())
                 .isEqualTo(FlightStatus.DELAYED);
-        verifyNoInteractions(events);
+        verifyNoInteractions(outbox);
     }
 
     @Test
@@ -163,7 +165,7 @@ class FlightServiceImplTest {
         assertThatThrownBy(() -> service.updateFlightStatus(flight.getId(), FlightStatus.CANCELLED))
                 .isInstanceOf(SkylineException.class)
                 .extracting(e -> ((SkylineException) e).getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
-        verifyNoInteractions(events);
+        verifyNoInteractions(outbox);
     }
 
     static void loginAs(String role) {

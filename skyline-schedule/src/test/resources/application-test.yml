@@ -22,3 +22,6 @@ jwt:
 skyline:
   internal:
     api-key: test-internal-api-key-at-least-32-chars
+  # Tests drive the outbox publisher directly instead of racing its timer.
+  outbox:
+    scheduling-enabled: false
