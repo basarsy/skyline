@@ -1,6 +1,5 @@
 package com.basarsy.skyline.user.controller;
 
-import com.basarsy.skyline.common.exception.SkylineException;
 import com.basarsy.skyline.common.response.ApiResponse;
 import com.basarsy.skyline.user.dto.AuthResponse;
 import com.basarsy.skyline.user.dto.LoginRequest;
@@ -14,6 +13,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -58,7 +58,7 @@ public class AuthController {
     public ApiResponse<UserResponse> me(@AuthenticationPrincipal SkylineUserDetails principal) {
         // Null when the caller is not a user, e.g. a service authenticated by the internal key.
         if (principal == null || principal.getId() == null) {
-            throw new SkylineException("Authentication required", HttpStatus.UNAUTHORIZED);
+            throw new AuthenticationCredentialsNotFoundException("Not a user");
         }
         return ApiResponse.success(userService.getCurrentUser(principal.getId()));
     }

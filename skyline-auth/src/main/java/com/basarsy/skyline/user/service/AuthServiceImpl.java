@@ -1,7 +1,6 @@
 package com.basarsy.skyline.user.service;
 
 import com.basarsy.skyline.common.exception.SkylineException;
-import com.basarsy.skyline.common.security.InvalidTokenException;
 import com.basarsy.skyline.common.security.JwtService;
 import com.basarsy.skyline.user.config.RefreshTokenProperties;
 import com.basarsy.skyline.user.dto.AuthResponse;
@@ -28,7 +27,6 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 
 @Slf4j
 @Service
@@ -76,7 +74,7 @@ public class AuthServiceImpl implements AuthService {
         }
 
         // A login starts a new token family.
-        return issueTokens(userDetailsService.loadUserByUsername(email), UUID.randomUUID());
+        return issueTokens(userDetailsService.loadUserByUsername(email), UUID.randomUUID(), LocalDateTime.now(clock));
     }
 
     /**
@@ -86,63 +84,39 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional(noRollbackFor = SkylineException.class)
     public AuthResponse refresh(RefreshTokenRequest request) {
-        var refreshToken = request.refreshToken();
-        String username;
-        UUID tokenId;
-        try {
-            if (!jwtService.isRefreshToken(refreshToken)) {
-                throw invalidRefreshToken();
-            }
-            username = jwtService.extractUsername(refreshToken);
-            tokenId = jwtService.extractTokenId(refreshToken);
-        } catch (InvalidTokenException ex) { // bad signature, malformed or expired
-            throw invalidRefreshToken();
-        }
-        if (tokenId == null) { // issued before refresh tokens were tracked
-            throw invalidRefreshToken();
-        }
-
-        var stored = refreshTokenRepository.findById(tokenId).orElseThrow(AuthServiceImpl::invalidRefreshToken);
+        // Empty also for tokens issued before refresh tokens were tracked (no jti).
+        var stored = jwtService.refreshTokenId(request.refreshToken())
+                .flatMap(refreshTokenRepository::findById)
+                .orElseThrow(AuthServiceImpl::invalidRefreshToken);
         var now = LocalDateTime.now(clock);
         if (stored.getRevokedAt() != null) {
             onReuse(stored, now);
             throw invalidRefreshToken();
         }
 
-        var userDetails = userDetailsService.loadUserByUsername(username);
-        if (!userDetails.isEnabled() || !userDetails.getId().equals(stored.getUserId())) {
-            // A disabled account must not be able to mint new access tokens with an old refresh token.
-            throw invalidRefreshToken();
-        }
-        if (refreshTokenRepository.markReplaced(tokenId, now) == 0) {
+        // Roles and the enabled flag come fresh from the database, not from the old token.
+        var userDetails = userRepository.findById(stored.getUserId())
+                .map(SkylineUserDetails::new)
+                // A disabled account must not be able to mint new access tokens with an old refresh token.
+                .filter(SkylineUserDetails::isEnabled)
+                .orElseThrow(AuthServiceImpl::invalidRefreshToken);
+        if (refreshTokenRepository.markReplaced(stored.getId(), now) == 0) {
             // A concurrent refresh with the same token won the race a moment ago: same as a reuse within the grace.
             throw invalidRefreshToken();
         }
-        // Roles and the enabled flag come fresh from the database, not from the old token.
-        return issueTokens(userDetails, stored.getFamilyId());
+        return issueTokens(userDetails, stored.getFamilyId(), now);
     }
 
     @Override
     @Transactional
     public void logout(RefreshTokenRequest request) {
-        if (request == null || !StringUtils.hasText(request.refreshToken())) {
-            return;
-        }
-        UUID tokenId;
-        try {
-            if (!jwtService.isRefreshToken(request.refreshToken())) {
-                return;
-            }
-            tokenId = jwtService.extractTokenId(request.refreshToken());
-        } catch (InvalidTokenException ex) {
-            return;
-        }
-        if (tokenId == null) {
+        if (request == null) {
             return;
         }
         // The whole family (this login session), so a token a second tab rotated a moment ago dies too.
-        refreshTokenRepository.findById(tokenId).ifPresent(
-                token -> refreshTokenRepository.revokeFamily(token.getFamilyId(), LocalDateTime.now(clock)));
+        jwtService.refreshTokenId(request.refreshToken())
+                .flatMap(refreshTokenRepository::findById)
+                .ifPresent(token -> refreshTokenRepository.revokeFamily(token.getFamilyId(), LocalDateTime.now(clock)));
     }
 
     /**
@@ -159,8 +133,7 @@ public class AuthServiceImpl implements AuthService {
                 token.getUserId(), revoked, token.getFamilyId());
     }
 
-    private AuthResponse issueTokens(SkylineUserDetails userDetails, UUID familyId) {
-        var now = LocalDateTime.now(clock);
+    private AuthResponse issueTokens(SkylineUserDetails userDetails, UUID familyId, LocalDateTime now) {
         var tokenId = UUID.randomUUID();
         refreshTokenRepository.save(new RefreshToken(
                 tokenId, userDetails.getId(), familyId, now, now.plus(jwtService.refreshTokenExpiry())));

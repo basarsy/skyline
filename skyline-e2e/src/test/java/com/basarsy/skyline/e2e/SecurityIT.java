@@ -59,9 +59,9 @@ class SecurityIT extends E2eTest {
     void refreshTokenIsDeadAfterLogout() {
         User user = registerPassenger("logout");
 
-        api(null).body(Map.of("refreshToken", user.refreshToken())).post("/auth/logout").then().statusCode(204);
-        api(null).body(Map.of("refreshToken", user.refreshToken())).post("/auth/logout").then().statusCode(204);
-        api(null).body(Map.of("refreshToken", "not-a-token")).post("/auth/logout").then().statusCode(204);
+        authCall("/auth/logout", user.refreshToken()).then().statusCode(204);
+        authCall("/auth/logout", user.refreshToken()).then().statusCode(204);
+        authCall("/auth/logout", "not-a-token").then().statusCode(204);
 
         refresh(user.refreshToken()).then().statusCode(401);
     }
@@ -74,7 +74,11 @@ class SecurityIT extends E2eTest {
     }
 
     private static Response refresh(String refreshToken) {
-        return api(null).body(Map.of("refreshToken", refreshToken)).post("/auth/refresh");
+        return authCall("/auth/refresh", refreshToken);
+    }
+
+    private static Response authCall(String path, String refreshToken) {
+        return api(null).body(Map.of("refreshToken", refreshToken)).post(path);
     }
 
     @Test

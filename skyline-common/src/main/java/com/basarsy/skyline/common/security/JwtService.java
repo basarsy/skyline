@@ -2,6 +2,7 @@ package com.basarsy.skyline.common.security;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.JwtParser;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
@@ -11,6 +12,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import javax.crypto.SecretKey;
 import org.springframework.security.core.GrantedAuthority;
@@ -29,10 +31,12 @@ public class JwtService {
 
     private final JwtProperties jwtProperties;
     private final SecretKey signingKey;
+    private final JwtParser parser;
 
     public JwtService(JwtProperties jwtProperties) {
         this.jwtProperties = jwtProperties;
         this.signingKey = Keys.hmacShaKeyFor(jwtProperties.secret().getBytes(StandardCharsets.UTF_8));
+        this.parser = Jwts.parser().verifyWith(signingKey).build();
     }
 
     public String generateAccessToken(UserDetails userDetails) {
@@ -66,14 +70,19 @@ public class JwtService {
         return parseClaims(token).getSubject();
     }
 
-    /** The {@code jti} claim, or {@code null} when the token has none or it is not a UUID. */
-    public UUID extractTokenId(String token) {
-        String id = parseClaims(token).getId();
-        if (id == null) return null;
+    /**
+     * The {@code jti} of a valid refresh token (one signature check), or empty for anything else: an access token, a
+     * forged, malformed or expired token, or a refresh token without a UUID {@code jti}.
+     */
+    public Optional<UUID> refreshTokenId(String token) {
         try {
-            return UUID.fromString(id);
-        } catch (IllegalArgumentException ex) {
-            return null;
+            Claims claims = parseClaims(token);
+            if (!REFRESH_TOKEN_TYPE.equals(claims.get(TOKEN_TYPE_CLAIM, String.class)) || claims.getId() == null) {
+                return Optional.empty();
+            }
+            return Optional.of(UUID.fromString(claims.getId()));
+        } catch (InvalidTokenException | IllegalArgumentException ex) {
+            return Optional.empty();
         }
     }
 
@@ -92,10 +101,6 @@ public class JwtService {
 
     public boolean isAccessToken(String token) {
         return ACCESS_TOKEN_TYPE.equals(parseClaims(token).get(TOKEN_TYPE_CLAIM, String.class));
-    }
-
-    public boolean isRefreshToken(String token) {
-        return REFRESH_TOKEN_TYPE.equals(parseClaims(token).get(TOKEN_TYPE_CLAIM, String.class));
     }
 
     public boolean isTokenValid(String token) {
@@ -128,11 +133,7 @@ public class JwtService {
 
     private Claims parseClaims(String token) {
         try {
-            return Jwts.parser()
-                    .verifyWith(signingKey)
-                    .build()
-                    .parseSignedClaims(token)
-                    .getPayload();
+            return parser.parseSignedClaims(token).getPayload();
         } catch (JwtException ex) {
             throw new InvalidTokenException("Invalid or expired token", ex);
         }
