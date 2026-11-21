@@ -88,11 +88,7 @@ class FlightServiceImplTest {
 
     @Test
     void searchTreatsTheDateAsAUtcDayWhenTheOriginZoneIsUnusable() {
-        RouteResponse route = route();
-        AirportSummary origin = route.origin();
-        RouteResponse noZone = new RouteResponse(ROUTE_ID, new AirportSummary(origin.id(), origin.iataCode(),
-                origin.name(), origin.city(), origin.country(), "Not/AZone"), route.destination(), 2500, 240);
-        when(routeClient.searchRoutes("IST", "LHR")).thenReturn(List.of(noZone));
+        when(routeClient.searchRoutes("IST", "LHR")).thenReturn(List.of(route("Not/AZone")));
         when(repository.searchFlights(any(), any(), any(), any(), any())).thenReturn(new PageImpl<>(List.of()));
 
         service.searchFlights("IST", "LHR", LocalDate.of(2030, 6, 1), PageRequest.of(0, 20));
@@ -313,8 +309,12 @@ class FlightServiceImplTest {
     // ------------------------------------------------------------------ fixtures
 
     static RouteResponse route() {
+        return route("Europe/Istanbul");
+    }
+
+    static RouteResponse route(String originZone) {
         return new RouteResponse(ROUTE_ID,
-                new AirportSummary(UUID.randomUUID(), "IST", "Istanbul Airport", "Istanbul", "Turkey", "Europe/Istanbul"),
+                new AirportSummary(UUID.randomUUID(), "IST", "Istanbul Airport", "Istanbul", "Turkey", originZone),
                 new AirportSummary(UUID.randomUUID(), "LHR", "Heathrow", "London", "UK", "Europe/London"), 2500, 240);
     }
 

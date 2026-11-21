@@ -34,7 +34,7 @@ class FlightsIT extends E2eTest {
         assertThat(searchIstLhr(utcDay.plusDays(1).toString())).contains(flightId);
         assertThat(searchIstLhr(utcDay.toString())).doesNotContain(flightId);
         // The board has no origin airport: its dates stay UTC days.
-        assertThat(board(utcDay.toString())).contains(flightId);
+        assertThat(board(adminToken, utcDay.toString())).contains(flightId);
     }
 
     @Test
@@ -44,12 +44,10 @@ class FlightsIT extends E2eTest {
         String cancelled = createFlight();
         api(adminToken).delete("/flights/" + cancelled).then().statusCode(200);
 
-        List<String> ids = api(staff.accessToken()).queryParam("date", utcDepartureDate(scheduled))
-                .queryParam("size", 500)
-                .get("/flights/board").then().statusCode(200).extract().path("data.content.id");
+        LocalDateTime departure = departureUtc(scheduled);
 
-        assertThat(ids).contains(scheduled, cancelled);
-        assertThat(searchIstLhr(istanbulDepartureDate(scheduled))).as("search stays bookable-only")
+        assertThat(board(staff.accessToken(), departure.toLocalDate().toString())).contains(scheduled, cancelled);
+        assertThat(searchIstLhr(istanbulDate(departure))).as("search stays bookable-only")
                 .contains(scheduled).doesNotContain(cancelled);
     }
 
@@ -104,8 +102,8 @@ class FlightsIT extends E2eTest {
                 .get("/flights").then().statusCode(200).extract().path("data.content.id");
     }
 
-    static List<String> board(String date) {
-        return api(adminToken).queryParam("date", date).queryParam("size", 500)
+    static List<String> board(String token, String date) {
+        return api(token).queryParam("date", date).queryParam("size", 500)
                 .get("/flights/board").then().statusCode(200).extract().path("data.content.id");
     }
 
@@ -121,7 +119,10 @@ class FlightsIT extends E2eTest {
 
     /** The departure's day in Istanbul, the origin of IST → LHR: the search {@code date}. */
     static String istanbulDepartureDate(String flightId) {
-        return departureUtc(flightId).atOffset(ZoneOffset.UTC).atZoneSameInstant(ZoneId.of("Europe/Istanbul"))
-                .toLocalDate().toString();
+        return istanbulDate(departureUtc(flightId));
+    }
+
+    static String istanbulDate(LocalDateTime utc) {
+        return utc.atOffset(ZoneOffset.UTC).atZoneSameInstant(ZoneId.of("Europe/Istanbul")).toLocalDate().toString();
     }
 }

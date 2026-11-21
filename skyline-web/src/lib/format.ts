@@ -17,13 +17,21 @@ export function parseUtc(value: string): Date {
 /** A zone that Intl can use; falls back to UTC for null or unknown ids. */
 export function safeZone(zone: string | null | undefined): string {
   if (!zone) return 'UTC'
-  try {
-    new Intl.DateTimeFormat('en', { timeZone: zone })
-    return zone
-  } catch {
-    return 'UTC'
+  let safe = checkedZones.get(zone)
+  if (safe === undefined) {
+    try {
+      new Intl.DateTimeFormat('en', { timeZone: zone })
+      safe = zone
+    } catch {
+      safe = 'UTC'
+    }
+    checkedZones.set(zone, safe)
   }
+  return safe
 }
+
+/** Zone id → itself or 'UTC': building an Intl.DateTimeFormat to validate one is costly on hot render paths. */
+const checkedZones = new Map<string, string>()
 
 /** "14:30" in the given zone. */
 export function formatTimeInZone(utc: string, zone: string | null | undefined) {
