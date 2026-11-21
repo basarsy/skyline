@@ -1,5 +1,5 @@
 # ── Build: install with the lockfile, then build the static app ──────────────
-FROM node:24-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@10.34.9 --activate
 

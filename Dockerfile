@@ -3,7 +3,7 @@
 # Usage: docker build --build-arg MODULE=skyline-schedule --build-arg APP_PORT=8080 .
 
 # ── Build stage ──────────────────────────────────────────────────
-FROM eclipse-temurin:21-jdk-jammy AS build
+FROM eclipse-temurin:22-jdk-jammy AS build
 WORKDIR /workspace
 
 ARG MODULE
@@ -40,7 +40,7 @@ COPY ${MODULE}/src ${MODULE}/src
 RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -pl ${MODULE} -am -DskipTests -Djacoco.skip=true -Denforcer.skip=true package
 
 # ── Runtime stage ────────────────────────────────────────────────
-FROM eclipse-temurin:21-jre-jammy AS runtime
+FROM eclipse-temurin:22-jre-jammy AS runtime
 
 ARG MODULE
 ARG APP_PORT=8080
