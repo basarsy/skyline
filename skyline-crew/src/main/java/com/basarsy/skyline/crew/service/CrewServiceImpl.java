@@ -15,7 +15,10 @@ import com.basarsy.skyline.crew.mapper.CrewMapper;
 import com.basarsy.skyline.crew.repository.CrewMemberRepository;
 import com.basarsy.skyline.crew.repository.CrewMemberSpecifications;
 import com.basarsy.skyline.crew.repository.FlightCrewRepository;
+import com.basarsy.skyline.crew.client.dto.FlightStatus;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
@@ -28,6 +31,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class CrewServiceImpl implements CrewService {
+
+    private static final Set<FlightStatus> NOT_OCCUPYING = EnumSet.of(FlightStatus.CANCELLED, FlightStatus.ARRIVED);
 
     private final CrewMemberRepository crewMemberRepository;
     private final FlightCrewRepository flightCrewRepository;
@@ -80,16 +85,25 @@ public class CrewServiceImpl implements CrewService {
         CrewMember crewMember = crewMemberRepository.findById(request.crewMemberId())
                 .orElseThrow(() -> new ResourceNotFoundException("Crew member not found"));
 
+        // A crew member flies in their own role: a flight attendant can't be rostered as the captain.
+        if (request.role() != crewMember.getRole()) {
+            throw new SkylineException("Crew member is a " + crewMember.getRole() + " and cannot be assigned as "
+                    + request.role(), HttpStatus.BAD_REQUEST);
+        }
+
         // Validation: License expiry
         if (crewMember.getLicenseExpiryDate().isBefore(flight.getDepartureTime().toLocalDate())) {
             throw new SkylineException("Crew member license is expired or will expire before flight", HttpStatus.BAD_REQUEST);
         }
 
-        // Validation: Overlapping assignments
+        // Validation: Overlapping assignments. Cancelled and completed flights no longer occupy the crew member.
         List<FlightCrew> assignments = flightCrewRepository.findByCrewMemberId(crewMember.getId());
         for (FlightCrew assignment : assignments) {
             FlightResponse assignedFlight = scheduleClient.getFlight(assignment.getFlightId());
-            if (assignedFlight.getDepartureTime().isBefore(flight.getArrivalTime()) && 
+            if (NOT_OCCUPYING.contains(assignedFlight.getStatus())) {
+                continue;
+            }
+            if (assignedFlight.getDepartureTime().isBefore(flight.getArrivalTime()) &&
                 assignedFlight.getArrivalTime().isAfter(flight.getDepartureTime())) {
                 throw new SkylineException("Crew member is already assigned to an overlapping flight", HttpStatus.CONFLICT);
             }
