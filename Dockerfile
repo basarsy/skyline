@@ -6,12 +6,17 @@
 FROM eclipse-temurin:21-jdk-jammy AS build
 WORKDIR /workspace
 
-ARG MODULE
-
-# Copy Maven wrapper and pom files first for dependency caching
+# Copy the Maven wrapper first and install Maven itself into the image, outside the shared ~/.m2 cache mount.
+# Compose builds every service at once; when they all installed Maven into the shared cache, one build could
+# find the half-copied distribution of another (`bin/mvn: not found`), since the wrapper's move from /tmp into
+# the cache mount crosses filesystems and is not atomic. This layer is identical for every module (it comes
+# before ARG MODULE), so BuildKit builds it once and shares it.
+ENV MAVEN_USER_HOME=/opt/maven-wrapper
 COPY mvnw mvnw.cmd ./
 COPY .mvn .mvn
-RUN chmod +x mvnw
+RUN chmod +x mvnw && ./mvnw -B -q --version
+
+ARG MODULE
 
 # Copy all pom.xml files (root + every module) so Maven can resolve the reactor
 COPY pom.xml ./
@@ -29,7 +34,7 @@ COPY skyline-e2e/pom.xml    skyline-e2e/pom.xml
 
 # Download dependencies (cached unless a pom.xml changes). ~/.m2 is a BuildKit cache mount, shared by
 # every module build and kept across builds, so a pom change does not re-download the world.
-RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -q dependency:go-offline -pl ${MODULE} -am
+RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -q -Dmaven.repo.local=/root/.m2/repository dependency:go-offline -pl ${MODULE} -am
 
 # Copy source code
 COPY skyline-common/src skyline-common/src
@@ -37,7 +42,7 @@ COPY ${MODULE}/src ${MODULE}/src
 
 # Build the target module (and skyline-common as a transitive dependency). Coverage and the enforcer rules
 # belong to `./mvnw verify` in CI, not to the image build.
-RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -pl ${MODULE} -am -DskipTests -Djacoco.skip=true -Denforcer.skip=true package
+RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -Dmaven.repo.local=/root/.m2/repository -pl ${MODULE} -am -DskipTests -Djacoco.skip=true -Denforcer.skip=true package
 
 # ── Runtime stage ────────────────────────────────────────────────
 FROM eclipse-temurin:21-jre-jammy AS runtime

@@ -47,9 +47,10 @@ test('register, search, book, check in and get a boarding pass', async ({ page, 
   }
   await select.click()
 
-  // Cabin → Passenger → Review
+  // Cabin and fare → Passenger → Seats → Extras → Review. Economy: the live stack's A320neo has no Business.
   await expect(page.getByRole('heading', { name: 'Choose your cabin' })).toBeVisible()
-  await page.getByRole('radio', { name: /Business/ }).click()
+  await page.getByRole('radio', { name: /Economy/ }).click()
+  await page.getByRole('radio', { name: /^Flex/ }).click()
   await page.getByRole('button', { name: 'Continue' }).first().click()
   await page.getByLabel('First name').fill('Ada')
   await page.getByLabel('Last name').fill('Lovelace')
@@ -58,10 +59,20 @@ test('register, search, book, check in and get a boarding pass', async ({ page, 
   await page.getByRole('combobox', { name: 'Nationality' }).click()
   await openPopover(page).getByPlaceholder('Search countries').fill('United Kingdom')
   await openPopover(page).getByRole('option', { name: 'United Kingdom' }).click()
+  await page.getByRole('button', { name: 'Choose seats' }).first().click()
+
+  // Skip the seat map (check-in assigns one) and add a bag.
+  await expect(page.getByRole('heading', { name: 'Choose your seats' })).toBeVisible()
+  await expect(page.getByRole('group', { name: /^Seat map/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Skip seats' }).first().click()
+  await expect(page.getByRole('heading', { name: 'Bags and extras' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Included in your fare' })).toContainText('Checked bag 20 kg')
+  await page.getByRole('button', { name: 'Add one Checked bag 30 kg' }).click()
   await page.getByRole('button', { name: 'Review booking' }).first().click()
 
   await expect(page.getByRole('heading', { name: 'Review your booking' })).toBeVisible()
   await expect(page.getByText('Assigned at check-in')).toBeVisible()
+  await expect(page.getByText('Checked bag 30 kg')).toBeVisible()
   await page.getByRole('button', { name: 'Confirm booking' }).first().click()
 
   // Confirmation: PNR, server price with currency.

@@ -55,7 +55,11 @@ Every screenshot below comes from the real app, running against its mocked API s
 
 <img src=".github/screenshots/02-results.png" alt="Search results for Istanbul to London: a date strip and two flight cards with times, status and estimated prices" width="100%" />
 
-**3. Book in three steps.** Cabin, passenger, review. The cabin step previews the fare for each cabin (Economy 1×, Business 2.5×, First 4× the base fare). The passenger form validates as you go and links every error to its field.
+**3. Book in five steps.** Cabin and fare, passengers, seats, extras, review. The cabin step previews the fare for each cabin the aircraft has (Economy 1×, Business 2.5×, First 4× the base fare) and each fare (Basic, Standard, Flex). Up to nine passengers book together; the form validates as you go and links every error to its field.
+
+**Seats.** A top-down seat map drawn from the aircraft's layout data (one generic component for every aircraft): fuselage, wings, exits, lavatories and galleys, cabin dividers, row numbers and aisles. Seats show their price category by colour and glyph, and their state (yours, a companion's, taken, being chosen by someone else) by icon and pattern, never by colour alone. Hover, focus or tap shows the seat's details; arrow keys move between seats. A chosen seat is held for 15 minutes; if someone else got it first, the map refreshes. Skipping is fine: check-in assigns a free seat next to the rest of the booking.
+
+**Extras.** Bags (cabin bag, checked bags, extra weight, sports equipment), priority boarding and meals, per passenger, with what the fare already includes shown first and the airport price for comparison.
 
 <table>
   <tr>
@@ -64,15 +68,15 @@ Every screenshot below comes from the real app, running against its mocked API s
   </tr>
 </table>
 
-**4. Confirmed.** `POST /reservations` holds a seat in the flight's inventory (the schedule service, over an internal service-key endpoint), computes the price on the server, and issues a six-character booking reference (PNR). The confirmation page shows the server's total, offers an `.ics` calendar file, and tells you when check-in opens.
+**4. Confirmed.** `POST /reservations/group` (one reservation per passenger, sharing a booking group) holds a seat in the flight's inventory (the schedule service, over an internal service-key endpoint), computes the price on the server, and issues a six-character booking reference (PNR). The confirmation page shows the server's total, offers an `.ics` calendar file, and tells you when check-in opens.
 
 <img src=".github/screenshots/05-confirmation.png" alt="Booking confirmation: the booking reference, flight times, total price, and a check-in button" width="100%" />
 
-**5. My trips.** Upcoming, past and cancelled bookings. Cancelling a booking frees its seat on the flight.
+**5. My trips.** Upcoming, past and cancelled bookings. "Seat and bags" changes the seat or adds bags until check-in. Cancelling a booking frees its seat on the flight.
 
 <img src=".github/screenshots/06-trips.png" alt="My trips: an upcoming Istanbul to London booking with Check in and Cancel booking buttons" width="100%" />
 
-**6. Check in and board.** Check-in opens 48 hours before departure and closes 1 hour before. `POST /checkin` assigns a seat, marks the reservation `CHECKED_IN`, and returns the boarding pass. It's idempotent: checking in again returns the same pass. The pass carries a PDF417 barcode, prints cleanly, and downloads as an image.
+**6. Check in and board.** Check-in opens 48 hours before departure and closes 1 hour before. Before checking in, a passenger can still choose (and pay for) a seat or add bags. `POST /checkin` keeps the chosen seat or assigns a free one, marks the reservation `CHECKED_IN`, and returns the boarding pass. It's idempotent: checking in again returns the same pass. The pass carries a PDF417 barcode, prints cleanly, and downloads as an image.
 
 <table>
   <tr>
@@ -277,6 +281,9 @@ PATCH  /aircraft/{id}/status       Update status               [STAFF, ADMIN]
 GET    /aircraft-types             List aircraft types         [STAFF, ADMIN]
 GET    /aircraft-types/{id}        Aircraft type detail        [STAFF, ADMIN]
 POST   /aircraft-types             Add aircraft type           [ADMIN]
+GET    /aircraft-types/{id}/layout Cabin layout as stored, for editing [STAFF, ADMIN]
+PUT    /aircraft-types/{id}/layout Save a cabin layout (400 if its seat count ≠ total seats) [ADMIN]
+GET    /aircraft-types/{id}/seat-layout Every seat, expanded       [STAFF, ADMIN, SERVICE]
 ```
 
 ### Routes & Airports (skyline-route · :8082)
@@ -292,11 +299,31 @@ POST   /routes                     Create route                [ADMIN]
 
 ### Reservations (skyline-reservation · :8084)
 ```
-POST   /reservations               Book a flight               [PASSENGER]
+POST   /reservations               Book a flight (optional fareType) [PASSENGER]
+POST   /reservations/group         Book passengers × legs with held seats and add-ons, all or nothing [PASSENGER]
 GET    /reservations/{id}          Reservation detail          [PASSENGER, STAFF, ADMIN]
 GET    /reservations/pnr/{pnr}     Look up by PNR              [PUBLIC: ?lastName= required, redacted view; owner/STAFF/ADMIN: full]
 GET    /reservations/my            My bookings                 [PASSENGER]
 DELETE /reservations/{id}          Cancel reservation          [PASSENGER, STAFF, ADMIN]
+
+GET    /flights/{id}/seat-map      Layout, live availability, this passenger's prices [PASSENGER, STAFF, ADMIN]
+                                   (?reservationId=, or while booking ?cabin=&fareType=&passenger=0..8)
+POST   /reservations/seat-holds    Hold a seat while booking (15 min; 409 if someone else has it) [PASSENGER]
+DELETE /reservations/seat-holds    Release it (?flightId=&passenger=) [PASSENGER]
+POST   /reservations/{id}/seat-hold Hold a seat for a booked passenger [owner, STAFF, ADMIN]
+DELETE /reservations/{id}/seat-hold Release it                  [owner, STAFF, ADMIN]
+PUT    /reservations/{id}/seat     Confirm the held seat (charges its fee) [owner, STAFF, ADMIN]
+DELETE /reservations/{id}/seat     Give the seat back           [owner, STAFF, ADMIN]
+
+GET    /reservations/{id}/ancillaries/options What can be bought, prices, what the fare includes [owner, STAFF, ADMIN]
+POST   /reservations/{id}/ancillaries Buy add-ons (priced on the server; channel AIRPORT: STAFF/ADMIN) [owner, STAFF, ADMIN]
+DELETE /reservations/{id}/ancillaries/{lineId} Remove an add-on before its cut-off [owner, STAFF, ADMIN]
+
+GET    /seat-price-rules           Seat price table             [STAFF, ADMIN]
+PUT    /seat-price-rules/{id}      Edit a price / auto-assign flag [ADMIN]
+GET    /ancillary-products         Add-on catalog with prices and fare allowances [PASSENGER, STAFF, ADMIN]
+PUT    /ancillary-products/{code}  Edit a product              [ADMIN]
+PUT    /ancillary-products/{code}/prices/{DOMESTIC|INTERNATIONAL} Edit its online and airport price [ADMIN]
 ```
 
 ### Check-In (skyline-checkin · :8085)
@@ -349,8 +376,32 @@ All endpoints return a consistent `ApiResponse<T>`:
 ## Business Logic Highlights
 
 **Pricing**
-- Base price × cabin multiplier (Economy `1.0×`, Business `2.5×`, First `4.0×`)
+- Base price × cabin multiplier (Economy `1.0×`, Business `2.5×`, First `4.0×`) × fare (`BASIC 0.85×`, `STANDARD 1.0×`, `FLEX 1.3×`)
 - Load factor surcharge: `>80%` full → `+15%`, `>90%` full → `+30%`
+- A reservation's `totalPrice` is its `farePrice` plus its active add-on lines (seat fee, bags, ...)
+
+**Cabin layouts and seats**
+- Each aircraft type stores a compact cabin layout (fleet, `aircraft_types.cabin_layout`): sections with row ranges and seat letters grouped by aisle (`ABC|DEF`, `AC|DG|HK`, ...), exits, wing, lavatories/galleys/closets, omitted and accessible seats. `SeatLayoutExpander` derives every seat's position, legroom, flags and price category; a layout must have exactly the type's `total_seats`
+- Seeded: A320neo (Y180, 3-3), 737-800 (Y189, 3-3), 787-9 (C30 2-2-2 + Y266 3-3-3) and A321neo (J16 2-2 + Y174 3-3)
+- Availability is derived per flight: `TAKEN` from reservations, `HELD` from Redis holds, `BLOCKED` from `blocked_seats`
+- Each cabin sells at most its seats (an advisory lock serializes the count): no Business on an all-Economy aircraft. Types without a layout keep the old behaviour
+
+**Seat prices**
+- `seat_price_rules` (admin-editable): cabin × fare × category (`EXIT_ROW`, `EXTRA_LEGROOM`, `FRONT`, `PREFERRED` = window/aisle, `STANDARD`). Economy BASIC pays for every seat, STANDARD gets ordinary seats free, FLEX pays only for extra legroom; Business and First include every seat. Paid seats get the same nearly-full surcharge as fares
+- Prices are computed on the server only; a passenger can only choose a seat in the cabin they booked (422 otherwise)
+
+**Seat holds and double booking**
+- Choosing a seat holds it in Redis (`SET NX`, 15 min, `SKYLINE_SEAT_HOLD_TTL`) for one passenger slot; picking another seat releases the previous one atomically (Lua). A seat someone else holds or booked is a 409, and the client reloads the map
+- The final guard is the unique `(flight_id, seat_number)` constraint: a confirmation that loses a race is a 409 too
+- Seats can be chosen or changed until check-in, and never after check-in closes; a checked-in seat is final (it is on the boarding pass)
+
+**Seat assignment at check-in**
+- A passenger without a seat gets a random free seat in their own cabin, only from categories the price table marks `auto_assign` (ordinary seats, never paid extra-legroom or exit rows unless nothing else is left), skipping taken, blocked and held seats, and as close as possible to the others of the same booking group
+
+**Bags and add-ons**
+- One generic model: `ancillary_products` (cabin bag, checked bags 15/20/30 kg, +10/+20 kg, sports equipment, priority boarding, meals), `ancillary_prices` per route type (domestic when both airports are in one country) with a higher airport price, `fare_allowances` for what each fare includes, and `reservation_ancillaries` for what was bought (the seat fee is a line too)
+- Per passenger per flight, at booking, in manage booking and at check-in. What the fare includes can't be bought again; at most 3 checked bags, one top-up per bag, one meal; meals close 24h before departure, the rest 1h
+- Cancelling refunds add-ons on FLEX fares and always-refundable products (meals); an airline cancellation refunds every add-on
 
 **Seat Availability**
 - Optimistic locking (`@Version`) prevents double-booking under concurrent requests
@@ -478,7 +529,7 @@ Each service reads configuration from its own `application.yml`. Infrastructure 
 | `DATABASE_PASSWORD` | DB password | `POSTGRES_PASSWORD`, else empty |
 | `REDIS_HOST` | Redis host | `localhost` |
 | `REDIS_PORT` | Redis port | `6379` |
-| `REDIS_PASSWORD` | **Required by compose.** Redis `requirepass`; used by fleet, route, crew (caches) and the gateway (rate limits) | — (compose refuses to start) |
+| `REDIS_PASSWORD` | **Required by compose.** Redis `requirepass`; used by fleet, route, crew (caches), reservation (seat holds) and the gateway (rate limits) | — (compose refuses to start) |
 | `JWT_SECRET` | **Required.** HS256 signing key, min 32 bytes, identical across services | — (startup fails) |
 | `SKYLINE_INTERNAL_API_KEY` | **Required.** Shared service-to-service key (grants `ROLE_SERVICE`), min 32 bytes | — (startup fails) |
 | `KAFKA_BOOTSTRAP_SERVERS` | Kafka brokers | `localhost:9092` |
@@ -495,6 +546,7 @@ Each service reads configuration from its own `application.yml`. Infrastructure 
 | `SKYLINE_RATE_LIMIT_TRUSTED_PROXIES` | (gateway) Reverse proxies in front of the gateway whose `X-Forwarded-For` entry identifies the client; `0` uses the TCP peer. Compose sets `1` for the web container's nginx | `0` |
 | `SPRING_PROFILES_ACTIVE` | `dev` logs every SQL statement (`show-sql`) | — |
 | `SKYLINE_CURRENCY` | (schedule, reservation) ISO 4217 currency of every price, returned as `currency`; validated at startup. Set the same value on both | `EUR` |
+| `SKYLINE_SEAT_HOLD_TTL` | (reservation) How long a chosen seat stays held, ISO-8601 duration | `PT15M` |
 
 > Public registration always creates `PASSENGER` accounts. Set `SKYLINE_ADMIN_EMAIL` / `SKYLINE_ADMIN_PASSWORD` on the auth service to bootstrap the first `ADMIN`, who can then create further `STAFF` and `ADMIN` accounts with `POST /users`.
 

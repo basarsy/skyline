@@ -23,6 +23,16 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
 
     Page<Reservation> findByPassenger_UserId(UUID userId, Pageable pageable);
 
+    /** Bookings in a cabin that still need a seat on board (everything but cancelled). */
+    @Query("""
+            SELECT COUNT(r) FROM Reservation r WHERE r.flightId = :flightId AND r.cabinClass = :cabin
+            AND r.status <> com.basarsy.skyline.reservation.entity.ReservationStatus.CANCELLED
+            """)
+    long countActiveInCabin(@Param("flightId") UUID flightId,
+            @Param("cabin") com.basarsy.skyline.reservation.entity.CabinClass cabin);
+
+    java.util.List<Reservation> findByBookingGroupIdAndFlightId(UUID bookingGroupId, UUID flightId);
+
     java.util.List<Reservation> findByFlightId(UUID flightId);
 
     /**

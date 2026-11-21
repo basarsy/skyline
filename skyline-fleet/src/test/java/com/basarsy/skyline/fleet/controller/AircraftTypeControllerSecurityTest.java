@@ -5,6 +5,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -92,6 +93,50 @@ class AircraftTypeControllerSecurityTest extends FleetWebMvcTestBase {
         mvc.perform(json(post("/api/v1/aircraft-types"), body).header(HttpHeaders.AUTHORIZATION, bearer("ROLE_ADMIN")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Validation failed"));
+        verifyNoInteractions(aircraftTypeService);
+    }
+
+    private static final String VALID_LAYOUT = "{\"body\":\"NARROW\",\"sections\":[{\"cabin\":\"ECONOMY\",\"fromRow\":1,"
+            + "\"toRow\":2,\"columns\":\"ABC|DEF\",\"frontRows\":0}]}";
+
+    @ParameterizedTest
+    @ValueSource(strings = {"ROLE_STAFF", "ROLE_ADMIN", "ROLE_SERVICE"})
+    void staffAdminAndServicesCanReadTheSeatLayout(String role) throws Exception {
+        mvc.perform(get("/api/v1/aircraft-types/" + ID + "/seat-layout").header(HttpHeaders.AUTHORIZATION, bearer(role)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void passengersReadSeatLayoutsOnlyThroughTheSeatMap() throws Exception {
+        mvc.perform(get("/api/v1/aircraft-types/" + ID + "/seat-layout")
+                        .header(HttpHeaders.AUTHORIZATION, bearer("ROLE_PASSENGER")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void adminCanSaveALayout() throws Exception {
+        mvc.perform(json(put("/api/v1/aircraft-types/" + ID + "/layout"), VALID_LAYOUT)
+                        .header(HttpHeaders.AUTHORIZATION, bearer("ROLE_ADMIN")))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void onlyAdminCanSaveALayout() throws Exception {
+        mvc.perform(json(put("/api/v1/aircraft-types/" + ID + "/layout"), VALID_LAYOUT)
+                        .header(HttpHeaders.AUTHORIZATION, bearer("ROLE_STAFF")))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(aircraftTypeService);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "{\"sections\":[]}",
+            "{\"body\":\"NARROW\",\"sections\":[{\"cabin\":\"ECONOMY\",\"fromRow\":1,\"toRow\":2,\"columns\":\"abc\"}]}",
+            "{\"body\":\"NARROW\",\"sections\":[{\"cabin\":\"ECONOMY\",\"fromRow\":0,\"toRow\":2,\"columns\":\"AB|CD\"}]}"})
+    void malformedLayoutIsA400(String body) throws Exception {
+        mvc.perform(json(put("/api/v1/aircraft-types/" + ID + "/layout"), body)
+                        .header(HttpHeaders.AUTHORIZATION, bearer("ROLE_ADMIN")))
+                .andExpect(status().isBadRequest());
         verifyNoInteractions(aircraftTypeService);
     }
 

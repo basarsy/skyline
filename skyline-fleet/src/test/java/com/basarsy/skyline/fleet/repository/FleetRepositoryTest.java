@@ -7,6 +7,7 @@ import com.basarsy.skyline.common.config.JpaAuditingConfig;
 import com.basarsy.skyline.fleet.entity.Aircraft;
 import com.basarsy.skyline.fleet.entity.AircraftStatus;
 import com.basarsy.skyline.fleet.entity.AircraftType;
+import com.basarsy.skyline.fleet.layout.SeatLayoutExpander;
 import java.util.UUID;
 import org.hibernate.Hibernate;
 import org.junit.jupiter.api.BeforeEach;
@@ -50,21 +51,25 @@ class FleetRepositoryTest {
     }
 
     @Test
-    void migrationsSeedTheThreeAircraftTypes() {
+    void migrationsSeedTheAircraftTypesWithTheirCabinLayouts() {
         assertThat(types.findAll()).extracting(AircraftType::getModel)
-                .containsExactlyInAnyOrder("A320neo", "737-800", "787-9");
+                .containsExactlyInAnyOrder("A320neo", "737-800", "787-9", "A321neo");
+        assertThat(types.findAll()).allSatisfy(type -> assertThat(SeatLayoutExpander.expand(type.getId(),
+                type.getManufacturer(), type.getModel(), type.getTotalSeats(), type.getCabinLayout()).seats())
+                .hasSize(type.getTotalSeats()));
         assertThat(types.findById(A320NEO)).get().satisfies(type -> {
             assertThat(type.getManufacturer()).isEqualTo("Airbus");
             assertThat(type.getTotalSeats()).isEqualTo(180);
             assertThat(type.getCabinConfig()).isEqualTo("Y180");
             assertThat(type.getCreatedAt()).isNotNull();
+            assertThat(type.getCabinLayout().skipRows()).containsExactly(13);
         });
     }
 
     @Test
     void typeExistenceIgnoresCase() {
         assertThat(types.existsByManufacturerIgnoreCaseAndModelIgnoreCase("airbus", "A320NEO")).isTrue();
-        assertThat(types.existsByManufacturerIgnoreCaseAndModelIgnoreCase("Airbus", "A321neo")).isFalse();
+        assertThat(types.existsByManufacturerIgnoreCaseAndModelIgnoreCase("Airbus", "A350-900")).isFalse();
     }
 
     @Test

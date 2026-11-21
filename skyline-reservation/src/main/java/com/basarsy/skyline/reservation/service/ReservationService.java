@@ -1,5 +1,7 @@
 package com.basarsy.skyline.reservation.service;
 
+import com.basarsy.skyline.reservation.dto.GroupReservationRequest;
+import com.basarsy.skyline.reservation.dto.GroupReservationResponse;
 import com.basarsy.skyline.reservation.dto.ReservationRequest;
 import com.basarsy.skyline.reservation.dto.ReservationResponse;
 import java.util.UUID;
@@ -8,6 +10,7 @@ import org.springframework.data.domain.Pageable;
 
 public interface ReservationService {
     ReservationResponse bookFlight(ReservationRequest request);
+    GroupReservationResponse bookGroup(GroupReservationRequest request);
     ReservationResponse getReservation(UUID id);
     ReservationResponse getReservationByPnr(String pnr, String lastName);
     Page<ReservationResponse> getMyReservations(Pageable pageable);

@@ -39,7 +39,12 @@ class ReservationCheckInServiceTest {
     private final ScheduleClient scheduleClient = mock(ScheduleClient.class);
     private final ReservationMapper mapper = mock(ReservationMapper.class);
     private final ReservationCheckInService service =
+            // No layout (the mocked provider returns none): the legacy 6-abreast numbering; layout-driven
+            // assignment is covered by SeatAssignerTest and CheckInSeatAssignmentIntegrationTest.
             new ReservationCheckInService(repository, scheduleClient, mapper, mock(PlatformTransactionManager.class),
+                    mock(SeatLayoutProvider.class), mock(SeatPricing.class), mock(SeatHoldStore.class),
+                    mock(com.basarsy.skyline.reservation.repository.BlockedSeatRepository.class),
+                    mock(SeatSelectionService.class),
                     () -> 0L); // always the first free seat, so assertions are deterministic
 
     private Reservation reservation;

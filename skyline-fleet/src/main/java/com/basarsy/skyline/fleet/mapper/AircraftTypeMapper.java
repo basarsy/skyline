@@ -17,5 +17,6 @@ public interface AircraftTypeMapper {
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
+    @Mapping(target = "cabinLayout", ignore = true)
     AircraftType toEntity(AircraftTypeRequest request);
 }

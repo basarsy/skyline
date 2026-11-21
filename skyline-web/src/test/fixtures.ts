@@ -86,6 +86,13 @@ export const aircraftTypes: AircraftTypeResponse[] = [
     totalSeats: 296,
     cabinConfig: 'J30 Y266',
   },
+  {
+    id: '22222222-2222-2222-2222-222222222204',
+    manufacturer: 'Airbus',
+    model: 'A321neo',
+    totalSeats: 190,
+    cabinConfig: 'J16Y174',
+  },
 ]
 
 const typeSummary = (type: AircraftTypeResponse) => {
@@ -114,6 +121,13 @@ export const aircraft: AircraftResponse[] = [
     aircraftType: typeSummary(aircraftTypes[1]!),
     status: 'MAINTENANCE',
     manufacturedYear: 2012,
+  },
+  {
+    id: 'a0000000-0000-4000-8000-000000000004',
+    tailNumber: 'TC-SKN',
+    aircraftType: typeSummary(aircraftTypes[3]!),
+    status: 'ACTIVE',
+    manufacturedYear: 2023,
   },
 ]
 
@@ -165,7 +179,11 @@ export function makeReservation(overrides: Partial<ReservationResponse> = {}): R
     status: 'CONFIRMED',
     seatNumber: null,
     cabinClass: 'ECONOMY',
+    fareType: 'STANDARD',
+    farePrice: 120,
     totalPrice: 120,
+    bookingGroupId: null,
+    ancillaries: [],
     currency: 'EUR',
     bookedAt: hoursFromNow(-2),
     createdAt: hoursFromNow(-2),

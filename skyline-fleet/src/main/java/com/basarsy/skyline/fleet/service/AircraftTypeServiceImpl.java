@@ -4,6 +4,10 @@ import com.basarsy.skyline.common.exception.ResourceNotFoundException;
 import com.basarsy.skyline.common.exception.SkylineException;
 import com.basarsy.skyline.fleet.dto.AircraftTypeRequest;
 import com.basarsy.skyline.fleet.dto.AircraftTypeResponse;
+import com.basarsy.skyline.fleet.entity.AircraftType;
+import com.basarsy.skyline.fleet.layout.CabinLayout;
+import com.basarsy.skyline.fleet.layout.SeatLayoutExpander;
+import com.basarsy.skyline.fleet.layout.SeatLayoutResponse;
 import com.basarsy.skyline.fleet.mapper.AircraftTypeMapper;
 import com.basarsy.skyline.fleet.repository.AircraftTypeRepository;
 import java.util.List;
@@ -53,5 +57,47 @@ public class AircraftTypeServiceImpl implements AircraftTypeService {
             throw new SkylineException("Aircraft type already exists", HttpStatus.CONFLICT);
         }
         return aircraftTypeMapper.toResponse(aircraftTypeRepository.save(aircraftTypeMapper.toEntity(trimmed)));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public CabinLayout getLayout(UUID id) {
+        return requireLayout(findType(id));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    // Not @Cacheable: the Redis serializer can't rebuild the immutable collections inside this DTO (see
+    // CacheConfig), and expanding one layout is cheap. The reservation service keeps it in memory instead.
+    public SeatLayoutResponse getSeatLayout(UUID id) {
+        AircraftType type = findType(id);
+        return expand(type, requireLayout(type));
+    }
+
+    @Override
+    @Transactional
+    public SeatLayoutResponse updateLayout(UUID id, CabinLayout layout) {
+        AircraftType type = findType(id);
+        SeatLayoutResponse expanded = expand(type, layout); // throws 400 on an invalid layout, before saving
+        type.setCabinLayout(layout);
+        aircraftTypeRepository.save(type);
+        return expanded;
+    }
+
+    private AircraftType findType(UUID id) {
+        return aircraftTypeRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Aircraft type not found: " + id));
+    }
+
+    private static CabinLayout requireLayout(AircraftType type) {
+        if (type.getCabinLayout() == null) {
+            throw new ResourceNotFoundException("Aircraft type " + type.getId() + " has no cabin layout");
+        }
+        return type.getCabinLayout();
+    }
+
+    private static SeatLayoutResponse expand(AircraftType type, CabinLayout layout) {
+        return SeatLayoutExpander.expand(type.getId(), type.getManufacturer(), type.getModel(), type.getTotalSeats(),
+                layout);
     }
 }
