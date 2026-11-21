@@ -5,6 +5,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -13,6 +15,12 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 public record DepartureDay(LocalDateTime start, LocalDateTime end) {
+
+    /**
+     * Missing ("") or invalid zone values already warned about, so a misconfigured airport is reported once
+     * instead of on every search from it. Bounded by the number of airports.
+     */
+    private static final Set<String> WARNED_ZONES = ConcurrentHashMap.newKeySet();
 
     /** {@code date} in the airport zone {@code zoneId}; a missing or unknown zone counts as UTC. */
     public static DepartureDay of(LocalDate date, String zoneId) {
@@ -27,13 +35,17 @@ public record DepartureDay(LocalDateTime start, LocalDateTime end) {
 
     private static ZoneId zoneOrUtc(String zoneId) {
         if (zoneId == null || zoneId.isBlank()) {
-            log.warn("Origin airport has no time zone; searching its date as a UTC day");
+            if (WARNED_ZONES.add("")) {
+                log.warn("Origin airport has no time zone; searching its dates as UTC days");
+            }
             return ZoneOffset.UTC;
         }
         try {
             return ZoneId.of(zoneId);
         } catch (DateTimeException e) {
-            log.warn("Origin airport time zone '{}' is not valid; searching its date as a UTC day", zoneId);
+            if (WARNED_ZONES.add(zoneId)) {
+                log.warn("Origin airport time zone '{}' is not valid; searching its dates as UTC days", zoneId);
+            }
             return ZoneOffset.UTC;
         }
     }

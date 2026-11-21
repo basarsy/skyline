@@ -5,10 +5,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.UUID;
+import java.util.regex.Pattern;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
 class DepartureDayTest {
 
@@ -67,6 +72,21 @@ class DepartureDayTest {
 
         assertThat(day.start()).isEqualTo(JUNE_1.atStartOfDay());
         assertThat(day.end()).isEqualTo(JUNE_1.plusDays(1).atStartOfDay());
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void anInvalidZoneIsWarnedAboutOnceNotOnEverySearch(CapturedOutput output) {
+        String zone = "Bad/Zone-" + UUID.randomUUID();
+        String other = "Bad/Zone-" + UUID.randomUUID();
+
+        DepartureDay.of(JUNE_1, zone);
+        DepartureDay.of(JUNE_1.plusDays(1), zone);
+        DepartureDay.of(JUNE_1, zone);
+        DepartureDay.of(JUNE_1, other);
+
+        assertThat(output.getOut().split(Pattern.quote(zone), -1)).as("one warning for the zone").hasSize(2);
+        assertThat(output.getOut()).contains(other);
     }
 
     private static boolean contains(DepartureDay day, LocalDateTime departure) {
