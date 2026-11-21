@@ -264,9 +264,7 @@ function FareOrSearch({ fare }: { fare: FareResult }) {
   return (
     <span className="flex shrink-0 flex-col items-end">
       <span className="text-xs text-muted-foreground">from</span>
-      <span className="text-h3 font-bold text-primary tabular">
-        {formatMoneyFrom(fare.fare.amount, fare.fare.currency)}
-      </span>
+      <span className="text-h3 font-bold text-primary tabular">{formatMoneyFrom(fare.amount, fare.currency)}</span>
     </span>
   )
 }

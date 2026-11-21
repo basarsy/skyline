@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { clearLastPassengers, readLastPassenger, saveLastPassenger } from './last-passenger'
 
@@ -30,18 +30,20 @@ describe('last passenger prefill', () => {
     expect(localStorage.length).toBe(1)
   })
 
-  it('deletes the legacy entry that held the whole form', () => {
+  it('deletes the legacy entry that held the whole form when the app loads', async () => {
     localStorage.setItem('skyline.lastPassenger', JSON.stringify(full))
+    vi.resetModules()
 
-    expect(readLastPassenger(ADA)).toEqual({})
+    const fresh = await import('./last-passenger')
+
     expect(localStorage.getItem('skyline.lastPassenger')).toBeNull()
+    expect(fresh.readLastPassenger(ADA)).toEqual({})
   })
 
-  it('strips passport number and date of birth from an entry that still has them', () => {
+  it('never hands back passport number or date of birth, whatever is stored', () => {
     localStorage.setItem(`skyline.lastPassenger.${ADA}`, JSON.stringify(full))
 
     expect(readLastPassenger(ADA)).toEqual({ firstName: 'Ada', lastName: 'Lovelace', nationality: 'GB' })
-    expect(localStorage.getItem(`skyline.lastPassenger.${ADA}`)).not.toContain('U1234567')
   })
 
   it('ignores a corrupt entry', () => {

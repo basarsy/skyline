@@ -2,11 +2,10 @@ import * as React from 'react'
 import { Outlet, ScrollRestoration, useLocation, useNavigate } from 'react-router'
 
 import { onSessionExpired } from '@/auth/auth-store'
-import { queryClient } from './query-client'
 
 /**
- * Root of every route: restores scroll, and when a session can't be refreshed any more, clears cached
- * data and sends the user to log in again, returning here afterwards.
+ * Root of every route: restores scroll, moves focus on navigation, and when a session can't be refreshed any
+ * more, sends the user to log in again, returning here afterwards.
  */
 export function RootLayout() {
   const navigate = useNavigate()
@@ -22,7 +21,7 @@ export function RootLayout() {
   React.useEffect(
     () =>
       onSessionExpired(() => {
-        queryClient.clear()
+        // The cache was already dropped when the session was cleared (see onSessionEnded in auth/session).
         const { pathname, search } = locationRef.current
         void import('sonner').then(({ toast }) => toast('Your session has ended. Please log in again.'))
         navigate(`/login?next=${encodeURIComponent(`${pathname}${search}`)}`, { replace: true })

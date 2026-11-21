@@ -20,20 +20,18 @@ function pick(value: unknown): SavedPassenger {
   return saved
 }
 
+// Older builds stored the whole form, passport number included, under one shared key: delete it on load.
+try {
+  localStorage.removeItem(PREFIX)
+} catch {
+  // Storage unavailable.
+}
+
+/** Only the kept fields come back, whatever the stored entry holds. */
 export function readLastPassenger(userId: string | undefined): SavedPassenger {
+  if (!userId) return {}
   try {
-    // Older builds stored the whole form, passport number included, under one shared key.
-    localStorage.removeItem(PREFIX)
-    if (!userId) return {}
-    const raw = localStorage.getItem(keyFor(userId))
-    if (!raw) return {}
-    const parsed: unknown = JSON.parse(raw)
-    const saved = pick(parsed)
-    // Rewrite an entry that still holds anything beyond the kept fields.
-    if (Object.keys(parsed as object).length !== Object.keys(saved).length) {
-      localStorage.setItem(keyFor(userId), JSON.stringify(saved))
-    }
-    return saved
+    return pick(JSON.parse(localStorage.getItem(keyFor(userId)) ?? '{}'))
   } catch {
     return {}
   }

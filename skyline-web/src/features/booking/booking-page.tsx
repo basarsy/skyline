@@ -191,6 +191,8 @@ export function Component() {
   const [step, setStep] = React.useState<Step>(0)
   const [serverError, setServerError] = React.useState<string | null>(null)
   const headingRef = React.useRef<HTMLDivElement>(null)
+  // Read once: defaultValues only matter on the first render, and the form re-renders on every keystroke.
+  const [prefill] = React.useState(() => readLastPassenger(userId))
 
   const form = useForm<PassengerValues>({
     resolver: zodResolver(passengerSchema),
@@ -200,7 +202,7 @@ export function Component() {
       passportNumber: '',
       dateOfBirth: '',
       nationality: '',
-      ...readLastPassenger(userId),
+      ...prefill,
     },
   })
   const { errors, submitCount } = form.formState

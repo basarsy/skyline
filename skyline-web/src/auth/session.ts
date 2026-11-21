@@ -2,11 +2,12 @@ import { authApi } from '@/api/endpoints/auth'
 import { isApiError } from '@/api/http'
 import type { LoginRequest, RegisterRequest, UserResponse } from '@/api/types'
 import { queryClient } from '@/app/query-client'
+import { clearLastPassengers } from '@/lib/last-passenger'
 import {
   clearSession,
   getAuthState,
   markAnonymous,
-  onSignedOutElsewhere,
+  onSessionEnded,
   readRefreshToken,
   refreshSession,
   revokeRefreshToken,
@@ -14,8 +15,11 @@ import {
   setUser,
 } from './auth-store'
 
-// Another tab logged out: this tab's cached data belongs to the ended session.
-onSignedOutElsewhere(() => queryClient.clear())
+// However the session ended, nothing of that user's stays behind: cached responses and the booking prefill.
+onSessionEnded(() => {
+  queryClient.clear()
+  clearLastPassengers()
+})
 
 /** Loads GET /auth/me, the source of truth for email and role. */
 export async function loadCurrentUser(): Promise<UserResponse | null> {
@@ -65,7 +69,6 @@ export async function register(details: RegisterRequest): Promise<UserResponse |
 export function logout() {
   const refreshToken = readRefreshToken()
   clearSession()
-  queryClient.clear()
   if (refreshToken) revokeRefreshToken(refreshToken)
 }
 

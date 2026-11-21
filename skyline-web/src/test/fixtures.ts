@@ -2,6 +2,7 @@ import type {
   AircraftResponse,
   AircraftTypeResponse,
   AirportResponse,
+  AuthResponse,
   BoardingPassResponse,
   FlightResponse,
   ReservationResponse,
@@ -216,4 +217,16 @@ export function fakeJwt(claims: {
     }),
   )
   return `${header}.${payload}.signature`
+}
+
+/** JWT claims of the seeded passenger. */
+export const TEST_USER = {
+  sub: 'ada@skyline.test',
+  userId: 'e0000000-0000-4000-8000-000000000001',
+  roles: ['ROLE_PASSENGER'],
+}
+
+/** A token pair as POST /auth/login or /auth/refresh returns it. */
+export function fakeAuth(refreshToken: string, accessToken = fakeJwt(TEST_USER)): AuthResponse {
+  return { accessToken, refreshToken, tokenType: 'Bearer', expiresIn: 900 }
 }

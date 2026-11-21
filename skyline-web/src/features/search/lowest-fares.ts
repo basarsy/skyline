@@ -30,7 +30,7 @@ export type FareResult =
   | { state: 'none' }
   /** A lookup failed or the route wasn't scanned: there is no trustworthy figure to show. */
   | { state: 'unknown' }
-  | { state: 'found'; fare: LowestFare }
+  | ({ state: 'found' } & LowestFare)
 
 let active = 0
 const waiting: (() => void)[] = []
@@ -94,30 +94,22 @@ export function useLowestFares(routes: RouteResponse[], enabled: boolean) {
     })),
   })
 
-  const byRoute = new Map<string, FareResult>()
-  scanned.forEach((route, index) => {
-    const slice = results.slice(index * days.length, (index + 1) * days.length)
-    if (slice.some((result) => result.isError)) return byRoute.set(route.id, { state: 'unknown' })
-    if (slice.some((result) => result.isPending)) return byRoute.set(route.id, { state: 'loading' })
-    let best: LowestFare | null = null
-    for (const result of slice) {
-      for (const flight of result.data?.content ?? []) {
-        if (!isBookable(flight)) continue
-        const amount = estimatePrice(flight, 'ECONOMY').amount
-        if (!best || amount < best.amount) best = { amount, currency: flight.currency }
-      }
-    }
-    byRoute.set(route.id, best ? { state: 'found', fare: best } : { state: 'none' })
-  })
+  const daysByRoute = new Map(
+    scanned.map((route, index) => [route.id, results.slice(index * days.length, (index + 1) * days.length)]),
+  )
 
   /** The lowest fare over several routes (e.g. every direct route into one airport). */
   return (subset: RouteResponse[]): FareResult => {
-    const each = subset.map((route) => byRoute.get(route.id) ?? { state: 'unknown' as const })
-    if (each.some((fare) => fare.state === 'unknown')) return { state: 'unknown' }
-    if (each.some((fare) => fare.state === 'loading')) return { state: 'loading' }
+    const slices = subset.map((route) => daysByRoute.get(route.id))
+    // Unscanned routes and failed lookups alike leave the minimum unknown: a partial one could be wrong.
+    if (slices.some((slice) => !slice || slice.some((result) => result.isError))) return { state: 'unknown' }
+    const all = slices.flatMap((slice) => slice ?? [])
+    if (all.some((result) => result.isPending)) return { state: 'loading' }
     let best: FareResult = { state: 'none' }
-    for (const fare of each) {
-      if (fare.state === 'found' && (best.state !== 'found' || fare.fare.amount < best.fare.amount)) best = fare
+    for (const flight of all.flatMap((result) => result.data?.content ?? [])) {
+      if (!isBookable(flight)) continue
+      const amount = estimatePrice(flight, 'ECONOMY').amount
+      if (best.state !== 'found' || amount < best.amount) best = { state: 'found', amount, currency: flight.currency }
     }
     return best
   }

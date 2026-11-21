@@ -2,7 +2,6 @@ import { useSyncExternalStore } from 'react'
 
 import { ApiError, isApiError, rawRequest } from '@/api/http'
 import type { AuthResponse, UserResponse, UserRole, UUID } from '@/api/types'
-import { clearLastPassengers } from '@/lib/last-passenger'
 import { decodeJwt, msUntilExpiry, roleFromClaims } from './jwt'
 
 /**
@@ -41,7 +40,7 @@ let transientFailures = 0
 /** Bumped whenever the session ends, so a refresh that was in flight can't bring it back. */
 let generation = 0
 const expiredHandlers = new Set<() => void>()
-const signedOutElsewhereHandlers = new Set<() => void>()
+const endedHandlers = new Set<() => void>()
 
 function setState(next: Partial<AuthState>) {
   state = { ...state, ...next }
@@ -117,16 +116,17 @@ export function setUser(user: UserResponse) {
 }
 
 /**
- * Ends the session in this browser: forgets the tokens and the passenger prefill. Revoking the refresh token
- * on the server is up to the caller (see logout in ./session).
+ * Ends the session in this tab, however it ended (logout here or in another tab, a refused refresh), and tells
+ * onSessionEnded subscribers to drop per-user data. Revoking the refresh token on the server is up to the
+ * caller (see logout in ./session).
  */
 export function clearSession() {
   generation += 1
   clearTimeout(refreshTimer)
   transientFailures = 0
   writeRefreshToken(null)
-  clearLastPassengers()
   setState({ status: 'anonymous', accessToken: null, user: null })
+  endedHandlers.forEach((handler) => handler())
 }
 
 /**
@@ -145,11 +145,11 @@ export function onSessionExpired(handler: () => void) {
   }
 }
 
-/** Called when another tab logged out, after this tab's session was cleared too. */
-export function onSignedOutElsewhere(handler: () => void) {
-  signedOutElsewhereHandlers.add(handler)
+/** Called whenever the session ends, for any reason, after it was cleared. */
+export function onSessionEnded(handler: () => void) {
+  endedHandlers.add(handler)
   return () => {
-    signedOutElsewhereHandlers.delete(handler)
+    endedHandlers.delete(handler)
   }
 }
 
@@ -248,9 +248,7 @@ async function refreshWithRetry(refreshToken: string): Promise<AuthResponse> {
 function onStorage(event: StorageEvent) {
   if (event.key !== REFRESH_TOKEN_KEY && event.key !== null) return
   if (!readRefreshToken()) {
-    if (state.status === 'anonymous') return
-    clearSession()
-    signedOutElsewhereHandlers.forEach((handler) => handler())
+    if (state.status !== 'anonymous') clearSession()
   } else if (state.status === 'anonymous') {
     void refreshSession()
   }

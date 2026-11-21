@@ -3,27 +3,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { rawRequest } from '@/api/http'
 import { readLastPassenger, saveLastPassenger } from '@/lib/last-passenger'
-import { fakeJwt } from '@/test/fixtures'
+import { fakeAuth as tokens, TEST_USER as user } from '@/test/fixtures'
 import { fail, issueSessionFor, ok } from '@/test/handlers'
 import { server } from '@/test/server'
 import {
   getAuthState,
   markAnonymous,
+  onSessionEnded,
   onSessionExpired,
-  onSignedOutElsewhere,
   REFRESH_TOKEN_KEY,
   refreshSession,
   setTokens,
 } from './auth-store'
 import { logout } from './session'
-
-const user = { sub: 'ada@skyline.test', userId: 'e0000000-0000-4000-8000-000000000001', roles: ['ROLE_PASSENGER'] }
-const tokens = (refreshToken: string) => ({
-  accessToken: fakeJwt(user),
-  refreshToken,
-  tokenType: 'Bearer' as const,
-  expiresIn: 900,
-})
 
 /** Records the refresh tokens the server was sent, answering with a rotated pair. */
 function rotatingRefresh() {
@@ -106,7 +98,7 @@ describe('across tabs', () => {
     setTokens(tokens('rt-1'))
     saveLastPassenger(user.userId, { firstName: 'Ada' })
     const signedOut = vi.fn()
-    const unsubscribe = onSignedOutElsewhere(signedOut)
+    const unsubscribe = onSessionEnded(signedOut)
 
     localStorage.removeItem(REFRESH_TOKEN_KEY)
     window.dispatchEvent(new StorageEvent('storage', { key: REFRESH_TOKEN_KEY, oldValue: 'rt-1', newValue: null }))

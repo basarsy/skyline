@@ -2,13 +2,11 @@ import { http, HttpResponse } from 'msw'
 import { describe, expect, it } from 'vitest'
 
 import { getAccessToken, getAuthState, REFRESH_TOKEN_KEY, refreshSession, setTokens } from '@/auth/auth-store'
-import { fakeJwt } from '@/test/fixtures'
+import { fakeAuth, fakeJwt, TEST_USER as user } from '@/test/fixtures'
 import { fail, ok } from '@/test/handlers'
 import { server } from '@/test/server'
 import { ApiError, apiFetch } from './client'
 import { parseFieldErrors } from './http'
-
-const user = { sub: 'ada@skyline.test', userId: 'e0000000-0000-4000-8000-000000000001', roles: ['ROLE_PASSENGER'] }
 
 describe('apiFetch envelope handling', () => {
   it('unwraps data on 2xx', async () => {
@@ -98,7 +96,7 @@ describe('authentication and refresh', () => {
       }),
     )
     const accessToken = fakeJwt(user)
-    setTokens({ accessToken, refreshToken: 'rt-1', tokenType: 'Bearer', expiresIn: 900 })
+    setTokens(fakeAuth('rt-1', accessToken))
 
     await apiFetch('/things')
     expect(authorization).toBe(`Bearer ${accessToken}`)
@@ -116,7 +114,7 @@ describe('authentication and refresh', () => {
         const body = (await request.json()) as { refreshToken: string }
         expect(body.refreshToken).toBe('rt-old')
         await new Promise((resolve) => setTimeout(resolve, 20))
-        return ok({ accessToken: fresh, refreshToken: 'rt-new', tokenType: 'Bearer', expiresIn: 900 })
+        return ok(fakeAuth('rt-new', fresh))
       }),
       http.get('*/api/v1/things/:n', ({ request, params }) => {
         if (request.headers.get('Authorization') !== `Bearer ${fresh}`) return fail(401, 'Authentication required')
@@ -124,7 +122,7 @@ describe('authentication and refresh', () => {
         return ok({ n: Number(params.n) })
       }),
     )
-    setTokens({ accessToken: expired, refreshToken: 'rt-old', tokenType: 'Bearer', expiresIn: 1 })
+    setTokens(fakeAuth('rt-old', expired))
 
     const results = await Promise.all([1, 2, 3].map((n) => apiFetch<{ n: number }>(`/things/${n}`)))
 
@@ -147,11 +145,11 @@ describe('authentication and refresh', () => {
       http.get('*/api/v1/things', ({ request }) => {
         if (request.headers.get('Authorization') === `Bearer ${fresh}`) return ok({ fresh: true })
         // Another refresh lands while this request is out.
-        setTokens({ accessToken: fresh, refreshToken: 'rt-new', tokenType: 'Bearer', expiresIn: 900 })
+        setTokens(fakeAuth('rt-new', fresh))
         return fail(401, 'Authentication required')
       }),
     )
-    setTokens({ accessToken: stale, refreshToken: 'rt-old', tokenType: 'Bearer', expiresIn: 1 })
+    setTokens(fakeAuth('rt-old', stale))
 
     await expect(apiFetch('/things')).resolves.toEqual({ fresh: true })
     expect(refreshCalls).toBe(0)
@@ -162,7 +160,7 @@ describe('authentication and refresh', () => {
       http.post('*/api/v1/auth/refresh', () => fail(401, 'Invalid refresh token')),
       http.get('*/api/v1/things', () => fail(401, 'Authentication required')),
     )
-    setTokens({ accessToken: fakeJwt(user), refreshToken: 'rt-dead', tokenType: 'Bearer', expiresIn: 900 })
+    setTokens(fakeAuth('rt-dead'))
 
     await expect(apiFetch('/things')).rejects.toMatchObject({ status: 401 })
     expect(getAuthState().status).toBe('anonymous')
@@ -175,9 +173,7 @@ describe('authentication and refresh', () => {
     server.use(
       http.post('*/api/v1/auth/refresh', () => {
         attempts += 1
-        return attempts === 1
-          ? new HttpResponse('Bad gateway', { status: 502 })
-          : ok({ accessToken: fresh, refreshToken: 'rt-2', tokenType: 'Bearer', expiresIn: 900 })
+        return attempts === 1 ? new HttpResponse('Bad gateway', { status: 502 }) : ok(fakeAuth('rt-2', fresh))
       }),
     )
     localStorage.setItem(REFRESH_TOKEN_KEY, 'rt-1')
@@ -205,7 +201,7 @@ describe('authentication and refresh', () => {
       }),
       http.post('*/api/v1/auth/login', () => fail(401, 'Invalid email or password')),
     )
-    setTokens({ accessToken: fakeJwt(user), refreshToken: 'rt', tokenType: 'Bearer', expiresIn: 900 })
+    setTokens(fakeAuth('rt'))
 
     await expect(apiFetch('/auth/login', { method: 'POST', body: {} })).rejects.toMatchObject({
       message: 'Invalid email or password',
