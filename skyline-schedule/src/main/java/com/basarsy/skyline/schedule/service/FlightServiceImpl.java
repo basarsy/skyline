@@ -93,10 +93,13 @@ public class FlightServiceImpl implements FlightService {
             throw new SkylineException("Departure time must be before arrival time", HttpStatus.BAD_REQUEST);
         }
 
+        if (!aircraft.id().equals(flight.getAircraftId())) {
+            flight.setAvailableSeats(seatsOnNewAircraft(flight, aircraft));
+        }
+
         flightMapper.updateEntity(flight, request);
         flight.setRouteId(route.id());
         flight.setAircraftId(aircraft.id());
-        // We do not modify availableSeats directly on update to prevent messing up existing bookings
 
         return enrichFlightResponse(flightRepository.save(flight));
     }
@@ -224,8 +227,13 @@ public class FlightServiceImpl implements FlightService {
     @Override
     @Transactional
     public void decrementSeat(UUID id) {
-        int updated = flightRepository.decrementSeat(id);
+        int updated = flightRepository.decrementSeat(id, BOOKABLE_STATUSES, LocalDateTime.now());
         if (updated == 0) {
+            // Nothing matched: say why (unknown flight, not bookable any more, or simply full).
+            Flight flight = getFlightEntity(id);
+            if (!BOOKABLE_STATUSES.contains(flight.getStatus())) {
+                throw new SkylineException("Cannot book a flight in status: " + flight.getStatus(), HttpStatus.CONFLICT);
+            }
             throw new SkylineException("Flight is fully booked", HttpStatus.CONFLICT);
         }
     }
@@ -233,7 +241,21 @@ public class FlightServiceImpl implements FlightService {
     @Override
     @Transactional
     public void incrementSeat(UUID id) {
-        flightRepository.incrementSeat(id);
+        flightRepository.incrementSeat(id, FlightStatus.CANCELLED, LocalDateTime.now());
+    }
+
+    /**
+     * Seats left after moving a flight to another aircraft: the bookings it already holds stay, so the new
+     * capacity minus those bookings. Refused when the new aircraft can't seat everyone already booked.
+     */
+    private int seatsOnNewAircraft(Flight flight, AircraftResponse newAircraft) {
+        int booked = fleetClient.getAircraft(flight.getAircraftId()).aircraftType().totalSeats() - flight.getAvailableSeats();
+        int available = newAircraft.aircraftType().totalSeats() - booked;
+        if (available < 0) {
+            throw new SkylineException("Aircraft " + newAircraft.tailNumber() + " has fewer seats than the "
+                    + booked + " already booked on this flight", HttpStatus.CONFLICT);
+        }
+        return available;
     }
 
     /** Aircraft in maintenance or retired can't be scheduled. */

@@ -1,6 +1,7 @@
 package com.basarsy.skyline.schedule.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.basarsy.skyline.common.config.JpaAuditingConfig;
 import com.basarsy.skyline.schedule.dto.FlightBoardFilter;
@@ -10,6 +11,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,6 +21,7 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.data.domain.Sort;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -109,6 +112,39 @@ class FlightRepositoryTest {
                 .containsExactly(literal.getId());
         assertThat(board(new FlightBoardFilter(null, null, "%", null))).isEmpty();
     }
+
+    @Test
+    void seatUpdatesBumpTheVersionSoAStaleSaveConflicts() {
+        Flight flight = save("SK1", ROUTE, DAY, FlightStatus.SCHEDULED);
+        long version = flight.getVersion();
+
+        assertThat(repository.decrementSeat(flight.getId(), BOOKABLE, DAY)).isEqualTo(1);
+        Flight reloaded = repository.findById(flight.getId()).orElseThrow();
+        assertThat(reloaded.getAvailableSeats()).isEqualTo(179);
+        assertThat(reloaded.getVersion()).isEqualTo(version + 1);
+
+        assertThat(repository.incrementSeat(flight.getId(), FlightStatus.CANCELLED, DAY)).isEqualTo(1);
+        assertThat(repository.findById(flight.getId()).orElseThrow().getVersion()).isEqualTo(version + 2);
+
+        flight.setFlightNumber("SK9"); // still carries the version from before both seat updates
+        assertThatThrownBy(() -> repository.saveAndFlush(flight))
+                .isInstanceOf(ObjectOptimisticLockingFailureException.class);
+    }
+
+    @Test
+    void seatsAreOnlyHeldOnBookableFlightsAndNeverReturnedToCancelledOnes() {
+        Flight cancelled = save("SK1", ROUTE, DAY, FlightStatus.CANCELLED);
+        Flight boarding = save("SK2", ROUTE, DAY, FlightStatus.BOARDING);
+        Flight delayed = save("SK3", ROUTE, DAY, FlightStatus.DELAYED);
+
+        assertThat(repository.decrementSeat(cancelled.getId(), BOOKABLE, DAY)).isZero();
+        assertThat(repository.decrementSeat(boarding.getId(), BOOKABLE, DAY)).isZero();
+        assertThat(repository.decrementSeat(delayed.getId(), BOOKABLE, DAY)).isEqualTo(1);
+        assertThat(repository.incrementSeat(cancelled.getId(), FlightStatus.CANCELLED, DAY)).isZero();
+        assertThat(repository.findById(cancelled.getId()).orElseThrow().getAvailableSeats()).isEqualTo(180);
+    }
+
+    private static final Set<FlightStatus> BOOKABLE = EnumSet.of(FlightStatus.SCHEDULED, FlightStatus.DELAYED);
 
     private List<Flight> board(FlightBoardFilter filter) {
         return repository.findAll(FlightSpecifications.matching(filter),
