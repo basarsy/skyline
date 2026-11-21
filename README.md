@@ -483,18 +483,7 @@ Each service manages its own Flyway migrations, located at:
 skyline-<module>/src/main/resources/db/migration/<module>/
 ```
 
-A top-level `db-migrations/` directory contains a reference copy of all migration scripts organized by service:
-
-```
-db-migrations/
-├── auth/        V1__init.sql
-├── fleet/       V1__init.sql, V2__seed_aircraft_types.sql
-├── route/       V1__init.sql, V2__seed_airports.sql
-├── schedule/    V1__init.sql
-├── reservation/ V1__init.sql
-├── checkin/     V1__init.sql
-└── crew/        V1__init.sql
-```
+They are packaged with the service and applied on startup (`classpath:db/migration/<module>`), so that directory is the only copy.
 
 **Never edit an existing migration.** Always create a new versioned file.
 
