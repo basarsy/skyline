@@ -13,6 +13,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param maxRetryBackoff    upper bound of that delay
  * @param errorAfterAttempts failures after which each further failure is logged at ERROR instead of WARN
  * @param retention          how long published rows are kept before cleanup deletes them
+ * @param cleanupBatchSize   rows cleanup deletes per transaction, so it never holds many row locks for long
  */
 @ConfigurationProperties("skyline.outbox")
 public record OutboxProperties(
@@ -21,7 +22,8 @@ public record OutboxProperties(
         Duration retryBackoff,
         Duration maxRetryBackoff,
         int errorAfterAttempts,
-        Duration retention) {
+        Duration retention,
+        int cleanupBatchSize) {
 
     /** Delay before the next attempt of a row that has now failed {@code attempts} (at least 1) times. */
     Duration backoffAfter(int attempts) {

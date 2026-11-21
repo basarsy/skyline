@@ -17,7 +17,9 @@ import com.basarsy.skyline.schedule.repository.FlightRepository;
 import com.basarsy.skyline.schedule.service.FlightService;
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -53,7 +55,9 @@ import org.testcontainers.utility.DockerImageName;
         "spring.kafka.producer.properties.request.timeout.ms=1000",
         "spring.kafka.producer.properties.delivery.timeout.ms=3000",
         "skyline.outbox.send-timeout=PT5S",
-        "skyline.outbox.retry-backoff=PT0.2S"})
+        "skyline.outbox.retry-backoff=PT0.2S",
+        "skyline.outbox.max-retry-backoff=PT0.2S",
+        "skyline.outbox.cleanup-batch-size=2"})
 @ActiveProfiles("test")
 @Testcontainers
 class OutboxIntegrationTest {
@@ -153,8 +157,12 @@ class OutboxIntegrationTest {
 
         var docker = DockerClientFactory.instance().client();
         docker.pauseContainerCmd(kafka.getContainerId()).exec();
+        Instant claimed;
+        Instant failedAt;
         try {
+            claimed = databaseNow();
             assertThat(publisher.publishPending()).isZero();
+            failedAt = databaseNow();
         } finally {
             docker.unpauseContainerCmd(kafka.getContainerId()).exec();
         }
@@ -163,6 +171,11 @@ class OutboxIntegrationTest {
         assertThat(failed.get("published_at")).isNull();
         assertThat(failed.get("attempts")).isEqualTo(1);
         assertThat(failed.get("last_error")).isNotNull();
+        // The send blocked for seconds, far longer than the 0.2s backoff. The backoff counts from the failure,
+        // so the row is still not due once the run is over (counted from the claim, it would be overdue).
+        assertThat(Duration.between(claimed, failedAt)).isGreaterThan(Duration.ofSeconds(1));
+        assertThat(jdbc.queryForObject("SELECT next_attempt_at FROM outbox_events", OffsetDateTime.class).toInstant())
+                .isAfter(failedAt);
 
         Awaitility.await("delivered after Kafka is back")
                 .atMost(Duration.ofSeconds(60))
@@ -197,6 +210,80 @@ class OutboxIntegrationTest {
         } finally {
             release.countDown();
         }
+    }
+
+    @Test
+    void aLaterEventIsNotSentWhileAnOlderOneOfTheSameAggregateIsFailing() {
+        UUID aggregate = UUID.randomUUID();
+        UUID other = UUID.randomUUID();
+        transactions.executeWithoutResult(status -> {
+            // Not a valid topic name, so Kafka rejects the send.
+            outboxRepository.insert(aggregate, "Test", "not a valid topic!", "{\"n\":1}");
+            outboxRepository.insert(aggregate, "Test", KafkaTopicConfig.FLIGHT_CANCELLED_TOPIC, "{\"n\":2}");
+            outboxRepository.insert(other, "Test", KafkaTopicConfig.FLIGHT_CANCELLED_TOPIC, "{\"n\":3}");
+        });
+
+        // Only the head of each aggregate is claimable.
+        List<OutboxEvent> claimable = transactions.execute(status -> outboxRepository.claimBatch(10));
+        assertThat(claimable).extracting(OutboxEvent::payload).containsExactlyInAnyOrder("{\"n\":1}", "{\"n\":3}");
+
+        Awaitility.await("other aggregate published")
+                .atMost(Duration.ofSeconds(60))
+                .pollInterval(Duration.ofMillis(300))
+                .until(() -> {
+                    publisher.publishPending();
+                    return publishedAt("{\"n\":3}") != null;
+                });
+        // Retry the failing head past several backoffs: the second event stays behind it, unsent.
+        Awaitility.await("head retried")
+                .atMost(Duration.ofSeconds(60))
+                .pollInterval(Duration.ofMillis(300))
+                .until(() -> {
+                    publisher.publishPending();
+                    return jdbc.queryForObject("SELECT attempts FROM outbox_events WHERE payload = '{\"n\":1}'",
+                            Integer.class) >= 3;
+                });
+        assertThat(publishedAt("{\"n\":1}")).isNull();
+        Map<String, Object> next = jdbc.queryForMap("SELECT * FROM outbox_events WHERE payload = '{\"n\":2}'");
+        assertThat(next.get("published_at")).isNull();
+        assertThat(next.get("attempts")).as("never tried").isEqualTo(0);
+
+        // Once the head is out of the way, the next one goes.
+        jdbc.update("UPDATE outbox_events SET published_at = clock_timestamp() WHERE payload = '{\"n\":1}'");
+        Awaitility.await("second event published")
+                .atMost(Duration.ofSeconds(60))
+                .pollInterval(Duration.ofMillis(300))
+                .until(() -> {
+                    publisher.publishPending();
+                    return publishedAt("{\"n\":2}") != null;
+                });
+    }
+
+    @Test
+    void cleanupDeletesOnlyExpiredPublishedRowsInChunks() {
+        transactions.executeWithoutResult(status -> {
+            for (int i = 0; i < 5; i++) {
+                outboxRepository.insert(UUID.randomUUID(), "Test", "t", "{\"expired\":true}");
+            }
+            outboxRepository.insert(UUID.randomUUID(), "Test", "t", "{\"recent\":true}");
+            outboxRepository.insert(UUID.randomUUID(), "Test", "t", "{\"pending\":true}");
+        });
+        jdbc.update("UPDATE outbox_events SET published_at = now() - INTERVAL '8 days' WHERE payload LIKE '%expired%'");
+        jdbc.update("UPDATE outbox_events SET published_at = now() WHERE payload LIKE '%recent%'");
+
+        // Chunks of 2 (see the test properties): 2 + 2 + 1.
+        assertThat(publisher.deletePublished()).isEqualTo(5);
+
+        assertThat(jdbc.queryForList("SELECT payload FROM outbox_events", String.class))
+                .containsExactlyInAnyOrder("{\"recent\":true}", "{\"pending\":true}");
+    }
+
+    private Instant databaseNow() {
+        return jdbc.queryForObject("SELECT clock_timestamp()", OffsetDateTime.class).toInstant();
+    }
+
+    private Object publishedAt(String payload) {
+        return jdbc.queryForObject("SELECT published_at FROM outbox_events WHERE payload = ?", Object.class, payload);
     }
 
     private Flight scheduledFlight() {

@@ -32,7 +32,7 @@ spring:
       acks: all
       properties:
         enable.idempotence: true
-        # The publisher holds its claimed rows locked while it waits for each ack, so a broker outage should
+        # The publisher holds its claimed rows locked while it waits for the acks, so a broker outage should
         # fail a send in seconds (the row is retried later), not after the 60s/120s defaults.
         max.block.ms: 5000
         delivery.timeout.ms: 9000
@@ -54,6 +54,7 @@ skyline:
     max-retry-backoff: 1m
     error-after-attempts: 10
     retention: 7d
+    cleanup-batch-size: 1000
     cleanup-interval: PT1H
 
 jwt:
