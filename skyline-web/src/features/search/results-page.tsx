@@ -8,11 +8,12 @@ import { useAuth } from '@/auth/use-auth'
 import { Page } from '@/components/layout/app-shell'
 import { FlightCard } from '@/components/skyline/flight'
 import { PriceTag } from '@/components/skyline/price-tag'
+import { useAirportToday } from '@/components/skyline/pickers'
 import { SegmentedControl } from '@/components/skyline/segmented-control'
 import { EmptyState, ErrorState, LoadingRegion, SkeletonCard, Stagger } from '@/components/skyline/states'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/cn'
-import { isoFromLocalDate, localDateFromIso, toUtcDay } from '@/lib/format'
+import { addIsoDays, isoFromLocalDate, localDateFromIso } from '@/lib/format'
 import { useDocumentTitle } from '@/lib/hooks'
 import { cabinLabel } from '@/lib/labels'
 import { estimatePrice } from '@/lib/pricing'
@@ -46,19 +47,20 @@ function useSearchState() {
   return { from, to, date, cabin, sort, valid, update }
 }
 
-/** ±3 days around the selected date; hovering a day prefetches its results. */
+/** ±3 days around the selected date, days before `today` disabled; hovering a day prefetches its results. */
 function DateStrip({
   date,
+  today,
   onPick,
   prefetch,
 }: {
   date: string
+  today: string
   onPick: (date: string) => void
   prefetch: (date: string) => void
 }) {
   const selected = localDateFromIso(date)
   if (!selected) return null
-  const today = toUtcDay(new Date())
   const days = Array.from({ length: 7 }, (_, i) => addDays(selected, i - 3))
   return (
     <nav aria-label="Nearby dates" className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
@@ -128,12 +130,11 @@ export function Component() {
   const total = query.data?.pages[0]?.totalElements ?? 0
   const resultsRef = React.useRef<HTMLHeadingElement>(null)
 
+  // `date` is a day at the origin airport (the API searches its local day), so "past" is relative to its today.
+  const today = useAirportToday(from)
+
   const prefetch = (day: string) => valid && void prefetchSearch({ origin: from, destination: to, date: day, sort })
-  const neighbours = valid
-    ? [-1, 1]
-        .map((offset) => isoFromLocalDate(addDays(localDateFromIso(date)!, offset)))
-        .filter((d) => d >= toUtcDay(new Date()))
-    : []
+  const neighbours = valid ? [-1, 1].map((offset) => addIsoDays(date, offset)).filter((day) => day >= today) : []
 
   return (
     <>
@@ -166,7 +167,7 @@ export function Component() {
           />
         ) : (
           <>
-            <DateStrip date={date} onPick={(day) => update({ date: day })} prefetch={prefetch} />
+            <DateStrip date={date} today={today} onPick={(day) => update({ date: day })} prefetch={prefetch} />
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <h1 ref={resultsRef} className="text-h3 font-semibold" aria-live="polite">

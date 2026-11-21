@@ -1,15 +1,15 @@
 import * as React from 'react'
 import { ArrowLeftRight, Search } from 'lucide-react'
-import { Controller, useForm, type Resolver } from 'react-hook-form'
+import { Controller, useForm, useWatch, type Resolver } from 'react-hook-form'
 import { useNavigate } from 'react-router'
 
 import type { CabinClass } from '@/api/types'
 import { FormErrorSummary, FormField } from '@/components/skyline/form'
-import { AirportCombobox, DatePicker } from '@/components/skyline/pickers'
+import { AirportCombobox, DatePicker, useAirportToday } from '@/components/skyline/pickers'
 import { SegmentedControl } from '@/components/skyline/segmented-control'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/cn'
-import { toUtcDay } from '@/lib/format'
+import { addIsoDays, todayIn } from '@/lib/format'
 import { cabinLabel, CABINS } from '@/lib/labels'
 
 import type { SearchValues } from './search-schema'
@@ -42,11 +42,13 @@ export function SearchCard({
   const [defaultValues] = React.useState<SearchValues>(() => ({
     from: initial?.from ?? '',
     to: initial?.to ?? '',
-    date: initial?.date ?? toUtcDay(new Date(Date.now() + 86_400_000)),
+    date: initial?.date ?? addIsoDays(todayIn(undefined), 1),
     cabin: (initial?.cabin as CabinClass | undefined) ?? 'ECONOMY',
   }))
   const form = useForm<SearchValues>({ resolver: lazyResolver, defaultValues })
   const { errors, submitCount } = form.formState
+  // Search dates are days at the origin airport, so its today is the first one to offer.
+  const originToday = useAirportToday(useWatch({ control: form.control, name: 'from' }))
 
   const onSubmit = form.handleSubmit((values) => navigate(searchUrl(values)))
 
@@ -127,8 +129,8 @@ export function SearchCard({
                   value={field.value}
                   onChange={field.onChange}
                   disablePast
+                  today={originToday}
                   variant="pill"
-                  note="Dates are in UTC"
                 />
               )}
             </FormField>

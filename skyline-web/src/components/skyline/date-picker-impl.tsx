@@ -12,6 +12,7 @@ export function DatePickerImpl({
   value,
   onChange,
   disablePast,
+  today: todayIso,
   disableFuture,
   note,
   placeholder = 'Pick a date',
@@ -27,7 +28,7 @@ export function DatePickerImpl({
   const [open, setOpen] = React.useState(defaultOpen)
   const triggerRef = React.useRef<HTMLButtonElement>(null)
   const selected = value ? localDateFromIso(value) : undefined
-  const today = new Date()
+  const today = (todayIso && localDateFromIso(todayIso)) || new Date()
   today.setHours(0, 0, 0, 0)
 
   // Taking over from the static trigger: keep keyboard focus where the user left it.
@@ -46,6 +47,7 @@ export function DatePickerImpl({
         <React.Suspense fallback={<div className="h-[300px] w-[252px]" role="status" aria-label="Loading calendar" />}>
           <Calendar
             mode="single"
+            today={today}
             selected={selected}
             defaultMonth={selected}
             captionLayout={captionLayout}

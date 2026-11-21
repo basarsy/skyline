@@ -49,8 +49,6 @@ These are deliberate product decisions in the API, and the UI is designed around
    offer "View in ops" instead of "Select".
 3. **No server-side logout.** Logging out clears the tokens in this browser; a refresh token stays valid
    until it expires.
-4. **Search dates are UTC days.** The date picker says so. A flight leaving at 01:00 Istanbul time on the
-   2nd departs at 22:00 UTC on the 1st, so it's listed under the 1st.
 
 ## Security note
 
@@ -83,7 +81,9 @@ e2e/            Playwright specs
   `AbortSignal`. Mutations never retry and invalidate exactly what they change (see `*/queries.ts`).
 - **Times:** the API speaks UTC without offsets. `lib/format.ts` parses them as UTC, shows departure in the
   origin airport's zone and arrival in the destination's (with `+1` when the local date changes), and turns
-  airport-local form input back into UTC strings (DST-aware, unit-tested).
+  airport-local form input back into UTC strings (DST-aware, unit-tested). Search dates are plain calendar
+  days at the origin airport (the API converts them), so the date picker, date strip and home-page fares
+  count "today" in the origin's zone. The ops flight board stays on UTC days.
 - **Server is the authority:** check-in windows, status transitions and prices are previews; the UI always
   shows the server's answer and message.
 - **Bundle:** every screen is a lazy route. Pickers (Radix Popover, cmdk, react-day-picker), the account
