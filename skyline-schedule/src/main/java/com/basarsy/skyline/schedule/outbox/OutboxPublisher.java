@@ -58,11 +58,9 @@ public class OutboxPublisher {
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     break;
-                } catch (ExecutionException e) {
-                    recordFailure(event, e.getCause() instanceof Exception cause ? cause : e);
-                    break;
-                } catch (TimeoutException e) {
-                    recordFailure(event, e);
+                } catch (ExecutionException | TimeoutException e) {
+                    recordFailure(event, e instanceof ExecutionException && e.getCause() instanceof Exception cause
+                            ? cause : e);
                     break;
                 }
             }

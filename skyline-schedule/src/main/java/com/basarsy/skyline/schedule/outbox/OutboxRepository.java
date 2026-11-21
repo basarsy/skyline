@@ -1,5 +1,6 @@
 package com.basarsy.skyline.schedule.outbox;
 
+import java.sql.PreparedStatement;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
@@ -54,8 +55,15 @@ class OutboxRepository {
     }
 
     void markPublished(Collection<UUID> ids) {
-        jdbc.batchUpdate("UPDATE outbox_events SET published_at = clock_timestamp() WHERE id = ?",
-                ids.stream().map(id -> new Object[] {id}).toList());
+        if (ids.isEmpty()) {
+            return;
+        }
+        jdbc.update(con -> {
+            PreparedStatement statement =
+                    con.prepareStatement("UPDATE outbox_events SET published_at = clock_timestamp() WHERE id = ANY(?)");
+            statement.setArray(1, con.createArrayOf("uuid", ids.toArray()));
+            return statement;
+        });
     }
 
     /** Records a failure; the row is due again {@code backoff} after now (the failure), not after the claim. */

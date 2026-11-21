@@ -5,7 +5,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
-import java.util.Set;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
 
@@ -17,10 +17,10 @@ import lombok.extern.slf4j.Slf4j;
 public record DepartureDay(LocalDateTime start, LocalDateTime end) {
 
     /**
-     * Missing ("") or invalid zone values already warned about, so a misconfigured airport is reported once
-     * instead of on every search from it. Bounded by the number of airports.
+     * Airport zone values ("" for none) resolved so far, bounded by the number of airports. A missing or invalid
+     * one is warned about when first resolved, instead of on every search from that airport.
      */
-    private static final Set<String> WARNED_ZONES = ConcurrentHashMap.newKeySet();
+    private static final Map<String, ZoneId> ZONES = new ConcurrentHashMap<>();
 
     /** {@code date} in the airport zone {@code zoneId}; a missing or unknown zone counts as UTC. */
     public static DepartureDay of(LocalDate date, String zoneId) {
@@ -34,18 +34,18 @@ public record DepartureDay(LocalDateTime start, LocalDateTime end) {
     }
 
     private static ZoneId zoneOrUtc(String zoneId) {
-        if (zoneId == null || zoneId.isBlank()) {
-            if (WARNED_ZONES.add("")) {
-                log.warn("Origin airport has no time zone; searching its dates as UTC days");
-            }
+        return ZONES.computeIfAbsent(zoneId == null ? "" : zoneId, DepartureDay::resolve);
+    }
+
+    private static ZoneId resolve(String zoneId) {
+        if (zoneId.isBlank()) {
+            log.warn("Origin airport has no time zone; searching its dates as UTC days");
             return ZoneOffset.UTC;
         }
         try {
             return ZoneId.of(zoneId);
         } catch (DateTimeException e) {
-            if (WARNED_ZONES.add(zoneId)) {
-                log.warn("Origin airport time zone '{}' is not valid; searching its dates as UTC days", zoneId);
-            }
+            log.warn("Origin airport time zone '{}' is not valid; searching its dates as UTC days", zoneId);
             return ZoneOffset.UTC;
         }
     }

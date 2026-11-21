@@ -23,6 +23,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -61,6 +62,9 @@ import org.testcontainers.utility.DockerImageName;
 @ActiveProfiles("test")
 @Testcontainers
 class OutboxIntegrationTest {
+
+    /** Whether the only outbox row is published. */
+    static final String PUBLISHED = "SELECT published_at IS NOT NULL FROM outbox_events";
 
     @Container
     @ServiceConnection
@@ -135,18 +139,12 @@ class OutboxIntegrationTest {
         Flight flight = scheduledFlight();
         flightService.cancelFlight(flight.getId());
 
-        // The first send to a fresh topic (or right after the broker was paused by another test) can outlast the
-        // producer's blocking timeout; the publisher then records a failure and retries with backoff, exactly as
-        // in production. Wait for delivery instead of assuming the first attempt wins.
-        Awaitility.await("published")
-                .atMost(Duration.ofSeconds(60))
-                .pollInterval(Duration.ofMillis(500))
-                .until(() -> publisher.publishPending() == 1);
+        // Wait for delivery instead of assuming the first attempt wins (see publishUntil).
+        publishUntil("published", () -> jdbc.queryForObject(PUBLISHED, Boolean.class));
 
         ConsumerRecord<String, String> record = consume(flight.getId());
         assertThat(record.value()).isEqualTo("{\"flightId\":\"" + flight.getId() + "\"}");
         assertThat(record.headers().lastHeader("__TypeId__")).as("no type headers").isNull();
-        assertThat(jdbc.queryForObject("SELECT published_at IS NOT NULL FROM outbox_events", Boolean.class)).isTrue();
         assertThat(publisher.publishPending()).as("nothing left to send").isZero();
     }
 
@@ -177,10 +175,7 @@ class OutboxIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT next_attempt_at FROM outbox_events", OffsetDateTime.class).toInstant())
                 .isAfter(failedAt);
 
-        Awaitility.await("delivered after Kafka is back")
-                .atMost(Duration.ofSeconds(60))
-                .pollInterval(Duration.ofMillis(500))
-                .until(() -> publisher.publishPending() == 1);
+        publishUntil("delivered after Kafka is back", () -> jdbc.queryForObject(PUBLISHED, Boolean.class));
         assertThat(consume(flight.getId()).value()).contains(flight.getId().toString());
     }
 
@@ -227,36 +222,17 @@ class OutboxIntegrationTest {
         List<OutboxEvent> claimable = transactions.execute(status -> outboxRepository.claimBatch(10));
         assertThat(claimable).extracting(OutboxEvent::payload).containsExactlyInAnyOrder("{\"n\":1}", "{\"n\":3}");
 
-        Awaitility.await("other aggregate published")
-                .atMost(Duration.ofSeconds(60))
-                .pollInterval(Duration.ofMillis(300))
-                .until(() -> {
-                    publisher.publishPending();
-                    return publishedAt("{\"n\":3}") != null;
-                });
+        publishUntil("other aggregate published", () -> row("{\"n\":3}").get("published_at") != null);
         // Retry the failing head past several backoffs: the second event stays behind it, unsent.
-        Awaitility.await("head retried")
-                .atMost(Duration.ofSeconds(60))
-                .pollInterval(Duration.ofMillis(300))
-                .until(() -> {
-                    publisher.publishPending();
-                    return jdbc.queryForObject("SELECT attempts FROM outbox_events WHERE payload = '{\"n\":1}'",
-                            Integer.class) >= 3;
-                });
-        assertThat(publishedAt("{\"n\":1}")).isNull();
-        Map<String, Object> next = jdbc.queryForMap("SELECT * FROM outbox_events WHERE payload = '{\"n\":2}'");
+        publishUntil("head retried", () -> (Integer) row("{\"n\":1}").get("attempts") >= 3);
+        assertThat(row("{\"n\":1}").get("published_at")).isNull();
+        Map<String, Object> next = row("{\"n\":2}");
         assertThat(next.get("published_at")).isNull();
         assertThat(next.get("attempts")).as("never tried").isEqualTo(0);
 
         // Once the head is out of the way, the next one goes.
         jdbc.update("UPDATE outbox_events SET published_at = clock_timestamp() WHERE payload = '{\"n\":1}'");
-        Awaitility.await("second event published")
-                .atMost(Duration.ofSeconds(60))
-                .pollInterval(Duration.ofMillis(300))
-                .until(() -> {
-                    publisher.publishPending();
-                    return publishedAt("{\"n\":2}") != null;
-                });
+        publishUntil("second event published", () -> row("{\"n\":2}").get("published_at") != null);
     }
 
     @Test
@@ -282,8 +258,22 @@ class OutboxIntegrationTest {
         return jdbc.queryForObject("SELECT clock_timestamp()", OffsetDateTime.class).toInstant();
     }
 
-    private Object publishedAt(String payload) {
-        return jdbc.queryForObject("SELECT published_at FROM outbox_events WHERE payload = ?", Object.class, payload);
+    private Map<String, Object> row(String payload) {
+        return jdbc.queryForMap("SELECT * FROM outbox_events WHERE payload = ?", payload);
+    }
+
+    /**
+     * Runs the publisher until {@code done}. A first send to a fresh topic (or right after the broker was paused
+     * by another test) can outlast the producer's blocking timeout; the row is then retried with backoff.
+     */
+    private void publishUntil(String alias, Callable<Boolean> done) {
+        Awaitility.await(alias)
+                .atMost(Duration.ofSeconds(60))
+                .pollInterval(Duration.ofMillis(300))
+                .until(() -> {
+                    publisher.publishPending();
+                    return done.call();
+                });
     }
 
     private Flight scheduledFlight() {
