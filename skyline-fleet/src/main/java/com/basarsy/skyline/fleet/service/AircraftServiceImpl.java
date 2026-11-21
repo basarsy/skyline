@@ -75,6 +75,10 @@ public class AircraftServiceImpl implements AircraftService {
         var aircraft = aircraftRepository
                 .findByIdWithAircraftType(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Aircraft not found: " + id));
+        // ACTIVE and MAINTENANCE move freely between each other; RETIRED is final.
+        if (aircraft.getStatus() == AircraftStatus.RETIRED && request.status() != AircraftStatus.RETIRED) {
+            throw new SkylineException("A retired aircraft cannot return to service", HttpStatus.CONFLICT);
+        }
         aircraft.setStatus(request.status());
         return aircraftMapper.toResponse(aircraft);
     }

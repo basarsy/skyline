@@ -45,10 +45,13 @@ public class AircraftTypeServiceImpl implements AircraftTypeService {
     @Transactional
     @CacheEvict(value = "aircraft-types", allEntries = true)
     public AircraftTypeResponse create(AircraftTypeRequest request) {
+        // Trimmed, so " Airbus" can't slip past the duplicate check (or the case-insensitive unique index).
+        var trimmed = new AircraftTypeRequest(request.manufacturer().trim(), request.model().trim(),
+                request.totalSeats(), request.cabinConfig());
         if (aircraftTypeRepository.existsByManufacturerIgnoreCaseAndModelIgnoreCase(
-                request.manufacturer(), request.model())) {
+                trimmed.manufacturer(), trimmed.model())) {
             throw new SkylineException("Aircraft type already exists", HttpStatus.CONFLICT);
         }
-        return aircraftTypeMapper.toResponse(aircraftTypeRepository.save(aircraftTypeMapper.toEntity(request)));
+        return aircraftTypeMapper.toResponse(aircraftTypeRepository.save(aircraftTypeMapper.toEntity(trimmed)));
     }
 }

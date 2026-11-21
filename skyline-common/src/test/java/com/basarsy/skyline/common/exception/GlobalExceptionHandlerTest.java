@@ -46,4 +46,16 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getStatusCode().value()).isEqualTo(403);
         assertThat(response.getBody().message()).isEqualTo("Access denied");
     }
+
+    @Test
+    void anUnreachableDownstreamServiceIsA503NotA500() {
+        feign.Request request = feign.Request.create(feign.Request.HttpMethod.GET, "http://fleet/api/v1/aircraft/1",
+                java.util.Map.of(), null, java.nio.charset.StandardCharsets.UTF_8, null);
+        var unreachable = new feign.RetryableException(-1, "Connection refused", feign.Request.HttpMethod.GET,
+                new java.net.ConnectException("Connection refused"), (Long) null, request);
+
+        var response = handler.handleDownstreamUnavailable(unreachable);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(503);
+    }
 }

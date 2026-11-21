@@ -29,11 +29,27 @@ public interface FlightRepository extends JpaRepository<Flight, UUID>, JpaSpecif
             @Param("statuses") Collection<FlightStatus> statuses,
             Pageable pageable);
 
-    @Modifying
-    @Query("UPDATE Flight f SET f.availableSeats = f.availableSeats - 1 WHERE f.id = :id AND f.availableSeats > 0")
-    int decrementSeat(@Param("id") UUID id);
+    /**
+     * Holds one seat on a flight in one of {@code statuses}. Bulk updates bypass Hibernate's optimistic
+     * locking, so the version is bumped here: a concurrent load-modify-save of the same flight (update,
+     * cancel) then fails with an optimistic lock conflict instead of overwriting the seat count.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            UPDATE Flight f
+            SET f.availableSeats = f.availableSeats - 1, f.version = f.version + 1, f.updatedAt = :now
+            WHERE f.id = :id AND f.availableSeats > 0 AND f.status IN :statuses
+            """)
+    int decrementSeat(@Param("id") UUID id, @Param("statuses") Collection<FlightStatus> statuses,
+            @Param("now") LocalDateTime now);
 
-    @Modifying
-    @Query("UPDATE Flight f SET f.availableSeats = f.availableSeats + 1 WHERE f.id = :id")
-    int incrementSeat(@Param("id") UUID id);
+    /** Gives a seat back. A cancelled flight already had its seats reset to capacity, so it is left alone. */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            UPDATE Flight f
+            SET f.availableSeats = f.availableSeats + 1, f.version = f.version + 1, f.updatedAt = :now
+            WHERE f.id = :id AND f.status <> :cancelled
+            """)
+    int incrementSeat(@Param("id") UUID id, @Param("cancelled") FlightStatus cancelled,
+            @Param("now") LocalDateTime now);
 }
