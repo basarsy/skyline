@@ -3,7 +3,7 @@ import { useSyncExternalStore } from 'react'
 export type ThemePreference = 'system' | 'light' | 'dark'
 export type ResolvedTheme = 'light' | 'dark'
 
-/** Same key as the inline script in index.html, which applies the class before first paint. */
+/** Same key as public/theme-init.js, which applies the class before first paint. */
 export const THEME_STORAGE_KEY = 'skyline.theme'
 
 const listeners = new Set<() => void>()
