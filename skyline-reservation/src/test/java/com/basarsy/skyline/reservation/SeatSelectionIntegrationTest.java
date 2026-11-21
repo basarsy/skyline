@@ -18,6 +18,7 @@ import com.basarsy.skyline.reservation.dto.SeatMapResponse;
 import com.basarsy.skyline.reservation.dto.SeatMapResponse.SeatStatus;
 import com.basarsy.skyline.reservation.entity.CabinClass;
 import com.basarsy.skyline.reservation.entity.FareType;
+import com.basarsy.skyline.reservation.entity.ReservationStatus;
 import com.basarsy.skyline.reservation.service.ReservationService;
 import com.basarsy.skyline.reservation.service.SeatMapService;
 import com.basarsy.skyline.reservation.service.SeatSelectionService;
@@ -244,9 +245,42 @@ class SeatSelectionIntegrationTest {
 
         ReservationResponse after = reservations.getReservation(booked.getId());
         assertThat(after.getSeatNumber()).isEqualTo("5B");
-        assertThat(after.getTotalPrice()).isEqualByComparingTo(after.getFarePrice().add(new java.math.BigDecimal("8.00")));
+        // BASIC is non-refundable: the exit-row fee stays paid after the change, so the total keeps it.
+        assertThat(after.getTotalPrice()).isEqualByComparingTo(after.getFarePrice().add(new java.math.BigDecimal("40.00")));
         assertThat(after.getAncillaries()).extracting(l -> l.seatNumber() + ":" + l.status())
                 .containsExactly("4A:CANCELLED", "5B:ACTIVE");
+    }
+
+    @Test
+    void theSeatIsChargedAtThePriceItWasHeldAtEvenIfTheFlightFillsUpMeanwhile() {
+        actAs(alice);
+        assertThat(seats.holdForBooking(hold("3A", 0, CabinClass.ECONOMY)).price()).isEqualByComparingTo("6.00");
+
+        // The flight is now 93% sold: +30% on paid seats from here on.
+        var full = SeatTestFixtures.flight(flightId);
+        full.setAvailableSeats(2);
+        when(scheduleClient.getFlight(flightId)).thenReturn(full);
+
+        ReservationResponse booked = reservations.bookGroup(new GroupReservationRequest(List.of(passenger("Ada")),
+                List.of(new GroupReservationRequest.Leg(flightId, CabinClass.ECONOMY, FareType.STANDARD)),
+                List.of(new GroupReservationRequest.SeatSelection(0, flightId, "3A")))).reservations().get(0);
+        assertThat(booked.getAncillaries()).singleElement()
+                .satisfies(line -> assertThat(line.price()).isEqualByComparingTo("6.00"));
+    }
+
+    @Test
+    void aHoldPricedOnAnotherFareIsRepricedAtBooking() {
+        actAs(alice);
+        // Held as FLEX (window seats included)...
+        assertThat(seats.holdForBooking(new SeatHoldRequest(flightId, "3F", 0, CabinClass.ECONOMY, FareType.FLEX))
+                .price()).isZero();
+
+        // ...but booked as BASIC, where a window seat costs 12.00.
+        ReservationResponse booked = reservations.bookGroup(new GroupReservationRequest(List.of(passenger("Ada")),
+                List.of(new GroupReservationRequest.Leg(flightId, CabinClass.ECONOMY, FareType.BASIC)),
+                List.of(new GroupReservationRequest.SeatSelection(0, flightId, "3F")))).reservations().get(0);
+        assertThat(booked.getAncillaries()).singleElement()
+                .satisfies(line -> assertThat(line.price()).isEqualByComparingTo("12.00"));
     }
 
     @Test
@@ -262,6 +296,19 @@ class SeatSelectionIntegrationTest {
         assertThatThrownBy(() -> reservations.bookGroup(new GroupReservationRequest(List.of(passenger("E")),
                 List.of(new GroupReservationRequest.Leg(flightId, CabinClass.BUSINESS, FareType.STANDARD)), List.of())))
                 .hasMessageContaining("Business is sold out");
+    }
+
+    @Test
+    void bookingStillWorksWhileTheFleetServiceIsDown() {
+        when(fleetClient.getSeatLayout(any()))
+                .thenThrow(new SkylineException("Service unavailable", HttpStatus.SERVICE_UNAVAILABLE));
+        actAs(alice);
+
+        GroupReservationResponse booked = reservations.bookGroup(new GroupReservationRequest(List.of(passenger("Ada")),
+                List.of(new GroupReservationRequest.Leg(flightId, CabinClass.ECONOMY, FareType.STANDARD)), List.of()));
+
+        assertThat(booked.reservations()).singleElement()
+                .satisfies(r -> assertThat(r.getStatus()).isEqualTo(ReservationStatus.CONFIRMED));
     }
 
     private SeatHoldRequest hold(String seat, int passengerIndex, CabinClass cabin) {

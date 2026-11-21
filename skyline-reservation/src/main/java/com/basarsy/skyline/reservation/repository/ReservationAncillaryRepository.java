@@ -31,9 +31,24 @@ public interface ReservationAncillaryRepository extends JpaRepository<Reservatio
             """)
     int refundAllOnFlight(@Param("flightId") UUID flightId, @Param("now") java.time.LocalDateTime now);
 
+    /** Every line of several reservations at once (a page of "My trips"), oldest first. */
+    List<ReservationAncillary> findByReservation_IdInOrderByCreatedAtAsc(java.util.Collection<UUID> reservationIds);
+
+    /** What the passenger paid for add-ons and keeps: every line that was not refunded. */
     @Query("""
             SELECT COALESCE(SUM(a.price), 0) FROM ReservationAncillary a
-            WHERE a.reservation.id = :reservationId AND a.status = com.basarsy.skyline.reservation.entity.ReservationAncillary.Status.ACTIVE
+            WHERE a.reservation.id = :reservationId
+            AND a.status <> com.basarsy.skyline.reservation.entity.ReservationAncillary.Status.REFUNDED
             """)
-    BigDecimal sumActive(@Param("reservationId") UUID reservationId);
+    BigDecimal sumKept(@Param("reservationId") UUID reservationId);
+
+    /** Brings every total on a flight back to fare + kept add-ons, after a bulk refund. */
+    @org.springframework.data.jpa.repository.Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(nativeQuery = true, value = """
+            UPDATE reservations r SET total_price = r.fare_price + COALESCE(
+                (SELECT SUM(a.price) FROM reservation_ancillaries a
+                 WHERE a.reservation_id = r.id AND a.status <> 'REFUNDED'), 0)
+            WHERE r.flight_id = :flightId
+            """)
+    int recalculateTotalsOnFlight(@Param("flightId") UUID flightId);
 }

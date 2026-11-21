@@ -8,6 +8,7 @@ import com.basarsy.skyline.reservation.dto.AncillaryProductRequest;
 import com.basarsy.skyline.reservation.dto.AncillaryProductResponse;
 import com.basarsy.skyline.reservation.entity.AncillaryPrice;
 import com.basarsy.skyline.reservation.entity.AncillaryProduct;
+import com.basarsy.skyline.reservation.entity.FareAllowance;
 import com.basarsy.skyline.reservation.entity.RouteScope;
 import com.basarsy.skyline.reservation.repository.AncillaryPriceRepository;
 import com.basarsy.skyline.reservation.repository.AncillaryProductRepository;
@@ -15,6 +16,8 @@ import com.basarsy.skyline.reservation.repository.FareAllowanceRepository;
 import java.math.RoundingMode;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -32,7 +35,15 @@ public class AncillaryCatalogService {
 
     @Transactional(readOnly = true)
     public List<AncillaryProductResponse> findAll() {
-        return products.findAllByOrderBySortOrderAsc().stream().map(this::view).toList();
+        // Prices and allowances once for the whole catalog, grouped by product.
+        Map<String, List<AncillaryPrice>> priceByProduct = prices.findAll().stream()
+                .collect(Collectors.groupingBy(AncillaryPrice::getProductCode));
+        Map<String, List<FareAllowance>> allowanceByProduct = allowances.findAll().stream()
+                .collect(Collectors.groupingBy(FareAllowance::getProductCode));
+        return products.findAllByOrderBySortOrderAsc().stream()
+                .map(p -> view(p, priceByProduct.getOrDefault(p.getCode(), List.of()),
+                        allowanceByProduct.getOrDefault(p.getCode(), List.of())))
+                .toList();
     }
 
     @Transactional
@@ -70,14 +81,18 @@ public class AncillaryCatalogService {
     }
 
     private AncillaryProductResponse view(AncillaryProduct product) {
-        List<AncillaryProductResponse.Price> priceViews = prices.findByProductCode(product.getCode()).stream()
+        return view(product, prices.findByProductCode(product.getCode()),
+                allowances.findAll().stream().filter(a -> a.getProductCode().equals(product.getCode())).toList());
+    }
+
+    private AncillaryProductResponse view(AncillaryProduct product, List<AncillaryPrice> productPrices,
+            List<FareAllowance> productAllowances) {
+        List<AncillaryProductResponse.Price> priceViews = productPrices.stream()
                 .sorted(Comparator.comparing(AncillaryPrice::getRouteScope))
                 .map(p -> new AncillaryProductResponse.Price(p.getRouteScope(), p.getOnlinePrice(), p.getAirportPrice()))
                 .toList();
-        List<AncillaryProductResponse.Allowance> included = allowances.findAll().stream()
-                .filter(a -> a.getProductCode().equals(product.getCode()))
-                .sorted(Comparator.comparing((com.basarsy.skyline.reservation.entity.FareAllowance a) -> a.getCabinClass())
-                        .thenComparing(a -> a.getFareType()))
+        List<AncillaryProductResponse.Allowance> included = productAllowances.stream()
+                .sorted(Comparator.comparing(FareAllowance::getCabinClass).thenComparing(FareAllowance::getFareType))
                 .map(a -> new AncillaryProductResponse.Allowance(a.getCabinClass(), a.getFareType(), a.getQuantity()))
                 .toList();
         return new AncillaryProductResponse(product.getCode(), product.getType(), product.getName(),

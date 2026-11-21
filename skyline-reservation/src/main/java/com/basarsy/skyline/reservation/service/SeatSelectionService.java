@@ -133,11 +133,14 @@ public class SeatSelectionService {
     void applyHeldSeat(Reservation reservation, FlightResponse flight, SeatLayout layout,
             SeatPricing.PriceList prices, String seatNumber, HoldOwner owner) {
         Seat seat = seatOf(layout, seatNumber);
-        BigDecimal price = prices.priceOf(seat);
-        if (!holds.isHeldBy(flight.getId(), seatNumber, owner)) {
-            throw new SkylineException("Your hold on seat " + seatNumber + " has expired; please choose a seat again",
-                    HttpStatus.CONFLICT);
-        }
+        BigDecimal currentPrice = prices.priceOf(seat); // also refuses a seat outside the passenger's cabin
+        SeatHoldStore.Hold hold = holds.heldBy(flight.getId(), seatNumber, owner)
+                .orElseThrow(() -> new SkylineException(
+                        "Your hold on seat " + seatNumber + " has expired; please choose a seat again",
+                        HttpStatus.CONFLICT));
+        // The price shown when the seat was held stands for the hold's lifetime, even if the flight's surcharge
+        // changed meanwhile; a hold priced for another cabin or fare is re-priced.
+        BigDecimal price = hold.priceFor(reservation.getCabinClass(), reservation.getFareType()).orElse(currentPrice);
 
         endActiveSeatLine(reservation);
         reservation.setSeatNumber(seatNumber);
@@ -177,9 +180,12 @@ public class SeatSelectionService {
         ancillaryRepository.save(line);
     }
 
-    /** Total = fare + every active line item. */
+    /**
+     * Total = what the passenger paid and keeps: the fare plus every line not refunded (a seat changed on a
+     * non-refundable fare stays paid for).
+     */
     void recalculateTotal(Reservation reservation) {
-        BigDecimal extras = reservation.getId() == null ? BigDecimal.ZERO : ancillaryRepository.sumActive(reservation.getId());
+        BigDecimal extras = reservation.getId() == null ? BigDecimal.ZERO : ancillaryRepository.sumKept(reservation.getId());
         reservation.setTotalPrice(reservation.getFarePrice().add(extras));
     }
 
@@ -194,7 +200,7 @@ public class SeatSelectionService {
                 || blockedSeatRepository.findSeatNumbers(flight.getId()).contains(seatNumber)) {
             throw seatUnavailable(seatNumber);
         }
-        if (!holds.hold(flight.getId(), seatNumber, owner)) {
+        if (!holds.hold(flight.getId(), seatNumber, owner, cabin, fare, price)) {
             throw seatUnavailable(seatNumber);
         }
         return new SeatHoldResponse(flight.getId(), seatNumber, seat.category(), price, pricing.currency(),
@@ -208,8 +214,7 @@ public class SeatSelectionService {
         ancillaryRepository.findByReservation_IdAndTypeAndStatus(reservation.getId(), AncillaryType.SEAT,
                         ReservationAncillary.Status.ACTIVE)
                 .ifPresent(line -> {
-                    line.setStatus(line.isRefundable() ? ReservationAncillary.Status.REFUNDED
-                            : ReservationAncillary.Status.CANCELLED);
+                    line.end();
                     ancillaryRepository.saveAndFlush(line);
                 });
     }

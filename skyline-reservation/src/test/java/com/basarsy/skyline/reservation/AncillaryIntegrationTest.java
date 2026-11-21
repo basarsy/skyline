@@ -147,10 +147,35 @@ class AncillaryIntegrationTest {
         reservations.cancelReservation(basic.getId());
 
         // The bag on a BASIC fare is forfeited; the meal is always refundable.
-        assertThat(reservations.getReservation(basic.getId()).getAncillaries())
+        ReservationResponse cancelled = reservations.getReservation(basic.getId());
+        assertThat(cancelled.getAncillaries())
                 .extracting(l -> l.productCode() + ":" + l.status())
                 .containsExactly("CHECKED_BAG_20:" + ReservationAncillary.Status.CANCELLED,
                         "MEAL_HOT:" + ReservationAncillary.Status.REFUNDED);
+        // The total keeps what was not refunded: the fare and the 40.00 bag, not the 15.00 meal.
+        assertThat(cancelled.getTotalPrice()).isEqualByComparingTo(cancelled.getFarePrice().add(new java.math.BigDecimal("40.00")));
+    }
+
+    @Test
+    void aBagCannotBeRemovedWhileItsExtraWeightIsLeft() {
+        ReservationResponse basic = book(international, FareType.BASIC);
+        ancillaries.purchase(basic.getId(), new AncillaryPurchaseRequest(List.of(
+                new AncillaryPurchaseRequest.Item("CHECKED_BAG_20", 1),
+                new AncillaryPurchaseRequest.Item("EXTRA_WEIGHT_10", 1)), null));
+        ReservationResponse withBag = reservations.getReservation(basic.getId());
+        UUID bag = withBag.getAncillaries().stream().filter(l -> l.productCode().equals("CHECKED_BAG_20"))
+                .findFirst().orElseThrow().id();
+        UUID topUp = withBag.getAncillaries().stream().filter(l -> l.productCode().equals("EXTRA_WEIGHT_10"))
+                .findFirst().orElseThrow().id();
+
+        assertThatThrownBy(() -> ancillaries.remove(basic.getId(), bag))
+                .hasMessageContaining("Remove the extra weight on this bag first");
+
+        ancillaries.remove(basic.getId(), topUp);
+        ancillaries.remove(basic.getId(), bag);
+        ReservationResponse after = reservations.getReservation(basic.getId());
+        // Non-refundable on BASIC: both removed lines stay paid.
+        assertThat(after.getAncillaries()).extracting(l -> l.status().name()).containsOnly("CANCELLED");
     }
 
     private ReservationResponse book(UUID flightId, FareType fare) {

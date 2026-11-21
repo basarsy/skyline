@@ -77,12 +77,13 @@ public class SeatMapService {
         SeatPricing.PriceList prices = seatPricing.priceList(flight, pricedCabin, pricedFare);
         Set<String> taken = reservationRepository.findAssignedSeats(flightId);
         Set<String> blocked = blockedSeatRepository.findSeatNumbers(flightId);
-        Map<String, HoldOwner> held = holds.holdsOnFlight(flightId);
+        Map<String, SeatHoldStore.Hold> held = holds.holdsOnFlight(flightId);
 
         List<SeatView> seats = new ArrayList<>(layout.seats().size());
         Map<SeatCategory, Integer> availableByCategory = new EnumMap<>(SeatCategory.class);
         for (Seat seat : layout.seats()) {
-            HoldOwner holder = held.get(seat.code());
+            SeatHoldStore.Hold hold = held.get(seat.code());
+            HoldOwner holder = hold == null ? null : hold.owner();
             boolean mine = seat.code().equals(bookedSeat) || owner.equals(holder);
             SeatStatus status = taken.contains(seat.code()) ? SeatStatus.TAKEN
                     : blocked.contains(seat.code()) ? SeatStatus.BLOCKED

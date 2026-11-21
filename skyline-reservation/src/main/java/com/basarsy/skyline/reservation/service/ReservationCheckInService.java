@@ -27,6 +27,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -135,7 +137,31 @@ public class ReservationCheckInService {
             seatLines.recordAssignedSeat(reservation);
         }
         reservation.setStatus(ReservationStatus.CHECKED_IN);
+        releaseOwnHoldsAfterCommit(reservation);
         return toResponse(reservationRepository.saveAndFlush(reservation), flight);
+    }
+
+    /**
+     * A seat this passenger held but never confirmed (picked on the check-in page, then pressed "Check in") is not
+     * theirs: it may cost money. Once checked in the seat is final, so the hold is let go for others right away
+     * instead of lingering until it expires.
+     */
+    private void releaseOwnHoldsAfterCommit(Reservation reservation) {
+        String slot = reservation.getId().toString();
+        List<SeatHoldStore.HoldOwner> own = holds.holdsOnFlight(reservation.getFlightId()).values().stream()
+                .map(SeatHoldStore.Hold::owner)
+                .filter(owner -> owner.slot().equals(slot))
+                .distinct()
+                .toList();
+        if (own.isEmpty()) {
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                own.forEach(owner -> holds.release(reservation.getFlightId(), owner));
+            }
+        });
     }
 
     /**

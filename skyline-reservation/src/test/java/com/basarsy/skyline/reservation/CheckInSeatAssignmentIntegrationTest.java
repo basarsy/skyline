@@ -64,6 +64,9 @@ class CheckInSeatAssignmentIntegrationTest {
     @Autowired
     SeatSelectionService seats;
 
+    @Autowired
+    com.basarsy.skyline.reservation.service.SeatHoldStore holds;
+
     private final UUID flightId = UUID.randomUUID();
     private final UUID alice = UUID.randomUUID();
 
@@ -112,6 +115,17 @@ class CheckInSeatAssignmentIntegrationTest {
                 .isInstanceOf(SkylineException.class)
                 .hasMessageContaining("checked in")
                 .extracting(e -> ((SkylineException) e).getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
+    }
+
+    @Test
+    void checkingInWithAnUnconfirmedHoldAssignsAFreeSeatAndLetsTheHoldGo() {
+        ReservationResponse booked = book(CabinClass.ECONOMY, "Ada").get(0);
+        seats.holdForReservation(booked.getId(), "2A"); // a paid bulkhead seat, never confirmed
+
+        String assigned = checkIn.checkIn(booked.getId()).getSeatNumber();
+
+        assertThat(assigned).isNotEqualTo("2A");
+        assertThat(holds.holdsOnFlight(flightId)).doesNotContainKey("2A");
     }
 
     private List<ReservationResponse> book(CabinClass cabin, String... names) {

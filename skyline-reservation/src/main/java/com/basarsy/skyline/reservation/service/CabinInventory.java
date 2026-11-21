@@ -22,7 +22,8 @@ import org.springframework.transaction.annotation.Transactional;
  * at most its seats (minus blocked ones). Concurrent bookings of one cabin are serialized with a transaction-scoped
  * advisory lock, so two last-seat bookings cannot both pass the count.
  *
- * <p>Aircraft types without a layout keep the old behaviour: any cabin, limited only by the flight's seat count.
+ * <p>Aircraft types without a layout keep the old behaviour: any cabin, limited only by the flight's seat count. So
+ * does a booking made while the fleet service is unreachable.
  */
 @Component
 @RequiredArgsConstructor
@@ -36,7 +37,8 @@ public class CabinInventory {
     /** Checks that {@code count} more passengers fit in the cabin, holding the cabin's lock until commit. */
     @Transactional(propagation = Propagation.MANDATORY)
     public void reserve(FlightResponse flight, CabinClass cabin, int count) {
-        Optional<SeatLayout> layout = layouts.forFlight(flight);
+        // Lenient: if the fleet service is down, booking goes on as before layouts existed (flight-wide count only).
+        Optional<SeatLayout> layout = layouts.tryForFlight(flight);
         if (layout.isEmpty()) {
             return;
         }

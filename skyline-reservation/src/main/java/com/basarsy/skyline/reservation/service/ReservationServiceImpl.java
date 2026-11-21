@@ -3,7 +3,6 @@ package com.basarsy.skyline.reservation.service;
 import com.basarsy.skyline.common.pricing.PricingProperties;
 import com.basarsy.skyline.common.exception.ResourceNotFoundException;
 import com.basarsy.skyline.common.exception.SkylineException;
-import com.basarsy.skyline.reservation.client.FleetClient;
 import com.basarsy.skyline.reservation.client.ScheduleClient;
 import com.basarsy.skyline.reservation.client.dto.FlightResponse;
 import com.basarsy.skyline.reservation.client.dto.FlightStatus;
@@ -18,6 +17,10 @@ import com.basarsy.skyline.reservation.dto.AncillaryPurchaseRequest;
 import com.basarsy.skyline.reservation.entity.ReservationAncillary;
 import com.basarsy.skyline.reservation.entity.SalesChannel;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -65,7 +68,6 @@ public class ReservationServiceImpl implements ReservationService {
     private final ReservationRepository reservationRepository;
     private final PassengerRepository passengerRepository;
     private final ScheduleClient scheduleClient;
-    private final FleetClient fleetClient;
     private final ReservationMapper reservationMapper;
     private final PassengerMapper passengerMapper;
     private final PricingProperties pricing;
@@ -102,12 +104,23 @@ public class ReservationServiceImpl implements ReservationService {
         UUID groupId = UUID.randomUUID();
         int passengers = request.passengers().size();
 
+        // Cabin locks are taken in one global order (flight, then cabin), whatever order the legs come in, so two
+        // bookings of the same flights in opposite orders can't deadlock.
+        Map<UUID, FlightResponse> flights = new HashMap<>();
+        request.legs().stream()
+                .sorted(Comparator.comparing((GroupReservationRequest.Leg leg) -> leg.flightId().toString())
+                        .thenComparing(GroupReservationRequest.Leg::cabinClass))
+                .forEach(leg -> {
+                    FlightResponse flight = bookableFlight(leg.flightId(), passengers);
+                    cabinInventory.reserve(flight, leg.cabinClass(), passengers);
+                    flights.put(leg.flightId(), flight);
+                });
+
         List<ReservationResponse> booked = new ArrayList<>();
         BigDecimal total = BigDecimal.ZERO;
         for (GroupReservationRequest.Leg leg : request.legs()) {
-            FlightResponse flight = bookableFlight(leg.flightId(), passengers);
+            FlightResponse flight = flights.get(leg.flightId());
             FareType fareType = leg.fareType() == null ? FareType.STANDARD : leg.fareType();
-            cabinInventory.reserve(flight, leg.cabinClass(), passengers);
             SeatLayout layout = null;
             SeatPricing.PriceList prices = null;
 
@@ -263,8 +276,15 @@ public class ReservationServiceImpl implements ReservationService {
     @Transactional(readOnly = true)
     public Page<ReservationResponse> getMyReservations(Pageable pageable) {
         // A user with no bookings yet gets an empty page, not a 404.
-        return reservationRepository.findByPassenger_UserId(getCurrentUserId(), pageable)
-                .map(r -> enrichReservationResponse(r, null));
+        Page<Reservation> page = reservationRepository.findByPassenger_UserId(getCurrentUserId(), pageable);
+        // Every add-on line of the page in one query, not one per reservation.
+        Map<UUID, List<AncillaryLineResponse>> lines = page.isEmpty() ? Map.of()
+                : ancillaryRepository.findByReservation_IdInOrderByCreatedAtAsc(
+                                page.getContent().stream().map(Reservation::getId).toList())
+                        .stream()
+                        .collect(Collectors.groupingBy(line -> line.getReservation().getId(),
+                                Collectors.mapping(AncillaryLineResponse::of, Collectors.toList())));
+        return page.map(r -> enrichReservationResponse(r, null, lines.getOrDefault(r.getId(), List.of())));
     }
 
     @Override
@@ -288,8 +308,9 @@ public class ReservationServiceImpl implements ReservationService {
         // Add-ons end with the booking: refundable ones (FLEX fares, always-refundable products such as meals)
         // are paid back, the rest are forfeited.
         ancillaryRepository.findByReservation_IdAndStatus(reservation.getId(), ReservationAncillary.Status.ACTIVE)
-                .forEach(line -> line.setStatus(line.isRefundable() ? ReservationAncillary.Status.REFUNDED
-                        : ReservationAncillary.Status.CANCELLED));
+                .forEach(ReservationAncillary::end);
+        ancillaryRepository.flush();
+        seatSelectionService.recalculateTotal(reservation);
         reservationRepository.save(reservation);
 
         // Return the seat only once the cancellation is durable. Releasing it before commit could
@@ -298,12 +319,17 @@ public class ReservationServiceImpl implements ReservationService {
     }
 
     private ReservationResponse enrichReservationResponse(Reservation reservation, FlightResponse flight) {
+        List<AncillaryLineResponse> lines = reservation.getId() == null ? List.of()
+                : ancillaryRepository.findByReservation_IdOrderByCreatedAtAsc(reservation.getId()).stream()
+                        .map(AncillaryLineResponse::of).toList();
+        return enrichReservationResponse(reservation, flight, lines);
+    }
+
+    private ReservationResponse enrichReservationResponse(Reservation reservation, FlightResponse flight,
+            List<AncillaryLineResponse> lines) {
         ReservationResponse response = reservationMapper.toResponse(reservation);
         response.setCurrency(pricing.currency());
-        if (reservation.getId() != null) {
-            response.setAncillaries(ancillaryRepository.findByReservation_IdOrderByCreatedAtAsc(reservation.getId())
-                    .stream().map(AncillaryLineResponse::of).toList());
-        }
+        response.setAncillaries(lines);
         if (flight == null) {
             try {
                 flight = scheduleClient.getFlight(reservation.getFlightId());

@@ -26,6 +26,7 @@ public class FlightCancellationListener {
         LocalDateTime now = LocalDateTime.now();
         // The airline's cancellation: seat fees and bags are refunded on every fare.
         int refunded = ancillaryRepository.refundAllOnFlight(event.flightId(), now);
+        ancillaryRepository.recalculateTotalsOnFlight(event.flightId());
         int updated = reservationRepository.updateStatusByFlightId(event.flightId(), ReservationStatus.CANCELLED, now);
         log.info("Refunded {} add-ons on cancelled flight {}", refunded, event.flightId());
 

@@ -56,8 +56,7 @@ class ReservationServiceImplTest {
     private final PassengerMapper passengerMapper = mock(PassengerMapper.class);
 
     private final ReservationServiceImpl service = new ReservationServiceImpl(
-            reservationRepository, passengerRepository, scheduleClient, mock(FleetClient.class),
-            reservationMapper, passengerMapper, new PricingProperties("EUR"), mock(CabinInventory.class),
+            reservationRepository, passengerRepository, scheduleClient, reservationMapper, passengerMapper, new PricingProperties("EUR"), mock(CabinInventory.class),
             mock(SeatLayoutProvider.class), mock(SeatPricing.class), mock(SeatSelectionService.class),
             mock(com.basarsy.skyline.reservation.repository.ReservationAncillaryRepository.class),
             mock(AncillaryService.class));
@@ -75,11 +74,6 @@ class ReservationServiceImplTest {
         when(scheduleClient.getFlight(FLIGHT_ID)).thenReturn(flight);
         when(passengerMapper.toEntity(any())).thenAnswer(inv -> new Passenger());
         when(passengerRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        when(reservationMapper.toEntity(any())).thenAnswer(inv -> {
-            Reservation r = new Reservation();
-            r.setCabinClass(CabinClass.ECONOMY);
-            return r;
-        });
         when(reservationRepository.existsByPnr(anyString())).thenReturn(false);
     }
 

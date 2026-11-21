@@ -66,4 +66,9 @@ public class ReservationAncillary extends BaseEntity {
 
     @Column(nullable = false)
     private boolean refundable;
+
+    /** Ends an active line: paid back if it is refundable, otherwise kept by the airline. */
+    public void end() {
+        status = refundable ? Status.REFUNDED : Status.CANCELLED;
+    }
 }

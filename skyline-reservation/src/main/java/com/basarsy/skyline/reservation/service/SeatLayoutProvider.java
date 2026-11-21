@@ -47,6 +47,20 @@ public class SeatLayoutProvider {
         return forType(flight.getAircraft().aircraftType().id());
     }
 
+    /**
+     * Like {@link #forFlight}, but never fails: no aircraft details, or the fleet service unreachable, is "no layout".
+     * For checks that must not make booking depend on the fleet service (booking worked without it before).
+     */
+    public Optional<SeatLayout> tryForFlight(FlightResponse flight) {
+        try {
+            return forFlight(flight);
+        } catch (RuntimeException e) {
+            log.warn("Seat layout unavailable for flight {} ({}); skipping layout checks",
+                    flight == null ? null : flight.getId(), e.getMessage());
+            return Optional.empty();
+        }
+    }
+
     /** Like {@link #forFlight}, but a missing layout is a 404 with a message the passenger can act on. */
     public SeatLayout requireForFlight(FlightResponse flight) {
         return forFlight(flight).orElseThrow(() -> new SkylineException(

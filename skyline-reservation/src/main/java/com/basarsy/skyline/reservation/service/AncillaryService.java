@@ -112,7 +112,10 @@ public class AncillaryService {
         if (!LocalDateTime.now(clock).isBefore(flight.getDepartureTime().minusHours(cutoff))) {
             throw new SkylineException("Add-ons can't be removed this close to departure", HttpStatus.UNPROCESSABLE_ENTITY);
         }
-        line.setStatus(line.isRefundable() ? ReservationAncillary.Status.REFUNDED : ReservationAncillary.Status.CANCELLED);
+        if (line.getType() == AncillaryType.CHECKED_BAG) {
+            requireBagForEveryTopUp(reservation, line.getQuantity());
+        }
+        line.end();
         lines.saveAndFlush(line);
         seatSelection.recalculateTotal(reservation);
         return reservationRepository.saveAndFlush(reservation);
@@ -168,6 +171,19 @@ public class AncillaryService {
         lines.flush();
         seatSelection.recalculateTotal(reservation);
         reservationRepository.saveAndFlush(reservation);
+    }
+
+    /** An extra-weight top-up needs a checked bag: a bag can't go while it would leave a top-up without one. */
+    private void requireBagForEveryTopUp(Reservation reservation, int bagsRemoved) {
+        Map<String, AncillaryType> types = products.findAll().stream()
+                .collect(Collectors.toMap(AncillaryProduct::getCode, AncillaryProduct::getType));
+        Map<AncillaryType, Integer> count = new HashMap<>();
+        included(reservation).forEach((code, quantity) -> count.merge(types.get(code), quantity, Integer::sum));
+        purchased(reservation).forEach((code, quantity) -> count.merge(types.get(code), quantity, Integer::sum));
+        int bagsLeft = count.getOrDefault(AncillaryType.CHECKED_BAG, 0) - bagsRemoved;
+        if (count.getOrDefault(AncillaryType.EXTRA_WEIGHT, 0) > bagsLeft) {
+            throw new SkylineException("Remove the extra weight on this bag first", HttpStatus.UNPROCESSABLE_ENTITY);
+        }
     }
 
     /** Domestic when both airports are in the same country; international otherwise (or when unknown). */
