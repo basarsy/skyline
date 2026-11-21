@@ -213,9 +213,10 @@ export function Component() {
     onSuccess: async (result) => {
       saveLastPassenger(userId, form.getValues())
       toast.success(result.message ?? 'Flight booked')
+      // Seats changed: the flight, cached search results and the home page's fares are all stale now.
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: reservationKeys.myAll }),
-        queryClient.invalidateQueries({ queryKey: flightKeys.detail(flightId!) }),
+        queryClient.invalidateQueries({ queryKey: flightKeys.all }),
       ])
       queryClient.setQueryData(reservationKeys.detail(result.data.id), result.data)
       navigate(`/book/confirmation/${result.data.id}`, { replace: true })
