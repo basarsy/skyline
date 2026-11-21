@@ -135,6 +135,28 @@ describe('authentication and refresh', () => {
     expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBe('rt-new')
   })
 
+  it('replays without refreshing when the token already changed while the request was out', async () => {
+    const stale = fakeJwt({ ...user, expInSeconds: 1 })
+    const fresh = fakeJwt({ ...user, expInSeconds: 900 })
+    let refreshCalls = 0
+    server.use(
+      http.post('*/api/v1/auth/refresh', () => {
+        refreshCalls += 1
+        return fail(401, 'Invalid refresh token')
+      }),
+      http.get('*/api/v1/things', ({ request }) => {
+        if (request.headers.get('Authorization') === `Bearer ${fresh}`) return ok({ fresh: true })
+        // Another refresh lands while this request is out.
+        setTokens({ accessToken: fresh, refreshToken: 'rt-new', tokenType: 'Bearer', expiresIn: 900 })
+        return fail(401, 'Authentication required')
+      }),
+    )
+    setTokens({ accessToken: stale, refreshToken: 'rt-old', tokenType: 'Bearer', expiresIn: 1 })
+
+    await expect(apiFetch('/things')).resolves.toEqual({ fresh: true })
+    expect(refreshCalls).toBe(0)
+  })
+
   it('logs out when the refresh fails, and surfaces the 401', async () => {
     server.use(
       http.post('*/api/v1/auth/refresh', () => fail(401, 'Invalid refresh token')),

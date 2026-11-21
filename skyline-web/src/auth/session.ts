@@ -6,11 +6,16 @@ import {
   clearSession,
   getAuthState,
   markAnonymous,
+  onSignedOutElsewhere,
   readRefreshToken,
   refreshSession,
+  revokeRefreshToken,
   setTokens,
   setUser,
 } from './auth-store'
+
+// Another tab logged out: this tab's cached data belongs to the ended session.
+onSignedOutElsewhere(() => queryClient.clear())
 
 /** Loads GET /auth/me, the source of truth for email and role. */
 export async function loadCurrentUser(): Promise<UserResponse | null> {
@@ -53,10 +58,15 @@ export async function register(details: RegisterRequest): Promise<UserResponse |
   return login(details)
 }
 
-/** Client-side only: the API has no logout endpoint. */
+/**
+ * Logs out right away and revokes the refresh token on the server in the background. That call is
+ * best-effort: logging out never waits for it or fails because of it.
+ */
 export function logout() {
+  const refreshToken = readRefreshToken()
   clearSession()
   queryClient.clear()
+  if (refreshToken) revokeRefreshToken(refreshToken)
 }
 
 export function isLoggedIn() {
