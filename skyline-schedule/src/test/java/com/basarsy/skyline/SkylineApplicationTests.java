@@ -9,7 +9,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-@SpringBootTest
+// Scheduling on: the context must also start with the outbox timers (no Kafka here; the outbox stays empty).
+@SpringBootTest(properties = "skyline.outbox.scheduling-enabled=true")
 @ActiveProfiles("test")
 @Testcontainers
 class SkylineApplicationTests {

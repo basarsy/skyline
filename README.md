@@ -370,8 +370,9 @@ All endpoints return a consistent `ApiResponse<T>`:
 - License expiry is validated at assignment time
 
 **Flight Cancellation**
-- Cancelling a flight resets available seats and publishes a `FlightCancelledEvent` to Kafka (`skyline.flight.cancelled` topic)
-- The reservation service listens for these events via `FlightCancellationListener`
+- Cancelling a flight resets available seats and records a `FlightCancelledEvent` in the schedule service's `outbox_events` table, in the same transaction as the status change
+- A scheduled outbox publisher sends pending events to Kafka (`skyline.flight.cancelled` topic, keyed by flight id) and retries with backoff while Kafka is unreachable, so no cancellation is lost and the cancel request never waits on Kafka (`skyline.outbox.*` settings)
+- The reservation service listens for these events via `FlightCancellationListener`; delivery is at least once, which is safe because it only cancels reservations that are not cancelled yet
 
 ---
 
@@ -552,7 +553,7 @@ Java and TypeScript code, and Dependabot proposes weekly dependency updates.
 
 **Spring Cloud Gateway** — Single entry point on port 8000 routes traffic to the correct service based on URL path predicates.
 
-**Kafka for async events** — Flight cancellation events are published to Kafka, decoupling the schedule and reservation services for eventual consistency.
+**Kafka for async events** — Flight cancellation events are published to Kafka through a transactional outbox (no event is lost while Kafka is down), decoupling the schedule and reservation services for eventual consistency.
 
 **UUID primary keys** — avoids sequential ID enumeration, portable across services.
 

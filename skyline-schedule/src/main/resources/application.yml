@@ -26,14 +26,14 @@ spring:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      # The only producer is the outbox publisher, which sends the JSON stored in outbox_events as is
+      # (no type headers: consumers bind to their own DTOs).
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
       acks: all
       properties:
-        # Consumers bind to their own DTOs; don't leak producer class names into headers.
-        spring.json.add.type.headers: false
         enable.idempotence: true
-        # KafkaNotificationBridge retries each send on the request thread after commit; with the 60s default a
-        # broker outage would stall a flight cancellation for minutes. Fail fast instead and let the bridge retry.
+        # The publisher holds its claimed rows locked while it waits for each ack, so a broker outage should
+        # fail a send in seconds (the row is retried later), not after the 60s/120s defaults.
         max.block.ms: 5000
         delivery.timeout.ms: 9000
         request.timeout.ms: 4000
@@ -44,6 +44,17 @@ skyline:
     currency: ${SKYLINE_CURRENCY:EUR}
   internal:
     api-key: ${SKYLINE_INTERNAL_API_KEY}
+  # Transactional outbox for Kafka events (see OutboxPublisher).
+  outbox:
+    publish-interval: PT1S
+    batch-size: 100
+    # At least delivery.timeout.ms above, so the producer gives up before the publisher stops waiting.
+    send-timeout: 10s
+    retry-backoff: 1s
+    max-retry-backoff: 1m
+    error-after-attempts: 10
+    retention: 7d
+    cleanup-interval: PT1H
 
 jwt:
   secret: ${JWT_SECRET}
