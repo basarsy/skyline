@@ -209,6 +209,58 @@ class ReservationServiceImplTest {
         assertThat(response.getPassenger().userId()).isEqualTo(reservation.getPassenger().getUserId());
     }
 
+    @Test
+    void priceIsRoundedToCents() {
+        // 99.99 x 2.5 (business) x 1.15 (over 80% full) = 287.47125
+        FlightResponse busyFlight = FlightResponse.builder().id(FLIGHT_ID).status(FlightStatus.SCHEDULED)
+                .availableSeats(30).basePrice(new BigDecimal("99.99")) // 150 of 180 booked
+                .aircraft(new com.basarsy.skyline.reservation.client.dto.AircraftResponse(UUID.randomUUID(), "TC-TEST",
+                        new com.basarsy.skyline.reservation.client.dto.AircraftTypeSummary(
+                                UUID.randomUUID(), "Airbus", "A320", 180), null, 2020))
+                .build();
+        when(scheduleClient.getFlight(FLIGHT_ID)).thenReturn(busyFlight);
+        when(reservationRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(reservationMapper.toResponse(any())).thenReturn(new com.basarsy.skyline.reservation.dto.ReservationResponse());
+        var saved = org.mockito.ArgumentCaptor.forClass(Reservation.class);
+
+        service.bookFlight(new ReservationRequest(FLIGHT_ID,
+                new PassengerRequest("Ada", "Lovelace", "P123", LocalDate.of(1990, 1, 1), "TR"), CabinClass.BUSINESS));
+
+        verify(reservationRepository).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getTotalPrice()).isEqualTo(new BigDecimal("287.47"));
+    }
+
+    @Test
+    void anInternalServiceCallerIsForbiddenNotAServerError() {
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                "internal-service", null, List.of(new SimpleGrantedAuthority("ROLE_SERVICE"))));
+
+        assertThatThrownBy(() -> service.getMyReservations(org.springframework.data.domain.Pageable.unpaged()))
+                .isInstanceOfSatisfying(com.basarsy.skyline.common.exception.SkylineException.class,
+                        ex -> assertThat(ex.getStatus()).isEqualTo(org.springframework.http.HttpStatus.FORBIDDEN));
+    }
+
+    @Test
+    void anAnonymousCallerIsUnauthenticated() {
+        SecurityContextHolder.getContext().setAuthentication(new org.springframework.security.authentication
+                .AnonymousAuthenticationToken("key", "anonymousUser", List.of(new SimpleGrantedAuthority("ROLE_ANONYMOUS"))));
+
+        assertThatThrownBy(() -> service.getMyReservations(org.springframework.data.domain.Pageable.unpaged()))
+                .isInstanceOfSatisfying(com.basarsy.skyline.common.exception.SkylineException.class,
+                        ex -> assertThat(ex.getStatus()).isEqualTo(org.springframework.http.HttpStatus.UNAUTHORIZED));
+    }
+
+    @Test
+    void staffCanReadAnyReservationWithoutBeingAUser() {
+        Reservation reservation = existingReservation(UUID.randomUUID());
+        when(reservationRepository.findById(reservation.getId())).thenReturn(Optional.of(reservation));
+        when(reservationMapper.toResponse(reservation)).thenReturn(responseWithPassenger(reservation));
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                "staff", null, List.of(new SimpleGrantedAuthority("ROLE_STAFF"))));
+
+        assertThat(service.getReservation(reservation.getId())).isNotNull();
+    }
+
     private static Reservation existingReservation(UUID ownerId) {
         Reservation reservation = existingReservation();
         reservation.getPassenger().setUserId(ownerId);

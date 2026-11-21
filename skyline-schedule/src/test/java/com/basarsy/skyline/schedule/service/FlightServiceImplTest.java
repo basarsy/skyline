@@ -224,6 +224,69 @@ class FlightServiceImplTest {
         assertThat(flight.getAircraftId()).isEqualTo(other);
     }
 
+    @Test
+    void changingAircraftKeepsExistingBookingsAgainstTheNewCapacity() {
+        Flight flight = flight(FlightStatus.SCHEDULED); // 180 seats, 150 available: 30 booked
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+        UUID bigger = UUID.randomUUID();
+        when(fleetClient.getAircraft(bigger)).thenReturn(aircraft(bigger, AircraftStatus.ACTIVE, 220));
+
+        service.updateFlight(flight.getId(), request(bigger));
+
+        assertThat(flight.getAvailableSeats()).isEqualTo(190);
+    }
+
+    @Test
+    void keepingTheAircraftLeavesAvailableSeatsAlone() {
+        Flight flight = flight(FlightStatus.SCHEDULED);
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+
+        service.updateFlight(flight.getId(), request(AIRCRAFT_ID));
+
+        assertThat(flight.getAvailableSeats()).isEqualTo(150);
+    }
+
+    @Test
+    void anAircraftTooSmallForTheExistingBookingsIsRefused() {
+        Flight flight = flight(FlightStatus.SCHEDULED); // 30 booked
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+        UUID small = UUID.randomUUID();
+        when(fleetClient.getAircraft(small)).thenReturn(aircraft(small, AircraftStatus.ACTIVE, 20));
+
+        assertThatThrownBy(() -> service.updateFlight(flight.getId(), request(small)))
+                .isInstanceOf(SkylineException.class)
+                .extracting(e -> ((SkylineException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(flight.getAircraftId()).isEqualTo(AIRCRAFT_ID);
+        assertThat(flight.getAvailableSeats()).isEqualTo(150);
+        verify(repository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void decrementOnlyHoldsSeatsOnBookableFlights() {
+        UUID id = UUID.randomUUID();
+        when(repository.decrementSeat(eq(id), eq(FlightServiceImpl.BOOKABLE_STATUSES), any())).thenReturn(1);
+
+        service.decrementSeat(id);
+
+        verify(repository).decrementSeat(eq(id), eq(FlightServiceImpl.BOOKABLE_STATUSES), any());
+    }
+
+    @Test
+    void decrementNamesWhyNoSeatWasHeld() {
+        Flight cancelled = flight(FlightStatus.CANCELLED);
+        when(repository.findById(cancelled.getId())).thenReturn(Optional.of(cancelled));
+        assertThatThrownBy(() -> service.decrementSeat(cancelled.getId()))
+                .isInstanceOf(SkylineException.class)
+                .hasMessage("Cannot book a flight in status: CANCELLED");
+
+        Flight full = flight(FlightStatus.SCHEDULED);
+        when(repository.findById(full.getId())).thenReturn(Optional.of(full));
+        assertThatThrownBy(() -> service.decrementSeat(full.getId()))
+                .isInstanceOf(SkylineException.class)
+                .hasMessage("Flight is fully booked")
+                .extracting(e -> ((SkylineException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT);
+    }
+
     static FlightRequest request(UUID aircraftId) {
         LocalDateTime departure = LocalDateTime.of(2030, 6, 1, 9, 0);
         return new FlightRequest("SK200", ROUTE_ID, aircraftId, departure, departure.plusHours(4),
@@ -239,7 +302,11 @@ class FlightServiceImplTest {
     }
 
     static AircraftResponse aircraft(UUID id, AircraftStatus status) {
-        return new AircraftResponse(id, "TC-JFA", new AircraftTypeSummary(UUID.randomUUID(), "Airbus", "A320neo", 180),
+        return aircraft(id, status, 180);
+    }
+
+    static AircraftResponse aircraft(UUID id, AircraftStatus status, int totalSeats) {
+        return new AircraftResponse(id, "TC-JFA", new AircraftTypeSummary(UUID.randomUUID(), "Airbus", "A320neo", totalSeats),
                 status, 2020);
     }
 

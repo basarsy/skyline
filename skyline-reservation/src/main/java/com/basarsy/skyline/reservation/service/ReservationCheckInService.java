@@ -9,8 +9,14 @@ import com.basarsy.skyline.reservation.entity.Reservation;
 import com.basarsy.skyline.reservation.entity.ReservationStatus;
 import com.basarsy.skyline.reservation.mapper.ReservationMapper;
 import com.basarsy.skyline.reservation.repository.ReservationRepository;
+import com.basarsy.skyline.reservation.client.dto.FlightStatus;
+import java.security.SecureRandom;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.UUID;
+import java.util.random.RandomGenerator;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -20,10 +26,11 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * Checks a reservation in: assigns a seat (if it has none) and marks it CHECKED_IN in one transaction.
  *
- * <p>Seat uniqueness is enforced by the (flight_id, seat_number) unique constraint. Two concurrent
- * check-ins can pick the same free seat; the loser's flush fails, its transaction rolls back, and it
- * retries with a fresh view of the taken seats. The operation is idempotent: an already checked-in
- * reservation is returned unchanged, so callers can safely retry after a partial failure.
+ * <p>Seat uniqueness is enforced by the (flight_id, seat_number) unique constraint. Seats are picked at
+ * random among the free ones, so concurrent check-ins rarely pick the same seat; if they do, the loser's
+ * flush fails, its transaction rolls back, and it retries with a fresh view of the taken seats. The
+ * operation is idempotent: an already checked-in reservation is returned unchanged, so callers can
+ * safely retry after a partial failure.
  */
 @Slf4j
 @Service
@@ -31,20 +38,35 @@ public class ReservationCheckInService {
 
     static final int MAX_ATTEMPTS = 3;
 
+    /** Check-in is open while the flight still takes passengers; the same statuses as booking. */
+    static final Set<FlightStatus> CHECK_IN_STATUSES = EnumSet.of(FlightStatus.SCHEDULED, FlightStatus.DELAYED);
+
     private final ReservationRepository reservationRepository;
     private final ScheduleClient scheduleClient;
     private final ReservationMapper reservationMapper;
     private final TransactionTemplate transactionTemplate;
+    private final RandomGenerator random;
 
+    @Autowired
     public ReservationCheckInService(
             ReservationRepository reservationRepository,
             ScheduleClient scheduleClient,
             ReservationMapper reservationMapper,
             PlatformTransactionManager transactionManager) {
+        this(reservationRepository, scheduleClient, reservationMapper, transactionManager, new SecureRandom());
+    }
+
+    ReservationCheckInService(
+            ReservationRepository reservationRepository,
+            ScheduleClient scheduleClient,
+            ReservationMapper reservationMapper,
+            PlatformTransactionManager transactionManager,
+            RandomGenerator random) {
         this.reservationRepository = reservationRepository;
         this.scheduleClient = scheduleClient;
         this.reservationMapper = reservationMapper;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.random = random;
     }
 
     public ReservationResponse checkIn(UUID reservationId) {
@@ -65,6 +87,13 @@ public class ReservationCheckInService {
                 .orElseThrow(() -> new ResourceNotFoundException("Reservation not found"));
         FlightResponse flight = scheduleClient.getFlight(reservation.getFlightId());
 
+        // Before the idempotent return: until the cancellation event arrives, a cancelled flight's
+        // reservations still look CHECKED_IN here, and must not yield a seat (or boarding pass).
+        if (flight == null || !CHECK_IN_STATUSES.contains(flight.getStatus())) {
+            throw new SkylineException(
+                    "Check-in is closed for this flight. Flight status: " + (flight == null ? null : flight.getStatus()),
+                    HttpStatus.UNPROCESSABLE_ENTITY);
+        }
         if (reservation.getStatus() == ReservationStatus.CHECKED_IN) {
             return toResponse(reservation, flight);
         }
@@ -75,7 +104,8 @@ public class ReservationCheckInService {
         }
 
         if (reservation.getSeatNumber() == null) {
-            String seat = SeatMap.firstFree(totalSeats(flight), reservationRepository.findAssignedSeats(reservation.getFlightId()))
+            String seat = SeatMap.randomFree(totalSeats(flight),
+                            reservationRepository.findAssignedSeats(reservation.getFlightId()), random)
                     .orElseThrow(() -> new SkylineException("No seats left on this flight", HttpStatus.CONFLICT));
             reservation.setSeatNumber(seat);
         }

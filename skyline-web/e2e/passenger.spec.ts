@@ -38,12 +38,12 @@ test('register, search, book, check in and get a boarding pass', async ({ page, 
   // The live stack may hold many flights that day: load more until ours is listed.
   const select = page.getByRole('link', { name: `Select flight ${flight.flightNumber}` })
   await expect(page.getByRole('heading', { name: /\d+ flights? from IST to LHR/ })).toBeVisible()
-  const loadMore = page.getByRole('button', { name: 'Load more' })
+  // While a page is loading the button is disabled, and after the last page it's gone.
+  const loadMore = page.getByRole('button', { name: 'Load more', disabled: false })
   for (let i = 0; i < 50 && !(await select.isVisible()); i += 1) {
-    if (!(await loadMore.isVisible())) break
-    // While a page is loading the button is disabled; wait instead of clicking.
-    if (await loadMore.isEnabled()) await loadMore.click()
-    else await page.waitForTimeout(250)
+    await expect(select.or(loadMore).first()).toBeVisible()
+    if (await select.isVisible()) break
+    await loadMore.click()
   }
   await select.click()
 

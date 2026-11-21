@@ -13,7 +13,7 @@ import heroPhoto from '@/assets/photos/hero-wing.webp'
 import istanbulPhoto from '@/assets/photos/istanbul.webp'
 import londonPhoto from '@/assets/photos/london.webp'
 import newYorkPhoto from '@/assets/photos/new-york.webp'
-import { FARE_SCAN_DAYS, useLowestFares, type LowestFare } from './lowest-fares'
+import { FARE_SCAN_DAYS, useLowestFares, type FareResult } from './lowest-fares'
 import { useRoutes } from './queries'
 import { SearchCard, type SearchValues } from './search-card'
 
@@ -242,10 +242,14 @@ function destinationDetail({ airport, inbound }: Destination) {
   return `Direct from ${inbound.map((route) => route.origin.city).join(', ')}`
 }
 
-/** "from €120", a placeholder while the fare scan runs, or "Search" when nothing is bookable this week. */
-function FareOrSearch({ fare }: { fare: LowestFare | null | undefined }) {
-  if (fare === undefined) return <Skeleton className="h-10 w-20" />
-  if (fare === null) {
+/**
+ * "from €120", a placeholder while the fare scan runs, "Search" when nothing is bookable this week, and nothing
+ * when the fare is unknown (a lookup failed): better no figure than a wrong one.
+ */
+function FareOrSearch({ fare }: { fare: FareResult }) {
+  if (fare.state === 'loading') return <Skeleton className="h-10 w-20" />
+  if (fare.state === 'unknown') return null
+  if (fare.state === 'none') {
     return (
       <span className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-primary">
         Search
@@ -271,8 +275,8 @@ function DestinationCard({
   onPick,
 }: {
   destination: Destination
-  /** Lowest fare over the direct routes into this airport; null when none is bookable. */
-  fare: LowestFare | null | undefined
+  /** Lowest fare over the direct routes into this airport. */
+  fare: FareResult
   onPick: (d: Destination) => void
 }) {
   const { airport } = destination
@@ -325,19 +329,10 @@ function Destinations({ onPick }: { onPick: (d: Destination) => void }) {
       Number(b.inbound.length > 0) - Number(a.inbound.length > 0) || a.airport.city.localeCompare(b.airport.city),
   )
   const shown = destinations.slice(0, 6)
-  const fares = useLowestFares(
+  const lowestFare = useLowestFares(
     shown.flatMap((destination) => destination.inbound),
     inView,
   )
-  const fareFor = (destination: Destination): LowestFare | null | undefined => {
-    if (destination.inbound.length === 0) return null
-    const all = destination.inbound.map((route) => fares.get(route.id))
-    if (all.some((fare) => fare === undefined)) return undefined
-    return all.reduce<LowestFare | null>(
-      (best, fare) => (fare && (!best || fare.amount < best.amount) ? fare : best),
-      null,
-    )
-  }
   if (airports.isError || (!airports.isLoading && !airports.data?.length)) return null
   return (
     <section ref={sectionRef} aria-labelledby="destinations" className="flex flex-col gap-5">
@@ -356,7 +351,7 @@ function Destinations({ onPick }: { onPick: (d: Destination) => void }) {
             ))
           : shown.map((destination, index) => (
               <Stagger key={destination.airport.id} index={index} className="w-72 shrink-0 snap-start sm:w-auto">
-                <DestinationCard destination={destination} fare={fareFor(destination)} onPick={onPick} />
+                <DestinationCard destination={destination} fare={lowestFare(destination.inbound)} onPick={onPick} />
               </Stagger>
             ))}
       </div>

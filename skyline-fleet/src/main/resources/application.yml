@@ -4,15 +4,16 @@ server:
 spring:
   application:
     name: skyline-fleet
+  config:
+    import: classpath:skyline-common.yml
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5434/skyline_fleet}
     username: ${DATABASE_USERNAME:skyline_user}
-    password: ${DATABASE_PASSWORD:skyline_pass}
+    password: ${DATABASE_PASSWORD:${POSTGRES_PASSWORD:}}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
       ddl-auto: validate
-    show-sql: true
     open-in-view: false
     properties:
       hibernate:
@@ -25,10 +26,9 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
   cache:
     type: redis
-    redis:
-      time-to-live: 15m
 
 skyline:
   internal:

@@ -4,15 +4,16 @@ server:
 spring:
   application:
     name: skyline-schedule
+  config:
+    import: classpath:skyline-common.yml
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5436/skyline_schedule}
     username: ${DATABASE_USERNAME:skyline_user}
-    password: ${DATABASE_PASSWORD:skyline_pass}
+    password: ${DATABASE_PASSWORD:${POSTGRES_PASSWORD:}}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
       ddl-auto: validate
-    show-sql: true
     open-in-view: false
     properties:
       hibernate:
@@ -21,14 +22,6 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration/schedule
-  cache:
-    type: redis
-    redis:
-      time-to-live: 15m
-  data:
-    redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
@@ -39,6 +32,11 @@ spring:
         # Consumers bind to their own DTOs; don't leak producer class names into headers.
         spring.json.add.type.headers: false
         enable.idempotence: true
+        # KafkaNotificationBridge retries each send on the request thread after commit; with the 60s default a
+        # broker outage would stall a flight cancellation for minutes. Fail fast instead and let the bridge retry.
+        max.block.ms: 5000
+        delivery.timeout.ms: 9000
+        request.timeout.ms: 4000
 
 skyline:
   pricing:

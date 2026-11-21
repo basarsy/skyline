@@ -14,14 +14,17 @@ import com.basarsy.skyline.reservation.client.ScheduleClient;
 import com.basarsy.skyline.reservation.client.dto.AircraftResponse;
 import com.basarsy.skyline.reservation.client.dto.AircraftTypeSummary;
 import com.basarsy.skyline.reservation.client.dto.FlightResponse;
+import com.basarsy.skyline.reservation.client.dto.FlightStatus;
 import com.basarsy.skyline.reservation.dto.ReservationResponse;
 import com.basarsy.skyline.reservation.entity.Reservation;
 import com.basarsy.skyline.reservation.entity.ReservationStatus;
 import com.basarsy.skyline.reservation.mapper.ReservationMapper;
 import com.basarsy.skyline.reservation.repository.ReservationRepository;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.random.RandomGenerator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -36,7 +39,8 @@ class ReservationCheckInServiceTest {
     private final ScheduleClient scheduleClient = mock(ScheduleClient.class);
     private final ReservationMapper mapper = mock(ReservationMapper.class);
     private final ReservationCheckInService service =
-            new ReservationCheckInService(repository, scheduleClient, mapper, mock(PlatformTransactionManager.class));
+            new ReservationCheckInService(repository, scheduleClient, mapper, mock(PlatformTransactionManager.class),
+                    () -> 0L); // always the first free seat, so assertions are deterministic
 
     private Reservation reservation;
 
@@ -133,7 +137,8 @@ class ReservationCheckInServiceTest {
 
     @Test
     void refusesToGuessSeatMapWhenAircraftIsUnknown() {
-        when(scheduleClient.getFlight(FLIGHT_ID)).thenReturn(FlightResponse.builder().id(FLIGHT_ID).build());
+        when(scheduleClient.getFlight(FLIGHT_ID))
+                .thenReturn(FlightResponse.builder().id(FLIGHT_ID).status(FlightStatus.SCHEDULED).build());
 
         assertThatThrownBy(() -> service.checkIn(reservation.getId()))
                 .isInstanceOfSatisfying(SkylineException.class,
@@ -146,14 +151,67 @@ class ReservationCheckInServiceTest {
         assertThat(SeatMap.seatAt(5)).isEqualTo("1F");
         assertThat(SeatMap.seatAt(6)).isEqualTo("2A");
         assertThat(SeatMap.seatAt(179)).isEqualTo("30F");
-        assertThat(SeatMap.firstFree(7, Set.of("1A", "1B", "1C", "1D", "1E", "1F"))).contains("2A");
-        assertThat(SeatMap.firstFree(6, Set.of("1A", "1B", "1C", "1D", "1E", "1F"))).isEmpty();
+        RandomGenerator any = new java.util.Random(42);
+        assertThat(SeatMap.randomFree(7, Set.of("1A", "1B", "1C", "1D", "1E", "1F"), any)).contains("2A");
+        assertThat(SeatMap.randomFree(6, Set.of("1A", "1B", "1C", "1D", "1E", "1F"), any)).isEmpty();
+    }
+
+    @Test
+    void picksARandomFreeSeatSoConcurrentCheckInsSpreadOut() {
+        RandomGenerator lastFree = new RandomGenerator() {
+            @Override
+            public long nextLong() {
+                return 0L;
+            }
+
+            @Override
+            public int nextInt(int bound) {
+                return bound - 1;
+            }
+        };
+
+        assertThat(SeatMap.randomFree(12, Set.of("2F"), lastFree)).contains("2E");
+
+        Set<String> picked = new java.util.HashSet<>();
+        RandomGenerator random = new java.util.Random(7);
+        for (int i = 0; i < 50; i++) {
+            picked.add(SeatMap.randomFree(180, Set.of(), random).orElseThrow());
+        }
+        assertThat(picked).as("not always the same seat").hasSizeGreaterThan(1);
+    }
+
+    @Test
+    void checkInIsClosedUnlessTheFlightIsScheduledOrDelayed() {
+        for (FlightStatus status : List.of(FlightStatus.CANCELLED, FlightStatus.BOARDING, FlightStatus.DEPARTED)) {
+            FlightResponse flight = flightWithSeats(12);
+            flight.setStatus(status);
+            when(scheduleClient.getFlight(FLIGHT_ID)).thenReturn(flight);
+
+            assertThatThrownBy(() -> service.checkIn(reservation.getId()))
+                    .isInstanceOfSatisfying(SkylineException.class,
+                            ex -> assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY));
+        }
+        verify(repository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void aCheckedInReservationOnACancelledFlightIsNotReturnedAsCheckedIn() {
+        // The cancellation event may not have reached this service yet.
+        reservation.setStatus(ReservationStatus.CHECKED_IN);
+        reservation.setSeatNumber("4D");
+        FlightResponse cancelled = flightWithSeats(12);
+        cancelled.setStatus(FlightStatus.CANCELLED);
+        when(scheduleClient.getFlight(FLIGHT_ID)).thenReturn(cancelled);
+
+        assertThatThrownBy(() -> service.checkIn(reservation.getId()))
+                .isInstanceOfSatisfying(SkylineException.class,
+                        ex -> assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY));
     }
 
     private static FlightResponse flightWithSeats(int totalSeats) {
         AircraftResponse aircraft = new AircraftResponse(
                 UUID.randomUUID(), "TC-TEST", new AircraftTypeSummary(UUID.randomUUID(), "Airbus", "A320", totalSeats),
                 null, 2020);
-        return FlightResponse.builder().id(FLIGHT_ID).aircraft(aircraft).build();
+        return FlightResponse.builder().id(FLIGHT_ID).status(FlightStatus.SCHEDULED).aircraft(aircraft).build();
     }
 }

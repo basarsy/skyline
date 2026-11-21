@@ -82,6 +82,15 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.error("Request conflicts with existing data"));
     }
 
+    // Feign raises this when another service can't be reached (connection refused, timeout): that is a
+    // temporary unavailability, not a bug in this service.
+    @ExceptionHandler(feign.RetryableException.class)
+    public ResponseEntity<ApiResponse<Void>> handleDownstreamUnavailable(feign.RetryableException ex) {
+        log.warn("Downstream service unavailable: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ApiResponse.error("A required service is temporarily unavailable, please retry"));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleGeneric(Exception ex) {
         log.error("Unhandled exception", ex);

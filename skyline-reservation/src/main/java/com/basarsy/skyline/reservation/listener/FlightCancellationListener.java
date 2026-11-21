@@ -3,6 +3,7 @@ package com.basarsy.skyline.reservation.listener;
 import com.basarsy.skyline.reservation.client.dto.FlightCancelledEvent;
 import com.basarsy.skyline.reservation.entity.ReservationStatus;
 import com.basarsy.skyline.reservation.repository.ReservationRepository;
+import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -22,7 +23,7 @@ public class FlightCancellationListener {
         log.info("Handling flight cancellation event for flight: {}", event.flightId());
         
         int updated = reservationRepository.updateStatusByFlightId(
-                event.flightId(), ReservationStatus.CANCELLED);
+                event.flightId(), ReservationStatus.CANCELLED, LocalDateTime.now());
                 
         log.info("Updated {} reservations to CANCELLED for flight: {}", updated, event.flightId());
     }

@@ -2,7 +2,6 @@ package com.basarsy.skyline.user.security;
 
 import com.basarsy.skyline.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
@@ -14,7 +13,7 @@ public class SkylineUserDetailsService implements UserDetailsService {
     private final UserRepository userRepository;
 
     @Override
-    public UserDetails loadUserByUsername(String username) {
+    public SkylineUserDetails loadUserByUsername(String username) {
         return userRepository
                 .findByEmail(username)
                 .map(SkylineUserDetails::new)

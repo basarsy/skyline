@@ -12,14 +12,19 @@ import static org.mockito.Mockito.when;
 import com.basarsy.skyline.common.exception.ResourceNotFoundException;
 import com.basarsy.skyline.common.exception.SkylineException;
 import com.basarsy.skyline.crew.client.ScheduleClient;
+import com.basarsy.skyline.crew.client.dto.FlightResponse;
+import com.basarsy.skyline.crew.client.dto.FlightStatus;
 import com.basarsy.skyline.crew.dto.CrewMemberRequest;
 import com.basarsy.skyline.crew.dto.CrewMemberResponse;
+import com.basarsy.skyline.crew.dto.FlightCrewAssignmentRequest;
 import com.basarsy.skyline.crew.entity.CrewMember;
 import com.basarsy.skyline.crew.entity.CrewRole;
+import com.basarsy.skyline.crew.entity.FlightCrew;
 import com.basarsy.skyline.crew.mapper.CrewMapperImpl;
 import com.basarsy.skyline.crew.repository.CrewMemberRepository;
 import com.basarsy.skyline.crew.repository.FlightCrewRepository;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -31,8 +36,76 @@ import org.springframework.http.HttpStatus;
 class CrewServiceImplTest {
 
     private final CrewMemberRepository members = mock(CrewMemberRepository.class);
-    private final CrewServiceImpl service = new CrewServiceImpl(members, mock(FlightCrewRepository.class),
-            mock(ScheduleClient.class), new CrewMapperImpl());
+    private final FlightCrewRepository assignments = mock(FlightCrewRepository.class);
+    private final ScheduleClient scheduleClient = mock(ScheduleClient.class);
+    private final CrewServiceImpl service = new CrewServiceImpl(members, assignments, scheduleClient,
+            new CrewMapperImpl());
+
+    private static final LocalDateTime DEPARTURE = LocalDateTime.of(2030, 6, 1, 9, 0);
+
+    @Test
+    void aCrewMemberCanOnlyBeAssignedInTheirOwnRole() {
+        CrewMember attendant = crewMember(CrewRole.FLIGHT_ATTENDANT);
+        UUID flightId = stubFlight(FlightStatus.SCHEDULED, DEPARTURE);
+
+        assertThatThrownBy(() -> service.assignCrewToFlight(flightId,
+                new FlightCrewAssignmentRequest(attendant.getId(), CrewRole.CAPTAIN)))
+                .isInstanceOfSatisfying(SkylineException.class,
+                        ex -> assertThat(ex.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST));
+        verify(assignments, never()).save(any());
+    }
+
+    @Test
+    void cancelledAndArrivedFlightsDoNotBlockAnOverlappingAssignment() {
+        CrewMember captain = crewMember(CrewRole.CAPTAIN);
+        UUID flightId = stubFlight(FlightStatus.SCHEDULED, DEPARTURE);
+        UUID cancelled = stubFlight(FlightStatus.CANCELLED, DEPARTURE.plusHours(1));
+        UUID arrived = stubFlight(FlightStatus.ARRIVED, DEPARTURE.minusHours(1));
+        when(assignments.findByCrewMemberId(captain.getId()))
+                .thenReturn(List.of(assignment(cancelled, captain), assignment(arrived, captain)));
+        when(assignments.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.assignCrewToFlight(flightId, new FlightCrewAssignmentRequest(captain.getId(), CrewRole.CAPTAIN));
+
+        verify(assignments).save(any());
+    }
+
+    @Test
+    void anOperatingOverlappingFlightStillBlocksTheAssignment() {
+        CrewMember captain = crewMember(CrewRole.CAPTAIN);
+        UUID flightId = stubFlight(FlightStatus.SCHEDULED, DEPARTURE);
+        UUID delayed = stubFlight(FlightStatus.DELAYED, DEPARTURE.plusHours(1));
+        when(assignments.findByCrewMemberId(captain.getId())).thenReturn(List.of(assignment(delayed, captain)));
+
+        assertThatThrownBy(() -> service.assignCrewToFlight(flightId,
+                new FlightCrewAssignmentRequest(captain.getId(), CrewRole.CAPTAIN)))
+                .isInstanceOfSatisfying(SkylineException.class,
+                        ex -> assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT));
+    }
+
+    private CrewMember crewMember(CrewRole role) {
+        CrewMember member = new CrewMember();
+        member.setId(UUID.randomUUID());
+        member.setRole(role);
+        member.setLicenseExpiryDate(LocalDate.of(2035, 1, 1));
+        when(members.findById(member.getId())).thenReturn(Optional.of(member));
+        return member;
+    }
+
+    private UUID stubFlight(FlightStatus status, LocalDateTime departure) {
+        UUID id = UUID.randomUUID();
+        when(scheduleClient.getFlight(id)).thenReturn(FlightResponse.builder().id(id).status(status)
+                .departureTime(departure).arrivalTime(departure.plusHours(4)).build());
+        return id;
+    }
+
+    private static FlightCrew assignment(UUID flightId, CrewMember member) {
+        FlightCrew assignment = new FlightCrew();
+        assignment.setFlightId(flightId);
+        assignment.setCrewMember(member);
+        assignment.setRole(member.getRole());
+        return assignment;
+    }
 
     @Test
     void duplicateEmployeeNumberIsA409WithAClearMessage() {

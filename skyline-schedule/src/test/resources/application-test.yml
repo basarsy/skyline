@@ -8,10 +8,6 @@ spring:
     enabled: true
   cache:
     type: none
-  data:
-    redis:
-      repositories:
-        enabled: false
   kafka:
     admin:
       auto-create: false

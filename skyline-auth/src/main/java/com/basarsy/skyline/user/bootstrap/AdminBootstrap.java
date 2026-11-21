@@ -3,6 +3,7 @@ package com.basarsy.skyline.user.bootstrap;
 import com.basarsy.skyline.user.entity.User;
 import com.basarsy.skyline.user.entity.UserRole;
 import com.basarsy.skyline.user.repository.UserRepository;
+import java.nio.charset.StandardCharsets;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -26,6 +27,7 @@ import org.springframework.util.StringUtils;
 public class AdminBootstrap implements ApplicationRunner {
 
     private static final int MIN_PASSWORD_LENGTH = 12;
+    private static final int MAX_PASSWORD_BYTES = 72;
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -46,6 +48,11 @@ public class AdminBootstrap implements ApplicationRunner {
         if (adminPassword.length() < MIN_PASSWORD_LENGTH) {
             throw new IllegalStateException(
                     "skyline.bootstrap.admin.password must be at least " + MIN_PASSWORD_LENGTH + " characters");
+        }
+        // BCrypt only takes 72 bytes and throws beyond that; say so instead of failing with its generic error.
+        if (adminPassword.getBytes(StandardCharsets.UTF_8).length > MAX_PASSWORD_BYTES) {
+            throw new IllegalStateException(
+                    "skyline.bootstrap.admin.password must be at most " + MAX_PASSWORD_BYTES + " bytes (UTF-8)");
         }
 
         String email = adminEmail.trim().toLowerCase();

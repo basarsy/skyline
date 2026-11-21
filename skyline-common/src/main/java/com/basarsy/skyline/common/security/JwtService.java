@@ -2,14 +2,17 @@ package com.basarsy.skyline.common.security;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.JwtParser;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import javax.crypto.SecretKey;
 import org.springframework.security.core.GrantedAuthority;
@@ -28,10 +31,12 @@ public class JwtService {
 
     private final JwtProperties jwtProperties;
     private final SecretKey signingKey;
+    private final JwtParser parser;
 
     public JwtService(JwtProperties jwtProperties) {
         this.jwtProperties = jwtProperties;
         this.signingKey = Keys.hmacShaKeyFor(jwtProperties.secret().getBytes(StandardCharsets.UTF_8));
+        this.parser = Jwts.parser().verifyWith(signingKey).build();
     }
 
     public String generateAccessToken(UserDetails userDetails) {
@@ -47,12 +52,38 @@ public class JwtService {
         return buildToken(extraClaims, userDetails.getUsername(), jwtProperties.accessTokenExpiryMs(), ACCESS_TOKEN_TYPE);
     }
 
-    public String generateRefreshToken(UserDetails userDetails) {
-        return buildToken(new HashMap<>(), userDetails.getUsername(), jwtProperties.refreshTokenExpiryMs(), REFRESH_TOKEN_TYPE);
+    /**
+     * A refresh token carrying {@code tokenId} as its {@code jti}, so the auth service can look it up, rotate and
+     * revoke it server-side.
+     */
+    public String generateRefreshToken(UserDetails userDetails, UUID tokenId) {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put(Claims.ID, tokenId.toString());
+        return buildToken(claims, userDetails.getUsername(), jwtProperties.refreshTokenExpiryMs(), REFRESH_TOKEN_TYPE);
+    }
+
+    public Duration refreshTokenExpiry() {
+        return Duration.ofMillis(jwtProperties.refreshTokenExpiryMs());
     }
 
     public String extractUsername(String token) {
         return parseClaims(token).getSubject();
+    }
+
+    /**
+     * The {@code jti} of a valid refresh token (one signature check), or empty for anything else: an access token, a
+     * forged, malformed or expired token, or a refresh token without a UUID {@code jti}.
+     */
+    public Optional<UUID> refreshTokenId(String token) {
+        try {
+            Claims claims = parseClaims(token);
+            if (!REFRESH_TOKEN_TYPE.equals(claims.get(TOKEN_TYPE_CLAIM, String.class)) || claims.getId() == null) {
+                return Optional.empty();
+            }
+            return Optional.of(UUID.fromString(claims.getId()));
+        } catch (InvalidTokenException | IllegalArgumentException ex) {
+            return Optional.empty();
+        }
     }
 
     public UUID extractUserId(String token) {
@@ -70,10 +101,6 @@ public class JwtService {
 
     public boolean isAccessToken(String token) {
         return ACCESS_TOKEN_TYPE.equals(parseClaims(token).get(TOKEN_TYPE_CLAIM, String.class));
-    }
-
-    public boolean isRefreshToken(String token) {
-        return REFRESH_TOKEN_TYPE.equals(parseClaims(token).get(TOKEN_TYPE_CLAIM, String.class));
     }
 
     public boolean isTokenValid(String token) {
@@ -106,11 +133,7 @@ public class JwtService {
 
     private Claims parseClaims(String token) {
         try {
-            return Jwts.parser()
-                    .verifyWith(signingKey)
-                    .build()
-                    .parseSignedClaims(token)
-                    .getPayload();
+            return parser.parseSignedClaims(token).getPayload();
         } catch (JwtException ex) {
             throw new InvalidTokenException("Invalid or expired token", ex);
         }

@@ -2,6 +2,7 @@ package com.basarsy.skyline.e2e;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.restassured.response.Response;
 import java.sql.DriverManager;
 import java.util.Map;
 import java.util.UUID;
@@ -30,7 +31,7 @@ class SecurityIT extends E2eTest {
     void disabledAccountCannotLogInOrRefresh() throws Exception {
         User user = registerPassenger("disabled");
 
-        try (var connection = DriverManager.getConnection(AUTH_DB_URL, "skyline_user", "skyline_pass");
+        try (var connection = DriverManager.getConnection(AUTH_DB_URL, AUTH_DB_USER, AUTH_DB_PASSWORD);
                 var statement = connection.prepareStatement("UPDATE users SET is_enabled = false WHERE email = ?")) {
             statement.setString(1, user.email());
             assertThat(statement.executeUpdate()).isEqualTo(1);
@@ -38,7 +39,46 @@ class SecurityIT extends E2eTest {
 
         String message = login(user.email(), PASSWORD).then().statusCode(401).extract().path("message");
         assertThat(message).as("same answer as a wrong password").isEqualTo("Invalid email or password");
-        api(null).body(Map.of("refreshToken", user.refreshToken())).post("/auth/refresh").then().statusCode(401);
+        refresh(user.refreshToken()).then().statusCode(401);
+    }
+
+    @Test
+    void refreshRotatesTheRefreshToken() {
+        User user = registerPassenger("rotate");
+
+        String rotated = refresh(user.refreshToken()).then().statusCode(200).extract().path("data.refreshToken");
+        assertThat(rotated).isNotEqualTo(user.refreshToken());
+
+        refresh(user.refreshToken()).then().statusCode(401);
+        // Within the reuse grace window, so the new token survives the replay of the old one.
+        String next = refresh(rotated).then().statusCode(200).extract().path("data.refreshToken");
+        assertThat(next).isNotBlank();
+    }
+
+    @Test
+    void refreshTokenIsDeadAfterLogout() {
+        User user = registerPassenger("logout");
+
+        authCall("/auth/logout", user.refreshToken()).then().statusCode(204);
+        authCall("/auth/logout", user.refreshToken()).then().statusCode(204);
+        authCall("/auth/logout", "not-a-token").then().statusCode(204);
+
+        refresh(user.refreshToken()).then().statusCode(401);
+    }
+
+    @Test
+    void refreshTokenIsNotAnAccessToken() {
+        User user = registerPassenger("bearer");
+
+        api(user.refreshToken()).get("/auth/me").then().statusCode(401);
+    }
+
+    private static Response refresh(String refreshToken) {
+        return authCall("/auth/refresh", refreshToken);
+    }
+
+    private static Response authCall(String path, String refreshToken) {
+        return api(null).body(Map.of("refreshToken", refreshToken)).post(path);
     }
 
     @Test

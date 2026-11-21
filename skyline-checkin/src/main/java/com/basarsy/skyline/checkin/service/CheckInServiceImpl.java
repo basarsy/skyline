@@ -2,6 +2,7 @@ package com.basarsy.skyline.checkin.service;
 
 import com.basarsy.skyline.checkin.client.ReservationClient;
 import com.basarsy.skyline.checkin.client.dto.FlightResponse;
+import com.basarsy.skyline.checkin.client.dto.FlightStatus;
 import com.basarsy.skyline.checkin.client.dto.ReservationResponse;
 import com.basarsy.skyline.checkin.client.dto.ReservationStatus;
 import com.basarsy.skyline.checkin.client.dto.RouteResponse;
@@ -16,6 +17,7 @@ import com.basarsy.skyline.common.exception.SkylineException;
 import com.basarsy.skyline.common.security.SkylineUserDetails;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.EnumSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -32,6 +34,8 @@ public class CheckInServiceImpl implements CheckInService {
 
     private static final Set<String> STAFF_ROLES = Set.of("ROLE_STAFF", "ROLE_ADMIN");
     private static final int GATE_COUNT = 20;
+    /** Flights still taking passengers (the same statuses as booking). */
+    private static final Set<FlightStatus> CHECK_IN_STATUSES = EnumSet.of(FlightStatus.SCHEDULED, FlightStatus.DELAYED);
 
     private final ReservationClient reservationClient;
     private final BoardingPassRepository boardingPassRepository;
@@ -51,10 +55,11 @@ public class CheckInServiceImpl implements CheckInService {
 
         Optional<BoardingPass> existing = boardingPassRepository.findByReservationId(reservation.id());
         if (existing.isPresent()) {
-            return enrichBoardingPassResponse(existing.get(), reservation);
+            return enrichBoardingPassResponse(requireValid(existing.get(), reservation), reservation);
         }
 
         validateReservationStatus(reservation);
+        validateFlightOpenForCheckIn(reservation);
         validateCheckInWindow(reservation);
 
         ReservationResponse checkedIn = reservationClient.checkIn(reservation.id());
@@ -70,7 +75,22 @@ public class CheckInServiceImpl implements CheckInService {
         ReservationResponse reservation = findOwnedReservation(pnr);
         BoardingPass boardingPass = boardingPassRepository.findByReservationId(reservation.id())
                 .orElseThrow(() -> new ResourceNotFoundException("Boarding pass not found"));
-        return enrichBoardingPassResponse(boardingPass, reservation);
+        return enrichBoardingPassResponse(requireValid(boardingPass, reservation), reservation);
+    }
+
+    /**
+     * A stored boarding pass is only good while the reservation is still checked in and the flight still
+     * operates: a cancelled reservation (or flight) must not keep yielding a pass. It stays valid while
+     * boarding, when passengers need it most.
+     */
+    private static BoardingPass requireValid(BoardingPass boardingPass, ReservationResponse reservation) {
+        if (reservation.status() != ReservationStatus.CHECKED_IN) {
+            throw new CheckInWindowException("Boarding pass is no longer valid. Reservation status: " + reservation.status());
+        }
+        if (reservation.flight().getStatus() == FlightStatus.CANCELLED) {
+            throw new CheckInWindowException("Boarding pass is no longer valid: the flight is cancelled.");
+        }
+        return boardingPass;
     }
 
     /**
@@ -137,6 +157,14 @@ public class CheckInServiceImpl implements CheckInService {
         if (reservation.status() != ReservationStatus.CONFIRMED && reservation.status() != ReservationStatus.CHECKED_IN) {
             throw new CheckInWindowException(
                     "Check-in is only allowed for CONFIRMED reservations. Current status: " + reservation.status());
+        }
+    }
+
+    /** New passes are only issued while the flight still takes passengers. */
+    private static void validateFlightOpenForCheckIn(ReservationResponse reservation) {
+        FlightStatus status = reservation.flight().getStatus();
+        if (!CHECK_IN_STATUSES.contains(status)) {
+            throw new CheckInWindowException("Check-in is closed for this flight. Flight status: " + status);
         }
     }
 

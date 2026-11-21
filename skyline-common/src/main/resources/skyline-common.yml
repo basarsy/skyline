@@ -1,0 +1,26 @@
+# Defaults shared by every Skyline service. Each service's application.yml pulls this in with
+# spring.config.import: classpath:skyline-common.yml
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Only health (incl. the liveness/readiness groups) and info are reachable over HTTP.
+        include: health, info
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState, db
+
+---
+# Local debugging: SPRING_PROFILES_ACTIVE=dev logs every SQL statement.
+spring:
+  config:
+    activate:
+      on-profile: dev
+  jpa:
+    show-sql: true

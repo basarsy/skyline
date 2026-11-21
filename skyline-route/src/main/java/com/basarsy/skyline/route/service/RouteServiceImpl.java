@@ -45,7 +45,9 @@ public class RouteServiceImpl implements RouteService {
     @Override
     @Transactional(readOnly = true)
     public List<RouteResponse> findByOriginAndDestination(String originIata, String destinationIata) {
-        return routeRepository.findByOrigin_IataCodeAndDestination_IataCode(originIata, destinationIata)
+        // IATA codes are stored upper-case; accept "ist" as well as "IST".
+        return routeRepository.findByOrigin_IataCodeAndDestination_IataCode(
+                        AirportServiceImpl.normalizeCode(originIata), AirportServiceImpl.normalizeCode(destinationIata))
                 .stream()
                 .map(routeMapper::toResponse)
                 .toList();
@@ -64,6 +66,11 @@ public class RouteServiceImpl implements RouteService {
         var destination = airportRepository
                 .findById(request.destinationAirportId())
                 .orElseThrow(() -> new ResourceNotFoundException("Destination airport not found"));
+        // The unique constraint still guards a concurrent duplicate; this check names the conflict.
+        if (routeRepository.existsByOrigin_IdAndDestination_Id(origin.getId(), destination.getId())) {
+            throw new SkylineException("Route from " + origin.getIataCode() + " to " + destination.getIataCode()
+                    + " already exists", HttpStatus.CONFLICT);
+        }
 
         var route = new Route();
         route.setOrigin(origin);

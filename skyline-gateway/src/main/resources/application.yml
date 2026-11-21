@@ -4,6 +4,12 @@ server:
 spring:
   application:
     name: skyline-gateway
+  data:
+    redis:
+      # Token buckets of the RequestRateLimiter routes below.
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
   cloud:
     gateway:
       server:
@@ -26,6 +32,26 @@ spring:
             # Should a downstream service ever add its own CORS headers, never send them twice.
             - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_UNIQUE
           routes:
+            # Anonymous endpoints that check a secret (password, refresh token, PNR) are rate limited per
+            # client IP so they cannot be brute-forced. These routes must stay ahead of the broader ones below,
+            # which match the same paths.
+            - id: auth-rate-limited
+              uri: ${AUTH_SERVICE_URL:http://localhost:8083}
+              predicates:
+                - Path=/api/v1/auth/login, /api/v1/auth/register, /api/v1/auth/refresh
+              filters:
+                - &rate-limiter
+                  name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@clientIpKeyResolver}"
+                    redis-rate-limiter.replenishRate: ${SKYLINE_RATE_LIMIT_REPLENISH:5}
+                    redis-rate-limiter.burstCapacity: ${SKYLINE_RATE_LIMIT_BURST:10}
+            - id: reservation-pnr-rate-limited
+              uri: ${RESERVATION_SERVICE_URL:http://localhost:8084}
+              predicates:
+                - Path=/api/v1/reservations/pnr/**
+              filters:
+                - *rate-limiter
             - id: fleet-service
               uri: ${FLEET_SERVICE_URL:http://localhost:8081}
               predicates:
@@ -54,3 +80,21 @@ spring:
               uri: ${SCHEDULE_SERVICE_URL:http://localhost:8080}
               predicates:
                 - Path=/api/v1/flights/**
+
+skyline:
+  rate-limit:
+    # Reverse proxies in front of the gateway whose X-Forwarded-For entry is trusted for the rate-limit key
+    # (0 = use the TCP peer address). See RateLimitConfig.
+    trusted-proxies: ${SKYLINE_RATE_LIMIT_TRUSTED_PROXIES:0}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # The gateway's own health and info only; no route forwards /actuator to a downstream service.
+        include: health, info
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true

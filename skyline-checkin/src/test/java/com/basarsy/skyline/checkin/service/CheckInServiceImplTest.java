@@ -12,6 +12,7 @@ import com.basarsy.skyline.checkin.client.ReservationClient;
 import com.basarsy.skyline.checkin.client.dto.AirportSummary;
 import com.basarsy.skyline.checkin.client.dto.CabinClass;
 import com.basarsy.skyline.checkin.client.dto.FlightResponse;
+import com.basarsy.skyline.checkin.client.dto.FlightStatus;
 import com.basarsy.skyline.checkin.client.dto.PassengerResponse;
 import com.basarsy.skyline.checkin.client.dto.ReservationResponse;
 import com.basarsy.skyline.checkin.client.dto.ReservationStatus;
@@ -199,6 +200,61 @@ class CheckInServiceImplTest {
     }
 
     @Test
+    void checkInIsRefusedUnlessTheFlightIsScheduledOrDelayed() {
+        loginAs(OWNER_ID, "ROLE_PASSENGER");
+        for (FlightStatus status : List.of(FlightStatus.CANCELLED, FlightStatus.BOARDING, FlightStatus.DEPARTED)) {
+            ReservationResponse confirmed = reservation(ReservationStatus.CONFIRMED, null, NOW_UTC.plusHours(24), status);
+            when(reservationClient.getReservationByPnr(PNR)).thenReturn(confirmed);
+            when(repository.findByReservationId(confirmed.id())).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.performCheckIn(new CheckInRequest(PNR)))
+                    .isInstanceOf(CheckInWindowException.class)
+                    .hasMessage("Check-in is closed for this flight. Flight status: " + status);
+        }
+        verify(reservationClient, never()).checkIn(any());
+    }
+
+    @Test
+    void aDelayedFlightCanStillBeCheckedIn() {
+        loginAs(OWNER_ID, "ROLE_PASSENGER");
+        ReservationResponse confirmed = reservation(ReservationStatus.CONFIRMED, null, NOW_UTC.plusHours(24), FlightStatus.DELAYED);
+        when(reservationClient.getReservationByPnr(PNR)).thenReturn(confirmed);
+        when(repository.findByReservationId(confirmed.id())).thenReturn(Optional.empty());
+        when(reservationClient.checkIn(confirmed.id())).thenReturn(reservation(ReservationStatus.CHECKED_IN, "5E"));
+
+        assertThat(service.performCheckIn(new CheckInRequest(PNR)).getSeatNumber()).isEqualTo("5E");
+    }
+
+    @Test
+    void aCancelledReservationNoLongerYieldsItsBoardingPass() {
+        loginAs(OWNER_ID, "ROLE_PASSENGER");
+        ReservationResponse cancelled = reservation(ReservationStatus.CANCELLED, null);
+        when(reservationClient.getReservationByPnr(PNR)).thenReturn(cancelled);
+        when(repository.findByReservationId(cancelled.id())).thenReturn(Optional.of(new BoardingPass()));
+
+        assertThatThrownBy(() -> service.performCheckIn(new CheckInRequest(PNR)))
+                .isInstanceOf(CheckInWindowException.class);
+        assertThatThrownBy(() -> service.getBoardingPass(PNR))
+                .isInstanceOf(CheckInWindowException.class);
+    }
+
+    @Test
+    void aCancelledFlightNoLongerYieldsBoardingPassesButBoardingDoes() {
+        loginAs(OWNER_ID, "ROLE_PASSENGER");
+        BoardingPass existing = new BoardingPass();
+        existing.setSeatNumber("3C");
+        when(repository.findByReservationId(RESERVATION_ID)).thenReturn(Optional.of(existing));
+
+        when(reservationClient.getReservationByPnr(PNR)).thenReturn(
+                reservation(ReservationStatus.CHECKED_IN, "3C", NOW_UTC.plusHours(24), FlightStatus.CANCELLED));
+        assertThatThrownBy(() -> service.getBoardingPass(PNR)).isInstanceOf(CheckInWindowException.class);
+
+        when(reservationClient.getReservationByPnr(PNR)).thenReturn(
+                reservation(ReservationStatus.CHECKED_IN, "3C", NOW_UTC.plusHours(24), FlightStatus.BOARDING));
+        assertThat(service.getBoardingPass(PNR).getSeatNumber()).isEqualTo("3C");
+    }
+
+    @Test
     void gateIsStablePerFlight() {
         assertThat(CheckInServiceImpl.gateFor(FLIGHT_ID)).isEqualTo(CheckInServiceImpl.gateFor(FLIGHT_ID));
         assertThat(CheckInServiceImpl.gateFor(FLIGHT_ID)).matches("G([1-9]|1[0-9]|20)");
@@ -211,11 +267,16 @@ class CheckInServiceImplTest {
     }
 
     private static ReservationResponse reservation(ReservationStatus status, String seat, LocalDateTime departureUtc) {
+        return reservation(status, seat, departureUtc, FlightStatus.SCHEDULED);
+    }
+
+    private static ReservationResponse reservation(ReservationStatus status, String seat, LocalDateTime departureUtc,
+            FlightStatus flightStatus) {
         RouteResponse route = new RouteResponse(UUID.randomUUID(),
                 new AirportSummary(UUID.randomUUID(), "IST", "Istanbul Airport", "Istanbul", "Turkey", "Europe/Istanbul"),
                 new AirportSummary(UUID.randomUUID(), "LHR", "Heathrow", "London", "UK", "Europe/London"), 2500, 240);
         FlightResponse flight = FlightResponse.builder()
-                .id(FLIGHT_ID).flightNumber("SK100").route(route)
+                .id(FLIGHT_ID).flightNumber("SK100").route(route).status(flightStatus)
                 .departureTime(departureUtc).build();
         PassengerResponse passenger = new PassengerResponse(UUID.randomUUID(), OWNER_ID, "Ada", "Lovelace",
                 "P123", LocalDate.of(1990, 1, 1), "TR");
