@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 class CheckInIT extends E2eTest {
 
     @Test
-    void passengersGetSequentialRealSeatsAndTheSameGate() {
+    void passengersGetDistinctRealSeatsAndTheSameGate() {
         String flightId = createFlight();
         User alice = registerPassenger("alice");
         User bob = registerPassenger("bob");
@@ -18,8 +18,11 @@ class CheckInIT extends E2eTest {
         var alicePass = checkIn(alice, aliceBooking).then().statusCode(200).extract().jsonPath();
         var bobPass = checkIn(bob, bobBooking).then().statusCode(200).extract().jsonPath();
 
-        assertThat(alicePass.getString("data.seatNumber")).isEqualTo("1A");
-        assertThat(bobPass.getString("data.seatNumber")).isEqualTo("1B");
+        // Seats are drawn at random from the free ones, so a check-in rush doesn't pile onto the same seat.
+        String aliceSeat = alicePass.getString("data.seatNumber");
+        String bobSeat = bobPass.getString("data.seatNumber");
+        assertThat(aliceSeat).matches("\\d+[A-F]");
+        assertThat(bobSeat).matches("\\d+[A-F]").isNotEqualTo(aliceSeat);
         assertThat(bobPass.getString("data.gate")).isEqualTo(alicePass.getString("data.gate"));
         assertThat(alicePass.getString("data.origin")).isEqualTo("IST");
         assertThat(alicePass.getString("data.destination")).isEqualTo("LHR");
