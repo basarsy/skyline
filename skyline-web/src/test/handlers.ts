@@ -13,7 +13,7 @@ import type {
   UserResponse,
   UserRole,
 } from '@/api/types'
-import { toApiDateTime } from '@/lib/format'
+import { formatDateInZone, toApiDateTime } from '@/lib/format'
 import { CABIN_MULTIPLIER, estimatePrice } from '@/lib/pricing'
 import {
   aircraft as seedAircraft,
@@ -450,7 +450,9 @@ export const handlers = [
     const sort = url.searchParams.get('sort') ?? 'departureTime,asc'
     const flights = db.flights
       .filter((f) => f.route?.origin.iataCode === origin && f.route.destination.iataCode === destination)
-      .filter((f) => f.departureTime.startsWith(date) && (f.status === 'SCHEDULED' || f.status === 'DELAYED'))
+      // Like the server: `date` is a calendar day at the origin airport.
+      .filter((f) => formatDateInZone(f.departureTime, f.route?.origin.timezone, 'yyyy-MM-dd') === date)
+      .filter((f) => f.status === 'SCHEDULED' || f.status === 'DELAYED')
       .sort((a, b) => (sort.endsWith('desc') ? -1 : 1) * a.departureTime.localeCompare(b.departureTime))
     return ok(page(flights, url))
   }),

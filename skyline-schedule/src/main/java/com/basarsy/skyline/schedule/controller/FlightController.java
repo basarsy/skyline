@@ -7,6 +7,8 @@ import com.basarsy.skyline.schedule.dto.FlightResponse;
 import com.basarsy.skyline.schedule.dto.UpdateFlightStatusRequest;
 import com.basarsy.skyline.schedule.entity.FlightStatus;
 import com.basarsy.skyline.schedule.service.FlightService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
 import java.util.Set;
@@ -38,10 +40,17 @@ public class FlightController {
 
     private final FlightService flightService;
 
+    /**
+     * Bookable flights between two airports on one day. {@code date} is a calendar day at the origin airport:
+     * a 01:30 departure from Istanbul (22:30 UTC the evening before) is found under the date Istanbul shows.
+     */
     @GetMapping
+    @Operation(summary = "Search bookable flights (SCHEDULED, DELAYED)")
     public ApiResponse<Page<FlightResponse>> searchFlights(
-            @RequestParam String origin,
-            @RequestParam String destination,
+            @Parameter(description = "Origin airport IATA code") @RequestParam String origin,
+            @Parameter(description = "Destination airport IATA code") @RequestParam String destination,
+            @Parameter(description = "Departure day (yyyy-MM-dd) in the origin airport's time zone; "
+                    + "a UTC day if the airport has no valid zone")
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
             Pageable pageable) {
         return ApiResponse.success("Flights retrieved successfully", flightService.searchFlights(origin, destination, date, pageable));

@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.basarsy.skyline.common.exception.SkylineException;
+import com.basarsy.skyline.common.notification.config.KafkaTopicConfig;
 import com.basarsy.skyline.common.pricing.PricingProperties;
 import com.basarsy.skyline.schedule.client.CrewClient;
 import com.basarsy.skyline.schedule.client.FleetClient;
@@ -27,6 +28,7 @@ import com.basarsy.skyline.schedule.event.FlightCancelledEvent;
 import com.basarsy.skyline.schedule.entity.FlightStatus;
 import com.basarsy.skyline.schedule.mapper.FlightMapper;
 import com.basarsy.skyline.schedule.mapper.FlightMapperImpl;
+import com.basarsy.skyline.schedule.outbox.Outbox;
 import com.basarsy.skyline.schedule.repository.FlightRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -37,7 +39,6 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -57,13 +58,13 @@ class FlightServiceImplTest {
     final RouteClient routeClient = mock(RouteClient.class);
     final CrewClient crewClient = mock(CrewClient.class);
     final FlightMapper mapper = new FlightMapperImpl();
-    final ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
+    final Outbox outbox = mock(Outbox.class);
 
     FlightServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new FlightServiceImpl(repository, fleetClient, routeClient, crewClient, mapper, events,
+        service = new FlightServiceImpl(repository, fleetClient, routeClient, crewClient, mapper, outbox,
                 new PricingProperties("EUR"));
         when(routeClient.getRoute(ROUTE_ID)).thenReturn(route());
         when(fleetClient.getAircraft(AIRCRAFT_ID)).thenReturn(aircraft(AIRCRAFT_ID, AircraftStatus.ACTIVE));
@@ -80,8 +81,21 @@ class FlightServiceImplTest {
         var page = service.searchFlights("IST", "LHR", LocalDate.of(2030, 6, 1), PageRequest.of(0, 20));
 
         assertThat(page.getContent()).extracting(f -> f.getStatus()).containsExactly(FlightStatus.DELAYED);
-        verify(repository).searchFlights(eq(List.of(ROUTE_ID)), eq(LocalDate.of(2030, 6, 1).atStartOfDay()), any(),
+        // 1 June in Istanbul (UTC+3), the origin, as UTC times.
+        verify(repository).searchFlights(eq(List.of(ROUTE_ID)), eq(LocalDateTime.of(2030, 5, 31, 21, 0)),
+                eq(LocalDateTime.of(2030, 6, 1, 21, 0)),
                 eq(java.util.EnumSet.of(FlightStatus.SCHEDULED, FlightStatus.DELAYED)), any());
+    }
+
+    @Test
+    void searchTreatsTheDateAsAUtcDayWhenTheOriginZoneIsUnusable() {
+        when(routeClient.searchRoutes("IST", "LHR")).thenReturn(List.of(route("Not/AZone")));
+        when(repository.searchFlights(any(), any(), any(), any(), any())).thenReturn(new PageImpl<>(List.of()));
+
+        service.searchFlights("IST", "LHR", LocalDate.of(2030, 6, 1), PageRequest.of(0, 20));
+
+        verify(repository).searchFlights(eq(List.of(ROUTE_ID)), eq(LocalDateTime.of(2030, 6, 1, 0, 0)),
+                eq(LocalDateTime.of(2030, 6, 2, 0, 0)), any(), any());
     }
 
     @Test
@@ -126,7 +140,8 @@ class FlightServiceImplTest {
 
         assertThat(response.getStatus()).isEqualTo(FlightStatus.CANCELLED);
         assertThat(flight.getAvailableSeats()).as("seats reset to capacity").isEqualTo(180);
-        verify(events).publishEvent(new FlightCancelledEvent(flight.getId()));
+        verify(outbox).append(KafkaTopicConfig.FLIGHT_CANCELLED_TOPIC, flight.getId(),
+                new FlightCancelledEvent(flight.getId()));
     }
 
     @Test
@@ -140,7 +155,7 @@ class FlightServiceImplTest {
                 .hasMessage("Only an admin can cancel a flight")
                 .extracting(e -> ((SkylineException) e).getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(flight.getStatus()).isEqualTo(FlightStatus.SCHEDULED);
-        verifyNoInteractions(events);
+        verifyNoInteractions(outbox);
     }
 
     @Test
@@ -151,7 +166,7 @@ class FlightServiceImplTest {
 
         assertThat(service.updateFlightStatus(flight.getId(), FlightStatus.DELAYED).getStatus())
                 .isEqualTo(FlightStatus.DELAYED);
-        verifyNoInteractions(events);
+        verifyNoInteractions(outbox);
     }
 
     @Test
@@ -163,7 +178,7 @@ class FlightServiceImplTest {
         assertThatThrownBy(() -> service.updateFlightStatus(flight.getId(), FlightStatus.CANCELLED))
                 .isInstanceOf(SkylineException.class)
                 .extracting(e -> ((SkylineException) e).getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
-        verifyNoInteractions(events);
+        verifyNoInteractions(outbox);
     }
 
     static void loginAs(String role) {
@@ -296,8 +311,12 @@ class FlightServiceImplTest {
     // ------------------------------------------------------------------ fixtures
 
     static RouteResponse route() {
+        return route("Europe/Istanbul");
+    }
+
+    static RouteResponse route(String originZone) {
         return new RouteResponse(ROUTE_ID,
-                new AirportSummary(UUID.randomUUID(), "IST", "Istanbul Airport", "Istanbul", "Turkey", "Europe/Istanbul"),
+                new AirportSummary(UUID.randomUUID(), "IST", "Istanbul Airport", "Istanbul", "Turkey", originZone),
                 new AirportSummary(UUID.randomUUID(), "LHR", "Heathrow", "London", "UK", "Europe/London"), 2500, 240);
     }
 

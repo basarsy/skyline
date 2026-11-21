@@ -2,12 +2,14 @@ package com.basarsy.skyline.schedule.service;
 
 import com.basarsy.skyline.common.exception.ResourceNotFoundException;
 import com.basarsy.skyline.common.exception.SkylineException;
+import com.basarsy.skyline.common.notification.config.KafkaTopicConfig;
 import com.basarsy.skyline.common.pricing.PricingProperties;
 import com.basarsy.skyline.schedule.client.FleetClient;
 import com.basarsy.skyline.schedule.client.RouteClient;
 import com.basarsy.skyline.schedule.client.CrewClient;
 import com.basarsy.skyline.schedule.client.dto.AircraftResponse;
 import com.basarsy.skyline.schedule.client.dto.AircraftStatus;
+import com.basarsy.skyline.schedule.client.dto.AirportSummary;
 import com.basarsy.skyline.schedule.client.dto.RouteResponse;
 import com.basarsy.skyline.schedule.dto.FlightBoardFilter;
 import com.basarsy.skyline.schedule.dto.FlightRequest;
@@ -15,12 +17,12 @@ import com.basarsy.skyline.schedule.dto.FlightResponse;
 import com.basarsy.skyline.schedule.entity.Flight;
 import com.basarsy.skyline.schedule.entity.FlightStatus;
 import com.basarsy.skyline.schedule.mapper.FlightMapper;
+import com.basarsy.skyline.schedule.outbox.Outbox;
 import com.basarsy.skyline.schedule.repository.FlightRepository;
 import com.basarsy.skyline.schedule.repository.FlightSpecifications;
 import com.basarsy.skyline.schedule.event.FlightCancelledEvent;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
@@ -30,7 +32,6 @@ import java.util.UUID;
 import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -52,7 +53,7 @@ public class FlightServiceImpl implements FlightService {
     private final RouteClient routeClient;
     private final CrewClient crewClient;
     private final FlightMapper flightMapper;
-    private final ApplicationEventPublisher eventPublisher;
+    private final Outbox outbox;
     private final PricingProperties pricing;
 
     @Override
@@ -141,21 +142,17 @@ public class FlightServiceImpl implements FlightService {
     @Override
     @Transactional(readOnly = true)
     public Page<FlightResponse> searchFlights(String origin, String destination, LocalDate date, Pageable pageable) {
-        LocalDateTime startOfDay = date.atStartOfDay();
-        LocalDateTime endOfDay = date.atTime(LocalTime.MAX);
-        
-        List<UUID> matchingRouteIds = routeClient.searchRoutes(origin, destination).stream()
-                .map(RouteResponse::id)
-                .toList();
-
-        if (matchingRouteIds.isEmpty()) {
+        List<RouteResponse> routes = routeClient.searchRoutes(origin, destination);
+        if (routes.isEmpty()) {
             return Page.empty(pageable);
         }
-        
-        Page<Flight> flights = flightRepository.searchFlights(
-                matchingRouteIds, startOfDay, endOfDay, BOOKABLE_STATUSES, pageable);
-                
-        return enrichPage(flights);
+
+        // `date` is a calendar day at the origin airport. Every matching route leaves from that one airport.
+        AirportSummary originAirport = routes.get(0).origin();
+        DepartureDay day = DepartureDay.of(date, originAirport == null ? null : originAirport.timezone());
+        List<UUID> routeIds = routes.stream().map(RouteResponse::id).toList();
+
+        return enrichPage(flightRepository.searchFlights(routeIds, day.start(), day.end(), BOOKABLE_STATUSES, pageable));
     }
 
     @Override
@@ -222,7 +219,9 @@ public class FlightServiceImpl implements FlightService {
         
         flightRepository.save(flight);
 
-        eventPublisher.publishEvent(new FlightCancelledEvent(id));
+        // Same transaction as the status change: the reservation service hears of it only if the cancellation
+        // commits, and then at least once (the outbox publisher sends it after commit, off the request thread).
+        outbox.append(KafkaTopicConfig.FLIGHT_CANCELLED_TOPIC, id, new FlightCancelledEvent(id));
     }
     @Override
     @Transactional

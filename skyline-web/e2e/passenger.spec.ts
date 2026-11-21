@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { bookableFlight, bookViaApi, freshApp, live, register, uniqueEmail } from './support'
+import { bookableFlight, bookViaApi, freshApp, istanbulDate, live, register, uniqueEmail } from './support'
 
 /** The popover that is currently open (a closing one may still be animating out). */
 function openPopover(page: Page) {
@@ -29,7 +29,7 @@ test('register, search, book, check in and get a boarding pass', async ({ page, 
   await freshApp(page)
   await register(page, uniqueEmail('pax'))
 
-  // Search IST → LHR on the flight's UTC day.
+  // Search IST → LHR on the flight's date in Istanbul.
   await page.goto('/')
   await pickAirport(page, 'From', 'IST')
   await pickAirport(page, 'To', 'LHR')
@@ -151,4 +151,22 @@ test('booking works with the keyboard only', async ({ page }) => {
   await page.keyboard.press('Enter')
   await expect(page.getByRole('alert').filter({ hasText: 'Please check the highlighted fields' })).toBeFocused()
   expect(date).toBeTruthy()
+})
+
+test.describe('in a browser far from the origin airport', () => {
+  test.use({ timezoneId: 'Pacific/Pago_Pago' })
+
+  test("search dates count from the origin airport's today", async ({ page }) => {
+    // 07:00 UTC is 10:00 in Istanbul but 20:00 the day before in the browser (UTC−11).
+    const now = `${new Date().toISOString().slice(0, 10)}T07:00:00`
+    await page.clock.setFixedTime(new Date(`${now}Z`))
+    const today = istanbulDate(now)
+    await freshApp(page, `/flights?from=IST&to=LHR&date=${today}&cabin=ECONOMY`)
+
+    const days = page.getByRole('navigation', { name: 'Nearby dates' }).getByRole('button')
+    await expect(days.nth(3)).toHaveAttribute('aria-current', 'date')
+    await expect(days.nth(3)).toBeEnabled()
+    // Yesterday in Istanbul is past, whatever the date is in the browser.
+    await expect(days.nth(2)).toBeDisabled()
+  })
 })

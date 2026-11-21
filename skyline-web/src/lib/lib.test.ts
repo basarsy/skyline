@@ -4,6 +4,7 @@ import { makeFlight, makeReservation } from '@/test/fixtures'
 import { checkinWindow, isCancellable } from './checkin-window'
 import { crewReadiness, nextStatuses } from './flight-status'
 import {
+  addIsoDays,
   airportLocalToApi,
   apiToAirportLocal,
   arrivalDayOffset,
@@ -13,6 +14,7 @@ import {
   formatTimeInZone,
   parseUtc,
   toApiDateTime,
+  todayIn,
 } from './format'
 import { hasAmbiguousCharacter, isValidPnr, normalizePnr } from './pnr'
 import { estimatePrice, loadFactor } from './pricing'
@@ -44,6 +46,25 @@ describe('time contract', () => {
   it('converts airport-local input to UTC and back', () => {
     expect(airportLocalToApi('2026-12-01T10:00', 'Europe/Istanbul')).toBe('2026-12-01T07:00:00')
     expect(apiToAirportLocal('2026-12-01T07:00:00', 'Europe/Istanbul')).toBe('2026-12-01T10:00')
+  })
+
+  it('gives today at an airport, which can differ from the UTC date', () => {
+    // 22:30 UTC on 1 June is already 2 June in Istanbul, still 1 June in New York.
+    const now = new Date('2030-06-01T22:30:00Z')
+    expect(todayIn('Europe/Istanbul', now)).toBe('2030-06-02')
+    expect(todayIn('America/New_York', now)).toBe('2030-06-01')
+    // No or an unknown zone → UTC, as the API searches it (never the browser's today).
+    expect(todayIn('Not/AZone', now)).toBe('2030-06-01')
+    expect(todayIn(null, new Date('2030-06-01T23:30:00Z'))).toBe('2030-06-01')
+    expect(todayIn('', new Date('2030-06-01T23:30:00Z'))).toBe('2030-06-01')
+  })
+
+  it('adds calendar days across DST changes and month ends', () => {
+    expect(addIsoDays('2027-03-27', 1)).toBe('2027-03-28')
+    expect(addIsoDays('2027-03-28', 1)).toBe('2027-03-29')
+    expect(addIsoDays('2027-10-31', -1)).toBe('2027-10-30')
+    expect(addIsoDays('2030-12-31', 1)).toBe('2031-01-01')
+    expect(addIsoDays('2030-03-01', -1)).toBe('2030-02-28')
   })
 
   it('uses the right offset on each side of a DST change', () => {

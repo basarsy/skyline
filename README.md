@@ -254,7 +254,8 @@ POST   /users                      Create a STAFF or ADMIN account
 
 ### Flights (skyline-schedule · :8080)
 ```
-GET    /flights                    Search bookable flights: SCHEDULED + DELAYED (origin, destination IATA; date = UTC day)
+GET    /flights                    Search bookable flights: SCHEDULED + DELAYED (origin, destination IATA;
+                                   date = calendar day at the origin airport, in its time zone)
 GET    /flights/board              Operations flight board, every status [STAFF, ADMIN]
                                    (optional: date = UTC day, status (repeatable), flightNumber
                                     (contains, case-insensitive), routeId; paged, default size 50,
@@ -321,7 +322,8 @@ DELETE /flights/{flightId}/crew/{crewMemberId}  Remove from flight [STAFF, ADMIN
 
 - Every service pins its JVM to UTC (`TimeZone.setDefault` in `main`, `-Duser.timezone=UTC` and `TZ=UTC` in the Docker image) and Hibernate writes timestamps in UTC (`hibernate.jdbc.time_zone: UTC`), so a service started on a non-UTC host behaves identically.
 - Airports carry their IANA zone, and every embedded route exposes it as `origin.timezone` / `destination.timezone`, so clients can show departure in the origin's local time and arrival in the destination's.
-- `LocalDate` values (`dateOfBirth`, `licenseExpiryDate`) have no zone. The flight search `date` is a **UTC calendar day**.
+- `LocalDate` values (`dateOfBirth`, `licenseExpiryDate`) have no zone.
+- The flight search `date` is a **calendar day at the origin airport**: schedule turns it into the UTC range from local midnight to the next local midnight, using the origin's zone from the route service (23 or 25 hours on DST changes). A 01:30 departure from Istanbul on the 2nd (22:30 UTC on the 1st) is listed under the 2nd. An airport without a valid zone falls back to the UTC day (and logs a warning). The flight board has no origin, so its `date` stays a UTC day.
 - The check-in window (48h → 1h before departure) is evaluated against a UTC clock.
 
 ### Money
@@ -370,8 +372,9 @@ All endpoints return a consistent `ApiResponse<T>`:
 - License expiry is validated at assignment time
 
 **Flight Cancellation**
-- Cancelling a flight resets available seats and publishes a `FlightCancelledEvent` to Kafka (`skyline.flight.cancelled` topic)
-- The reservation service listens for these events via `FlightCancellationListener`
+- Cancelling a flight resets available seats and records a `FlightCancelledEvent` in the schedule service's `outbox_events` table, in the same transaction as the status change
+- A scheduled outbox publisher sends pending events to Kafka (`skyline.flight.cancelled` topic, keyed by flight id) and retries with backoff while Kafka is unreachable, so no cancellation is lost and the cancel request never waits on Kafka (`skyline.outbox.*` settings)
+- The reservation service listens for these events via `FlightCancellationListener`; delivery is at least once, which is safe because it only cancels reservations that are not cancelled yet
 
 ---
 
@@ -552,7 +555,7 @@ Java and TypeScript code, and Dependabot proposes weekly dependency updates.
 
 **Spring Cloud Gateway** — Single entry point on port 8000 routes traffic to the correct service based on URL path predicates.
 
-**Kafka for async events** — Flight cancellation events are published to Kafka, decoupling the schedule and reservation services for eventual consistency.
+**Kafka for async events** — Flight cancellation events are published to Kafka through a transactional outbox (no event is lost while Kafka is down), decoupling the schedule and reservation services for eventual consistency.
 
 **UUID primary keys** — avoids sequential ID enumeration, portable across services.
 
