@@ -1,5 +1,6 @@
 package com.basarsy.skyline.reservation.service;
 
+import com.basarsy.skyline.common.exception.SkylineException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -7,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -24,6 +26,9 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class SeatHoldStore {
+
+    /** The most passengers one booking (one group) can have. */
+    public static final int MAX_PASSENGERS = 9;
 
     static final String SEAT_PREFIX = "skyline:seat-hold:";
     static final String SLOT_PREFIX = "skyline:seat-hold-slot:";
@@ -63,7 +68,12 @@ public class SeatHoldStore {
             }
         }
 
+        /** A booking has at most {@link #MAX_PASSENGERS} passengers, numbered from 0. */
         static HoldOwner forPassenger(UUID userId, int passengerIndex) {
+            if (passengerIndex < 0 || passengerIndex >= MAX_PASSENGERS) {
+                throw new SkylineException("passenger must be between 0 and " + (MAX_PASSENGERS - 1),
+                        HttpStatus.BAD_REQUEST);
+            }
             return new HoldOwner(userId, "p" + passengerIndex);
         }
 
