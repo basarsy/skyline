@@ -5,10 +5,19 @@ import com.basarsy.skyline.common.exception.ResourceNotFoundException;
 import com.basarsy.skyline.common.exception.SkylineException;
 import com.basarsy.skyline.reservation.client.FleetClient;
 import com.basarsy.skyline.reservation.client.ScheduleClient;
-import com.basarsy.skyline.reservation.client.dto.AircraftResponse;
 import com.basarsy.skyline.reservation.client.dto.FlightResponse;
 import com.basarsy.skyline.reservation.client.dto.FlightStatus;
+import com.basarsy.skyline.reservation.client.dto.SeatLayout;
+import com.basarsy.skyline.reservation.dto.AncillaryLineResponse;
+import com.basarsy.skyline.reservation.dto.GroupReservationRequest;
+import com.basarsy.skyline.reservation.dto.GroupReservationResponse;
+import com.basarsy.skyline.reservation.dto.PassengerRequest;
 import com.basarsy.skyline.reservation.dto.PassengerResponse;
+import com.basarsy.skyline.reservation.repository.ReservationAncillaryRepository;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import com.basarsy.skyline.reservation.dto.ReservationRequest;
 import com.basarsy.skyline.reservation.dto.ReservationResponse;
 import com.basarsy.skyline.reservation.entity.CabinClass;
@@ -57,49 +66,145 @@ public class ReservationServiceImpl implements ReservationService {
     private final ReservationMapper reservationMapper;
     private final PassengerMapper passengerMapper;
     private final PricingProperties pricing;
+    private final CabinInventory cabinInventory;
+    private final SeatLayoutProvider seatLayoutProvider;
+    private final SeatPricing seatPricing;
+    private final SeatSelectionService seatSelectionService;
+    private final ReservationAncillaryRepository ancillaryRepository;
 
     @Override
     @Transactional
     public ReservationResponse bookFlight(ReservationRequest request) {
-        FlightResponse flight = scheduleClient.getFlight(request.flightId());
+        FlightResponse flight = bookableFlight(request.flightId(), 1);
+        UUID currentUserId = getCurrentUserId();
+        cabinInventory.reserve(flight, request.cabinClass(), 1);
+        takeInventory(flight);
 
+        FareType fareType = request.fareType() == null ? FareType.STANDARD : request.fareType();
+        Reservation saved = createReservation(flight, request.passenger(), request.cabinClass(), fareType,
+                currentUserId, null);
+        return enrichReservationResponse(saved, flight);
+    }
+
+    /**
+     * Every passenger on every leg in one transaction: if any part fails (a seat hold expired, a cabin sold out),
+     * nothing is booked and every flight's seats are given back.
+     */
+    @Override
+    @Transactional
+    public GroupReservationResponse bookGroup(GroupReservationRequest request) {
+        validateGroup(request);
+        UUID currentUserId = getCurrentUserId();
+        UUID groupId = UUID.randomUUID();
+        int passengers = request.passengers().size();
+
+        List<ReservationResponse> booked = new ArrayList<>();
+        BigDecimal total = BigDecimal.ZERO;
+        for (GroupReservationRequest.Leg leg : request.legs()) {
+            FlightResponse flight = bookableFlight(leg.flightId(), passengers);
+            FareType fareType = leg.fareType() == null ? FareType.STANDARD : leg.fareType();
+            cabinInventory.reserve(flight, leg.cabinClass(), passengers);
+            SeatLayout layout = null;
+            SeatPricing.PriceList prices = null;
+
+            for (int i = 0; i < passengers; i++) {
+                takeInventory(flight);
+                Reservation reservation = createReservation(flight, request.passengers().get(i), leg.cabinClass(),
+                        fareType, currentUserId, groupId);
+                String seat = seatFor(request, i, flight.getId());
+                if (seat != null) {
+                    if (layout == null) {
+                        layout = seatLayoutProvider.requireForFlight(flight);
+                        prices = seatPricing.priceList(flight, leg.cabinClass(), fareType);
+                    }
+                    seatSelectionService.applyHeldSeat(reservation, flight, layout, prices, seat,
+                            SeatHoldStore.HoldOwner.forPassenger(currentUserId, i));
+                }
+                ReservationResponse response = enrichReservationResponse(reservation, flight);
+                booked.add(response);
+                total = total.add(reservation.getTotalPrice());
+            }
+        }
+        return new GroupReservationResponse(groupId, booked, total, pricing.currency());
+    }
+
+    private static void validateGroup(GroupReservationRequest request) {
+        int passengers = request.passengers().size();
+        Set<UUID> flights = new HashSet<>();
+        for (GroupReservationRequest.Leg leg : request.legs()) {
+            if (!flights.add(leg.flightId())) {
+                throw new SkylineException("A flight can only appear once in a booking", HttpStatus.BAD_REQUEST);
+            }
+        }
+        Set<String> passengerLegs = new HashSet<>();
+        Set<String> seatsPerFlight = new HashSet<>();
+        for (GroupReservationRequest.SeatSelection seat : request.seats()) {
+            if (seat.passengerIndex() >= passengers || !flights.contains(seat.flightId())) {
+                throw new SkylineException("A seat selection names a passenger or flight that is not in this booking",
+                        HttpStatus.BAD_REQUEST);
+            }
+            if (!passengerLegs.add(seat.passengerIndex() + "/" + seat.flightId())) {
+                throw new SkylineException("One seat per passenger per flight", HttpStatus.BAD_REQUEST);
+            }
+            if (!seatsPerFlight.add(seat.flightId() + "/" + seat.seatNumber())) {
+                throw new SkylineException("Two passengers cannot have the same seat " + seat.seatNumber(),
+                        HttpStatus.BAD_REQUEST);
+            }
+        }
+    }
+
+    private static String seatFor(GroupReservationRequest request, int passengerIndex, UUID flightId) {
+        return request.seats().stream()
+                .filter(s -> s.passengerIndex() == passengerIndex && s.flightId().equals(flightId))
+                .map(GroupReservationRequest.SeatSelection::seatNumber)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private FlightResponse bookableFlight(UUID flightId, int passengers) {
+        FlightResponse flight = scheduleClient.getFlight(flightId);
         if (flight.getStatus() != FlightStatus.SCHEDULED && flight.getStatus() != FlightStatus.DELAYED) {
             throw new SkylineException("Cannot book a flight that is not scheduled", HttpStatus.BAD_REQUEST);
         }
-
-        if (flight.getAvailableSeats() <= 0) {
-            throw new SkylineException("Flight is fully booked", HttpStatus.BAD_REQUEST);
+        if (flight.getAvailableSeats() < passengers) {
+            throw new SkylineException(flight.getAvailableSeats() <= 0 ? "Flight is fully booked"
+                    : "Only " + flight.getAvailableSeats() + " seats left on this flight", HttpStatus.BAD_REQUEST);
         }
+        return flight;
+    }
 
-        UUID currentUserId = getCurrentUserId();
-
-        // The seat lives in the schedule service, so it can't join this transaction. Hold it remotely,
-        // then give it back if this transaction does not commit for ANY reason, including failures at
-        // commit time (e.g. a constraint violation on flush), which a try/catch here can never see.
+    /**
+     * The seat lives in the schedule service, so it can't join this transaction. Hold it remotely, then give it
+     * back if this transaction does not commit for ANY reason, including failures at commit time (e.g. a
+     * constraint violation on flush), which a try/catch here can never see.
+     */
+    private void takeInventory(FlightResponse flight) {
         scheduleClient.decrementSeat(flight.getId());
         releaseSeatUnlessCommitted(flight.getId());
+    }
 
+    private Reservation createReservation(FlightResponse flight, PassengerRequest passengerRequest, CabinClass cabin,
+            FareType fareType, UUID userId, UUID groupId) {
         // Each booking gets its own passenger snapshot. Reusing one passenger per user meant that
         // booking for someone else rewrote the name/passport on all of the user's past reservations.
-        Passenger passenger = passengerMapper.toEntity(request.passenger());
-        passenger.setUserId(currentUserId);
+        Passenger passenger = passengerMapper.toEntity(passengerRequest);
+        passenger.setUserId(userId);
         passenger = passengerRepository.save(passenger);
 
-        Reservation reservation = reservationMapper.toEntity(request);
+        Reservation reservation = new Reservation();
+        reservation.setCabinClass(cabin);
         reservation.setFlightId(flight.getId());
         reservation.setPassenger(passenger);
         reservation.setBookedAt(LocalDateTime.now());
         reservation.setPnr(generateUniquePnr());
-        FareType fareType = request.fareType() == null ? FareType.STANDARD : request.fareType();
         reservation.setFareType(fareType);
-        reservation.setFarePrice(calculatePrice(flight, request.cabinClass(), fareType));
+        reservation.setFarePrice(calculatePrice(flight, cabin, fareType));
         reservation.setTotalPrice(reservation.getFarePrice());
+        reservation.setBookingGroupId(groupId);
 
         // In a real system, payment processing would happen here, and status would be CONFIRMED upon success
         reservation.setStatus(ReservationStatus.CONFIRMED);
-
-        Reservation savedReservation = reservationRepository.saveAndFlush(reservation);
-        return enrichReservationResponse(savedReservation, flight);
+        return reservationRepository.saveAndFlush(reservation);
     }
 
     @Override
@@ -168,6 +273,10 @@ public class ReservationServiceImpl implements ReservationService {
     private ReservationResponse enrichReservationResponse(Reservation reservation, FlightResponse flight) {
         ReservationResponse response = reservationMapper.toResponse(reservation);
         response.setCurrency(pricing.currency());
+        if (reservation.getId() != null) {
+            response.setAncillaries(ancillaryRepository.findByReservation_IdOrderByCreatedAtAsc(reservation.getId())
+                    .stream().map(AncillaryLineResponse::of).toList());
+        }
         if (flight == null) {
             try {
                 flight = scheduleClient.getFlight(reservation.getFlightId());

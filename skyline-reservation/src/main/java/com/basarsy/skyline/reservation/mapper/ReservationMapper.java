@@ -23,6 +23,7 @@ public interface ReservationMapper {
 
     @Mapping(target = "flight", ignore = true)
     @Mapping(target = "currency", ignore = true)
+    @Mapping(target = "ancillaries", ignore = true)
     ReservationResponse toResponse(Reservation reservation);
 
     @Mapping(target = "id", ignore = true)

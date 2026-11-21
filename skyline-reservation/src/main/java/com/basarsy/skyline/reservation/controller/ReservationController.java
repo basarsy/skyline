@@ -36,6 +36,15 @@ public class ReservationController {
         return ApiResponse.success("Flight booked successfully", reservationService.bookFlight(request));
     }
 
+    /** Several passengers and/or legs in one go, with optional held seats; all or nothing. */
+    @PostMapping("/group")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasRole('PASSENGER')")
+    public ApiResponse<com.basarsy.skyline.reservation.dto.GroupReservationResponse> bookGroup(
+            @Valid @RequestBody com.basarsy.skyline.reservation.dto.GroupReservationRequest request) {
+        return ApiResponse.success("Booking confirmed", reservationService.bookGroup(request));
+    }
+
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('PASSENGER', 'STAFF', 'ADMIN')")
     public ApiResponse<ReservationResponse> getReservation(@PathVariable UUID id) {

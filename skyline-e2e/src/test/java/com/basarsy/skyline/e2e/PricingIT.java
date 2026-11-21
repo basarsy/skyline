@@ -13,7 +13,7 @@ class PricingIT extends E2eTest {
 
     @Test
     void flightsAndBookingsCarryTheCurrency() {
-        String flightId = createFlight();
+        String flightId = createFlightOn(A321NEO); // Business needs an aircraft with a Business cabin
         assertThat((String) api(null).get("/flights/" + flightId).then().statusCode(200).extract().path("data.currency"))
                 .isEqualTo(CURRENCY);
 

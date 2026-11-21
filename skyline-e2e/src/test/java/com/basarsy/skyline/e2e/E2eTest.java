@@ -36,6 +36,8 @@ abstract class E2eTest {
     static final String LHR = "11111111-1111-1111-1111-111111111102";
     /** Seeded by the fleet service's V2 migration: Airbus A320neo, 180 seats. */
     static final String A320NEO = "22222222-2222-2222-2222-222222222201";
+    /** Business 2-2 + Economy 3-3: the seeded narrow-body that sells Business. */
+    static final String A321NEO = "22222222-2222-2222-2222-222222222204";
 
     static final String PASSWORD = "Passw0rd!!";
 
@@ -136,8 +138,13 @@ abstract class E2eTest {
 
     /** A fresh flight IST→LHR departing in 24h (inside the check-in window) on a new 180-seat aircraft. */
     static String createFlight() {
+        return createFlightOn(A320NEO);
+    }
+
+    /** Like {@link #createFlight()}, on a new aircraft of the given type. */
+    static String createFlightOn(String aircraftTypeId) {
         String aircraftId = api(adminToken)
-                .body(Map.of("tailNumber", "TC-" + shortId(), "aircraftTypeId", A320NEO, "manufacturedYear", 2020))
+                .body(Map.of("tailNumber", "TC-" + shortId(), "aircraftTypeId", aircraftTypeId, "manufacturedYear", 2020))
                 .post("/aircraft").then().statusCode(201).extract().path("data.id");
 
         return createFlight(aircraftId, nowUtc().plusHours(24));
