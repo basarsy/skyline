@@ -59,7 +59,8 @@ class ReservationServiceImplTest {
             reservationRepository, passengerRepository, scheduleClient, mock(FleetClient.class),
             reservationMapper, passengerMapper, new PricingProperties("EUR"), mock(CabinInventory.class),
             mock(SeatLayoutProvider.class), mock(SeatPricing.class), mock(SeatSelectionService.class),
-            mock(com.basarsy.skyline.reservation.repository.ReservationAncillaryRepository.class));
+            mock(com.basarsy.skyline.reservation.repository.ReservationAncillaryRepository.class),
+            mock(AncillaryService.class));
 
     @BeforeEach
     void setUp() {

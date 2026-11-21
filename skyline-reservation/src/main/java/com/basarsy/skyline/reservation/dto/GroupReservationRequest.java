@@ -20,7 +20,24 @@ import java.util.UUID;
 public record GroupReservationRequest(
         @NotEmpty @Size(max = 9) @Valid List<PassengerRequest> passengers,
         @NotEmpty @Size(max = 4) @Valid List<Leg> legs,
-        @Size(max = 36) @Valid List<SeatSelection> seats) {
+        @Size(max = 36) @Valid List<SeatSelection> seats,
+        @Size(max = 100) @Valid List<Extra> extras) {
+
+    /** Without add-ons (the shape before add-ons could be bought at booking). */
+    public GroupReservationRequest(List<PassengerRequest> passengers, List<Leg> legs, List<SeatSelection> seats) {
+        this(passengers, legs, seats, null);
+    }
+
+    /** An add-on for one passenger on one leg, e.g. a 20 kg bag; priced on the server. */
+    public record Extra(
+            @Min(0) @Max(8) int passengerIndex,
+            @NotNull UUID flightId,
+            @jakarta.validation.constraints.NotBlank String productCode,
+            @Min(1) @Max(3) int quantity) {}
+
+    public List<Extra> extras() {
+        return extras == null ? List.of() : extras;
+    }
 
     public record Leg(@NotNull UUID flightId, @NotNull CabinClass cabinClass, FareType fareType) {}
 

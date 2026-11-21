@@ -14,6 +14,9 @@ import com.basarsy.skyline.reservation.dto.GroupReservationResponse;
 import com.basarsy.skyline.reservation.dto.PassengerRequest;
 import com.basarsy.skyline.reservation.dto.PassengerResponse;
 import com.basarsy.skyline.reservation.repository.ReservationAncillaryRepository;
+import com.basarsy.skyline.reservation.dto.AncillaryPurchaseRequest;
+import com.basarsy.skyline.reservation.entity.ReservationAncillary;
+import com.basarsy.skyline.reservation.entity.SalesChannel;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -71,6 +74,7 @@ public class ReservationServiceImpl implements ReservationService {
     private final SeatPricing seatPricing;
     private final SeatSelectionService seatSelectionService;
     private final ReservationAncillaryRepository ancillaryRepository;
+    private final AncillaryService ancillaryService;
 
     @Override
     @Transactional
@@ -120,6 +124,10 @@ public class ReservationServiceImpl implements ReservationService {
                     seatSelectionService.applyHeldSeat(reservation, flight, layout, prices, seat,
                             SeatHoldStore.HoldOwner.forPassenger(currentUserId, i));
                 }
+                List<AncillaryPurchaseRequest.Item> extras = extrasFor(request, i, flight.getId());
+                if (!extras.isEmpty()) {
+                    ancillaryService.purchaseFor(reservation, flight, extras, SalesChannel.ONLINE);
+                }
                 ReservationResponse response = enrichReservationResponse(reservation, flight);
                 booked.add(response);
                 total = total.add(reservation.getTotalPrice());
@@ -151,6 +159,20 @@ public class ReservationServiceImpl implements ReservationService {
                         HttpStatus.BAD_REQUEST);
             }
         }
+        for (GroupReservationRequest.Extra extra : request.extras()) {
+            if (extra.passengerIndex() >= passengers || !flights.contains(extra.flightId())) {
+                throw new SkylineException("An add-on names a passenger or flight that is not in this booking",
+                        HttpStatus.BAD_REQUEST);
+            }
+        }
+    }
+
+    private static List<AncillaryPurchaseRequest.Item> extrasFor(GroupReservationRequest request, int passengerIndex,
+            UUID flightId) {
+        return request.extras().stream()
+                .filter(e -> e.passengerIndex() == passengerIndex && e.flightId().equals(flightId))
+                .map(e -> new AncillaryPurchaseRequest.Item(e.productCode(), e.quantity()))
+                .toList();
     }
 
     private static String seatFor(GroupReservationRequest request, int passengerIndex, UUID flightId) {
@@ -263,6 +285,11 @@ public class ReservationServiceImpl implements ReservationService {
         reservation.setStatus(ReservationStatus.CANCELLED);
         // Free the seat number so it can be assigned again ((flight_id, seat_number) is unique).
         reservation.setSeatNumber(null);
+        // Add-ons end with the booking: refundable ones (FLEX fares, always-refundable products such as meals)
+        // are paid back, the rest are forfeited.
+        ancillaryRepository.findByReservation_IdAndStatus(reservation.getId(), ReservationAncillary.Status.ACTIVE)
+                .forEach(line -> line.setStatus(line.isRefundable() ? ReservationAncillary.Status.REFUNDED
+                        : ReservationAncillary.Status.CANCELLED));
         reservationRepository.save(reservation);
 
         // Return the seat only once the cancellation is durable. Releasing it before commit could

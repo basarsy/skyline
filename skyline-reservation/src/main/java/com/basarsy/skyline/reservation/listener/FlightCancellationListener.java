@@ -16,15 +16,19 @@ import org.springframework.transaction.annotation.Transactional;
 public class FlightCancellationListener {
 
     private final ReservationRepository reservationRepository;
+    private final com.basarsy.skyline.reservation.repository.ReservationAncillaryRepository ancillaryRepository;
 
     @Transactional
     @KafkaListener(topics = "${kafka.topic.flight-cancelled:skyline.flight.cancelled}", groupId = "reservation-service")
     public void handleFlightCancelled(FlightCancelledEvent event) {
         log.info("Handling flight cancellation event for flight: {}", event.flightId());
         
-        int updated = reservationRepository.updateStatusByFlightId(
-                event.flightId(), ReservationStatus.CANCELLED, LocalDateTime.now());
-                
+        LocalDateTime now = LocalDateTime.now();
+        // The airline's cancellation: seat fees and bags are refunded on every fare.
+        int refunded = ancillaryRepository.refundAllOnFlight(event.flightId(), now);
+        int updated = reservationRepository.updateStatusByFlightId(event.flightId(), ReservationStatus.CANCELLED, now);
+        log.info("Refunded {} add-ons on cancelled flight {}", refunded, event.flightId());
+
         log.info("Updated {} reservations to CANCELLED for flight: {}", updated, event.flightId());
     }
 }
