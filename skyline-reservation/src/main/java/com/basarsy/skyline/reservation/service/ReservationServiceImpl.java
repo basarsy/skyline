@@ -19,7 +19,9 @@ import com.basarsy.skyline.reservation.mapper.PassengerMapper;
 import com.basarsy.skyline.reservation.mapper.ReservationMapper;
 import com.basarsy.skyline.reservation.repository.PassengerRepository;
 import com.basarsy.skyline.reservation.repository.ReservationRepository;
+import com.basarsy.skyline.common.security.SkylineUserDetails;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -28,6 +30,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -177,22 +180,28 @@ public class ReservationServiceImpl implements ReservationService {
                 .orElseThrow(() -> new ResourceNotFoundException("Reservation not found with id: " + id));
     }
 
+    /**
+     * The calling user's id. Not every authenticated caller is a user: an internal service authenticated by
+     * API key has a plain string principal, and that is "not allowed" (403), not a server error.
+     */
     private UUID getCurrentUserId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()) {
+        if (authentication == null || !authentication.isAuthenticated()
+                || authentication instanceof AnonymousAuthenticationToken) {
             throw new SkylineException("User not authenticated", HttpStatus.UNAUTHORIZED);
         }
-        com.basarsy.skyline.common.security.SkylineUserDetails userDetails = (com.basarsy.skyline.common.security.SkylineUserDetails) authentication.getPrincipal();
-        return userDetails.getId();
+        if (!(authentication.getPrincipal() instanceof SkylineUserDetails user) || user.getId() == null) {
+            throw new SkylineException("This operation requires a user account", HttpStatus.FORBIDDEN);
+        }
+        return user.getId();
     }
 
     private void verifyOwnership(Reservation reservation) {
-        UUID currentUserId = getCurrentUserId();
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        boolean isStaffOrAdmin = authentication.getAuthorities().stream()
+        boolean isStaffOrAdmin = authentication != null && authentication.getAuthorities().stream()
                 .anyMatch(a -> a.getAuthority().equals("ROLE_STAFF") || a.getAuthority().equals("ROLE_ADMIN"));
 
-        if (!isStaffOrAdmin && !currentUserId.equals(reservation.getPassenger().getUserId())) {
+        if (!isStaffOrAdmin && !getCurrentUserId().equals(reservation.getPassenger().getUserId())) {
             throw new SkylineException("You do not have permission to access this reservation", HttpStatus.FORBIDDEN);
         }
     }
@@ -206,7 +215,7 @@ public class ReservationServiceImpl implements ReservationService {
     private static boolean isOwner(Reservation reservation) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         return authentication != null
-                && authentication.getPrincipal() instanceof com.basarsy.skyline.common.security.SkylineUserDetails user
+                && authentication.getPrincipal() instanceof SkylineUserDetails user
                 && user.getId() != null
                 && user.getId().equals(reservation.getPassenger().getUserId());
     }
@@ -250,7 +259,9 @@ public class ReservationServiceImpl implements ReservationService {
             loadFactorMultiplier = BigDecimal.valueOf(1.15);
         }
 
-        return flight.getBasePrice().multiply(multiplier).multiply(loadFactorMultiplier);
+        // Money has two decimals: multiplying by 2.5 and 1.15 would otherwise store e.g. 287.500.
+        return flight.getBasePrice().multiply(multiplier).multiply(loadFactorMultiplier)
+                .setScale(2, RoundingMode.HALF_UP);
     }
 
     private void releaseSeatUnlessCommitted(UUID flightId) {
