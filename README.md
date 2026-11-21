@@ -35,7 +35,7 @@
 
 ## Overview
 
-Skyline is a backend REST API that manages the full lifecycle of airline operations — from aircraft fleet management and route scheduling to passenger reservations, check-in, and crew assignments.
+Skyline is a full-stack airline management system: a set of Spring Boot services behind an API gateway, and a React web app on top. It covers the full lifecycle of airline operations — from aircraft fleet management and route scheduling to passenger reservations, check-in, and crew assignments.
 
 The project is built as a **microservices architecture**: each bounded context runs as an independent Spring Boot application with its own database, communicating over HTTP (OpenFeign) and asynchronous events (Kafka). A Spring Cloud Gateway provides a unified API entry point.
 
@@ -128,7 +128,8 @@ SCREENSHOTS=1 pnpm exec playwright test e2e/screenshots.spec.ts
                     └───────────┬────────────┘
                          ┌──────┴───────┐
                          │   Gateway    │ :8000
-                         │  (routing)   │
+                         │ (routing,    │
+                         │  rate limit) │
                          └──────┬───────┘
            ┌────────┬────────┬──┴──┬────────┬────────┬────────┐
            ▼        ▼        ▼     ▼        ▼        ▼        ▼
@@ -152,7 +153,7 @@ SCREENSHOTS=1 pnpm exec playwright test e2e/screenshots.spec.ts
 | Module | Package | Purpose |
 |---|---|---|
 | `skyline-common` | `com.basarsy.skyline.common` | Shared library — JWT filter, `SecurityConfig`, `ApiResponse<T>`, `GlobalExceptionHandler`, Kafka topic config, Feign interceptors, `BaseEntity` |
-| `skyline-gateway` | `com.basarsy.skyline.gateway` | Spring Cloud Gateway — routes all `/api/v1/**` traffic to the appropriate service |
+| `skyline-gateway` | `com.basarsy.skyline.gateway` | Spring Cloud Gateway — routes all `/api/v1/**` traffic to the appropriate service; CORS; per-IP rate limits on login, registration, token refresh and PNR lookup |
 | `skyline-auth` | `com.basarsy.skyline.user` | User accounts, registration, login, JWT token issuance and refresh |
 | `skyline-fleet` | `com.basarsy.skyline.fleet` | Aircraft & aircraft type management |
 | `skyline-route` | `com.basarsy.skyline.route` | Airports & route management |
@@ -391,10 +392,11 @@ cd skyline
 
 # Create your environment file
 cp .env.example .env
-# Edit .env and set JWT_SECRET and SKYLINE_INTERNAL_API_KEY (min 32 bytes each)
+# Edit .env and set JWT_SECRET, SKYLINE_INTERNAL_API_KEY, POSTGRES_PASSWORD and REDIS_PASSWORD
+# (each: openssl rand -hex 32)
 
 # Build and start everything (infrastructure + all services)
-docker compose up --build
+docker compose up --build --wait   # returns once every service reports healthy
 ```
 
 The web app is served at `http://localhost:5173` and the API Gateway at `http://localhost:8000`. Set `SKYLINE_ADMIN_EMAIL` and `SKYLINE_ADMIN_PASSWORD` in `.env` to get an admin account for the ops console; passengers register on the site.
@@ -410,7 +412,7 @@ cd skyline
 docker compose up -d auth-db fleet-db route-db schedule-db reservation-db checkin-db crew-db redis kafka
 
 # Configure secrets (see .env.example) and export them in each terminal
-cp .env.example .env   # then fill in JWT_SECRET and SKYLINE_INTERNAL_API_KEY
+cp .env.example .env   # then fill in JWT_SECRET, SKYLINE_INTERNAL_API_KEY, POSTGRES_PASSWORD, REDIS_PASSWORD
 set -a; source .env; set +a
 
 # Build all modules
@@ -447,6 +449,20 @@ Swagger UI (checkin service): `http://localhost:8085/swagger-ui.html`
 | Redis | 6379 | — | — |
 | Kafka | 9092 | — | — |
 
+`docker compose` publishes every port, the web app's `5173` included, on `127.0.0.1` only, so none of them is reachable from the network. Redis and PostgreSQL require the passwords from `.env`.
+
+### Health Checks
+
+Every Java service (and the gateway) exposes Spring Boot Actuator health on its own port; nothing else from Actuator is reachable over HTTP, and responses carry only a status, never details:
+
+| Endpoint | Meaning |
+|---|---|
+| `GET /actuator/health` | Overall status (`UP` / `DOWN`) |
+| `GET /actuator/health/liveness` | The JVM is alive; restart it if this fails |
+| `GET /actuator/health/readiness` | Ready for traffic (services: including their database) |
+
+The Docker image's healthcheck polls `/actuator/health/readiness`, and compose starts each service only after the services it calls are healthy. The gateway does not route `/actuator/**`, so a service's endpoints are not reachable through port 8000 (`localhost:8000/actuator/health` is the gateway's own).
+
 ### Environment Variables
 
 Each service reads configuration from its own `application.yml`. Infrastructure settings have local-development defaults; **secrets do not**, and services refuse to start without them:
@@ -455,9 +471,11 @@ Each service reads configuration from its own `application.yml`. Infrastructure 
 |---|---|---|
 | `DATABASE_URL` | JDBC URL (per-service) | `jdbc:postgresql://localhost:<port>/<db>` |
 | `DATABASE_USERNAME` | DB user | `skyline_user` |
-| `DATABASE_PASSWORD` | DB password | `skyline_pass` |
+| `POSTGRES_PASSWORD` | **Required by compose.** Password compose creates every database with, and passes to the services as `DATABASE_PASSWORD` | — (compose refuses to start) |
+| `DATABASE_PASSWORD` | DB password | `POSTGRES_PASSWORD`, else empty |
 | `REDIS_HOST` | Redis host | `localhost` |
 | `REDIS_PORT` | Redis port | `6379` |
+| `REDIS_PASSWORD` | **Required by compose.** Redis `requirepass`; used by fleet, route, crew (caches) and the gateway (rate limits) | — (compose refuses to start) |
 | `JWT_SECRET` | **Required.** HS256 signing key, min 32 bytes, identical across services | — (startup fails) |
 | `SKYLINE_INTERNAL_API_KEY` | **Required.** Shared service-to-service key (grants `ROLE_SERVICE`), min 32 bytes | — (startup fails) |
 | `KAFKA_BOOTSTRAP_SERVERS` | Kafka brokers | `localhost:9092` |
@@ -469,6 +487,10 @@ Each service reads configuration from its own `application.yml`. Infrastructure 
 | `SKYLINE_ADMIN_EMAIL` | (auth) Email of the initial ADMIN account, created on startup if missing | — (skipped) |
 | `SKYLINE_ADMIN_PASSWORD` | (auth) Password for the initial ADMIN account (min 12 chars) | — (skipped) |
 | `SKYLINE_CORS_ALLOWED_ORIGINS` | (gateway) Comma-separated browser origins allowed by CORS | `http://localhost:5173` |
+| `SKYLINE_RATE_LIMIT_REPLENISH` | (gateway) Requests per second per client IP on `POST /auth/login`, `/auth/register`, `/auth/refresh` and `GET /reservations/pnr/**`; over the limit the gateway answers `429` | `5` |
+| `SKYLINE_RATE_LIMIT_BURST` | (gateway) Bucket size: how many of those requests a client may send at once | `10` |
+| `SKYLINE_RATE_LIMIT_TRUSTED_PROXIES` | (gateway) Reverse proxies in front of the gateway whose `X-Forwarded-For` entry identifies the client; `0` uses the TCP peer. Compose sets `1` for the web container's nginx | `0` |
+| `SPRING_PROFILES_ACTIVE` | `dev` logs every SQL statement (`show-sql`) | — |
 | `SKYLINE_CURRENCY` | (schedule, reservation) ISO 4217 currency of every price, returned as `currency`; validated at startup. Set the same value on both | `EUR` |
 
 > Public registration always creates `PASSENGER` accounts. Set `SKYLINE_ADMIN_EMAIL` / `SKYLINE_ADMIN_PASSWORD` on the auth service to bootstrap the first `ADMIN`, who can then create further `STAFF` and `ADMIN` accounts with `POST /users`.
@@ -505,17 +527,22 @@ check-in and seat assignment, flight cancellation over Kafka, crew manifests and
 It only runs with the `e2e` profile and needs the stack to be up:
 
 ```bash
-cp .env.example .env            # set JWT_SECRET, SKYLINE_INTERNAL_API_KEY, SKYLINE_ADMIN_EMAIL, SKYLINE_ADMIN_PASSWORD
+cp .env.example .env            # set the secrets, SKYLINE_ADMIN_EMAIL and SKYLINE_ADMIN_PASSWORD, and raise
+                                # SKYLINE_RATE_LIMIT_REPLENISH / _BURST (e.g. 1000 / 2000): the suite logs in a lot
 set -a; source .env; set +a
-docker compose up -d --build
+docker compose up -d --build --wait
 ./mvnw -Pe2e verify -pl skyline-e2e
 ```
 
 Each test creates its own aircraft, flights and users, so the suite can run repeatedly against the same stack.
 Override the target with `-Dskyline.e2e.baseUrl=...` if the gateway is not on `localhost:8000`.
 
+The suite connects to the auth database on `localhost:5433` with `POSTGRES_PASSWORD` from the environment.
+
 CI runs `./mvnw -B verify` on every push and PR to `main`, then an `e2e` job that boots the stack with
-throwaway secrets and runs the end-to-end suite.
+throwaway secrets (and high rate limits) and runs the end-to-end suite. A `web` job lints, type-checks,
+unit-tests and builds `skyline-web` and runs its Playwright suite against the mocked API. CodeQL scans the
+Java and TypeScript code, and Dependabot proposes weekly dependency updates.
 
 ---
 
