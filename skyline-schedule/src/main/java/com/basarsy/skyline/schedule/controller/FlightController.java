@@ -2,6 +2,8 @@ package com.basarsy.skyline.schedule.controller;
 
 import com.basarsy.skyline.common.response.ApiResponse;
 import com.basarsy.skyline.schedule.dto.FlightBoardFilter;
+import com.basarsy.skyline.schedule.dto.FlightDelayRequest;
+import com.basarsy.skyline.schedule.dto.FlightGateRequest;
 import com.basarsy.skyline.schedule.dto.FlightRequest;
 import com.basarsy.skyline.schedule.dto.FlightResponse;
 import com.basarsy.skyline.schedule.dto.UpdateFlightStatusRequest;
@@ -99,6 +101,31 @@ public class FlightController {
             @PathVariable UUID id,
             @Valid @RequestBody UpdateFlightStatusRequest request) {
         return ApiResponse.success("Flight status updated successfully", flightService.updateFlightStatus(id, request.status()));
+    }
+
+    @PutMapping("/{id}/delay")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @Operation(summary = "Delay a flight: set the expected departure (the status becomes DELAYED)")
+    public ApiResponse<FlightResponse> delayFlight(
+            @PathVariable UUID id,
+            @Valid @RequestBody FlightDelayRequest request) {
+        return ApiResponse.success("Flight delayed", flightService.delayFlight(id, request.estimatedDepartureTime()));
+    }
+
+    @DeleteMapping("/{id}/delay")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @Operation(summary = "Lift a delay: the flight leaves at its scheduled time again")
+    public ApiResponse<FlightResponse> clearDelay(@PathVariable UUID id) {
+        return ApiResponse.success("Flight delay lifted", flightService.clearDelay(id));
+    }
+
+    @PutMapping("/{id}/gate")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @Operation(summary = "Assign or change the departure gate")
+    public ApiResponse<FlightResponse> assignGate(
+            @PathVariable UUID id,
+            @Valid @RequestBody FlightGateRequest request) {
+        return ApiResponse.success("Gate assigned", flightService.assignGate(id, request.gate()));
     }
 
     @DeleteMapping("/{id}")

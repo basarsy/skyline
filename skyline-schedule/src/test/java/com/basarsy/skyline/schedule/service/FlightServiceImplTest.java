@@ -25,6 +25,8 @@ import com.basarsy.skyline.schedule.dto.FlightBoardFilter;
 import com.basarsy.skyline.schedule.dto.FlightRequest;
 import com.basarsy.skyline.schedule.entity.Flight;
 import com.basarsy.skyline.schedule.event.FlightCancelledEvent;
+import com.basarsy.skyline.schedule.event.FlightChangeType;
+import com.basarsy.skyline.schedule.event.FlightChangedEvent;
 import com.basarsy.skyline.schedule.entity.FlightStatus;
 import com.basarsy.skyline.schedule.mapper.FlightMapper;
 import com.basarsy.skyline.schedule.mapper.FlightMapperImpl;
@@ -39,6 +41,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -166,7 +169,208 @@ class FlightServiceImplTest {
 
         assertThat(service.updateFlightStatus(flight.getId(), FlightStatus.DELAYED).getStatus())
                 .isEqualTo(FlightStatus.DELAYED);
+        FlightChangedEvent event = singleChange();
+        assertThat(event.type()).isEqualTo(FlightChangeType.STATUS_CHANGED);
+        assertThat(event.previousStatus()).isEqualTo(FlightStatus.SCHEDULED);
+        assertThat(event.status()).isEqualTo(FlightStatus.DELAYED);
+    }
+
+    @Test
+    void settingTheSameStatusAgainAnnouncesNothing() {
+        Flight flight = flight(FlightStatus.SCHEDULED);
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+
+        service.updateFlightStatus(flight.getId(), FlightStatus.SCHEDULED);
+
         verifyNoInteractions(outbox);
+    }
+
+    @Test
+    void cancellingAlsoAnnouncesTheChangeOnTheChangedTopic() {
+        Flight flight = flight(FlightStatus.SCHEDULED);
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+
+        service.cancelFlight(flight.getId());
+
+        verify(outbox).append(KafkaTopicConfig.FLIGHT_CANCELLED_TOPIC, flight.getId(),
+                new FlightCancelledEvent(flight.getId()));
+        FlightChangedEvent event = singleChange();
+        assertThat(event.type()).isEqualTo(FlightChangeType.CANCELLED);
+        assertThat(event.origin()).isEqualTo("IST");
+        assertThat(event.destination()).isEqualTo("LHR");
+    }
+
+    // ------------------------------------------------------------------ delays and gates
+
+    @Test
+    void delayingSetsTheEstimateAndTheStatusAndAnnouncesIt() {
+        Flight flight = flight(FlightStatus.SCHEDULED); // 09:00 → 13:00
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+        LocalDateTime estimate = LocalDateTime.of(2030, 6, 1, 10, 30);
+
+        var response = service.delayFlight(flight.getId(), estimate);
+
+        assertThat(response.getStatus()).isEqualTo(FlightStatus.DELAYED);
+        assertThat(response.getDepartureTime()).as("scheduled time kept").isEqualTo(LocalDateTime.of(2030, 6, 1, 9, 0));
+        assertThat(response.getEstimatedDepartureTime()).isEqualTo(estimate);
+        assertThat(response.getEstimatedArrivalTime()).isEqualTo(LocalDateTime.of(2030, 6, 1, 14, 30));
+        FlightChangedEvent event = singleChange();
+        assertThat(event.type()).isEqualTo(FlightChangeType.DELAYED);
+        assertThat(event.flightNumber()).isEqualTo("SK100");
+        assertThat(event.estimatedDepartureTime()).isEqualTo(estimate);
+        assertThat(event.previousEstimatedDepartureTime()).isNull();
+        assertThat(event.previousStatus()).isEqualTo(FlightStatus.SCHEDULED);
+    }
+
+    @Test
+    void aDelayMustBeAfterTheScheduledDepartureAndAtMostADay() {
+        Flight flight = flight(FlightStatus.SCHEDULED);
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+
+        assertThatThrownBy(() -> service.delayFlight(flight.getId(), flight.getDepartureTime()))
+                .isInstanceOf(SkylineException.class)
+                .hasMessage("Estimated departure must be after the scheduled departure");
+        assertThatThrownBy(() -> service.delayFlight(flight.getId(), flight.getDepartureTime().plusHours(25)))
+                .isInstanceOf(SkylineException.class)
+                .hasMessageContaining("is a reschedule");
+        assertThat(flight.getStatus()).isEqualTo(FlightStatus.SCHEDULED);
+        verifyNoInteractions(outbox);
+    }
+
+    @Test
+    void aFlightThatLeftCannotBeDelayed() {
+        Flight flight = flight(FlightStatus.DEPARTED);
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+
+        assertThatThrownBy(() -> service.delayFlight(flight.getId(), flight.getDepartureTime().plusHours(1)))
+                .isInstanceOf(SkylineException.class)
+                .extracting(e -> ((SkylineException) e).getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void delayingABoardingFlightMovesItBackToDelayed() {
+        Flight flight = flight(FlightStatus.BOARDING);
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+
+        service.delayFlight(flight.getId(), flight.getDepartureTime().plusMinutes(40));
+
+        assertThat(flight.getStatus()).isEqualTo(FlightStatus.DELAYED);
+        assertThat(singleChange().type()).isEqualTo(FlightChangeType.DELAYED);
+    }
+
+    @Test
+    void clearingADelayPutsTheFlightBackOnSchedule() {
+        Flight flight = delayed(LocalDateTime.of(2030, 6, 1, 11, 0));
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+
+        var response = service.clearDelay(flight.getId());
+
+        assertThat(response.getStatus()).isEqualTo(FlightStatus.SCHEDULED);
+        assertThat(response.getEstimatedDepartureTime()).isNull();
+        assertThat(response.getEstimatedArrivalTime()).isNull();
+        FlightChangedEvent event = singleChange();
+        assertThat(event.type()).isEqualTo(FlightChangeType.DELAY_CLEARED);
+        assertThat(event.previousEstimatedDepartureTime()).isEqualTo(LocalDateTime.of(2030, 6, 1, 11, 0));
+    }
+
+    @Test
+    void statusBackToScheduledAlsoLiftsTheDelay() {
+        Flight flight = delayed(LocalDateTime.of(2030, 6, 1, 11, 0));
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+
+        service.updateFlightStatus(flight.getId(), FlightStatus.SCHEDULED);
+
+        assertThat(flight.getEstimatedDepartureTime()).isNull();
+        assertThat(singleChange().type()).isEqualTo(FlightChangeType.DELAY_CLEARED);
+    }
+
+    @Test
+    void boardingADelayedFlightKeepsItsEstimate() {
+        Flight flight = delayed(LocalDateTime.of(2030, 6, 1, 11, 0));
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+
+        service.updateFlightStatus(flight.getId(), FlightStatus.BOARDING);
+
+        assertThat(flight.getEstimatedDepartureTime()).isEqualTo(LocalDateTime.of(2030, 6, 1, 11, 0));
+        assertThat(singleChange().type()).isEqualTo(FlightChangeType.STATUS_CHANGED);
+    }
+
+    @Test
+    void assigningAGateNormalisesItAndAnnouncesTheChange() {
+        Flight flight = flight(FlightStatus.SCHEDULED);
+        flight.setGate("B4");
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+
+        var response = service.assignGate(flight.getId(), " b12 ");
+
+        assertThat(response.getGate()).isEqualTo("B12");
+        FlightChangedEvent event = singleChange();
+        assertThat(event.type()).isEqualTo(FlightChangeType.GATE_CHANGED);
+        assertThat(event.previousGate()).isEqualTo("B4");
+        assertThat(event.gate()).isEqualTo("B12");
+    }
+
+    @Test
+    void assigningTheSameGateAnnouncesNothing() {
+        Flight flight = flight(FlightStatus.SCHEDULED);
+        flight.setGate("B12");
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+
+        service.assignGate(flight.getId(), "B12");
+
+        verifyNoInteractions(outbox);
+    }
+
+    @Test
+    void aDepartedFlightKeepsItsGate() {
+        Flight flight = flight(FlightStatus.DEPARTED);
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+
+        assertThatThrownBy(() -> service.assignGate(flight.getId(), "C3"))
+                .isInstanceOf(SkylineException.class)
+                .hasMessage("Cannot change the gate of a flight in status: DEPARTED");
+    }
+
+    @Test
+    void reschedulingAnnouncesTheNewTimesAndLiftsTheDelay() {
+        Flight flight = delayed(LocalDateTime.of(2030, 6, 1, 11, 0));
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+        LocalDateTime newDeparture = LocalDateTime.of(2030, 6, 1, 12, 0);
+
+        service.updateFlight(flight.getId(), new FlightRequest("SK100", ROUTE_ID, AIRCRAFT_ID, newDeparture,
+                newDeparture.plusHours(4), new BigDecimal("100.00")));
+
+        assertThat(flight.getStatus()).isEqualTo(FlightStatus.SCHEDULED);
+        assertThat(flight.getEstimatedDepartureTime()).isNull();
+        FlightChangedEvent event = singleChange();
+        assertThat(event.type()).isEqualTo(FlightChangeType.RESCHEDULED);
+        assertThat(event.previousDepartureTime()).isEqualTo(LocalDateTime.of(2030, 6, 1, 9, 0));
+        assertThat(event.departureTime()).isEqualTo(newDeparture);
+    }
+
+    @Test
+    void anUpdateThatKeepsTheTimesAnnouncesNothing() {
+        Flight flight = flight(FlightStatus.SCHEDULED);
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+        LocalDateTime departure = flight.getDepartureTime();
+
+        service.updateFlight(flight.getId(), new FlightRequest("SK100", ROUTE_ID, AIRCRAFT_ID, departure,
+                flight.getArrivalTime(), new BigDecimal("150.00")));
+
+        verifyNoInteractions(outbox);
+    }
+
+    /** The one event appended to the changed topic. */
+    FlightChangedEvent singleChange() {
+        ArgumentCaptor<Object> event = ArgumentCaptor.forClass(Object.class);
+        verify(outbox).append(eq(KafkaTopicConfig.FLIGHT_CHANGED_TOPIC), any(UUID.class), event.capture());
+        return (FlightChangedEvent) event.getValue();
+    }
+
+    static Flight delayed(LocalDateTime estimate) {
+        Flight flight = flight(FlightStatus.DELAYED);
+        flight.setEstimatedDepartureTime(estimate);
+        return flight;
     }
 
     @Test

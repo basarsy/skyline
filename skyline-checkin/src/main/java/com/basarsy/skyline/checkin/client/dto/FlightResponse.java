@@ -22,6 +22,11 @@ public class FlightResponse {
     private AircraftResponse aircraft;
     private LocalDateTime departureTime;
     private LocalDateTime arrivalTime;
+    /** Expected departure while delayed, else null; {@code departureTime} stays the scheduled time. */
+    private LocalDateTime estimatedDepartureTime;
+    private LocalDateTime estimatedArrivalTime;
+    /** Departure gate, null until ops assign one. */
+    private String gate;
     private FlightStatus status;
     private int availableSeats;
     private BigDecimal basePrice;

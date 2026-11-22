@@ -16,7 +16,10 @@ public class BoardingPassResponse {
     private String flightNumber;
     private String origin;
     private String destination;
+    /** Scheduled departure. */
     private LocalDateTime departureTime;
+    /** Expected departure while the flight is delayed, else null. */
+    private LocalDateTime estimatedDepartureTime;
     private LocalDateTime boardingTime;
     private String gate;
     private String seatNumber;

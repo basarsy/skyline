@@ -1,4 +1,5 @@
 import type { FlightCrewResponse, FlightResponse, FlightStatus } from '@/api/types'
+import { minutesBetween } from './format'
 
 /**
  * The flight status machine, mirrored for guidance (the server decides). CANCELLED is deliberately absent:
@@ -64,4 +65,17 @@ export const transitionCopy: Record<FlightStatus, string> = {
   DEPARTED: 'Mark as departed',
   ARRIVED: 'Mark as arrived',
   CANCELLED: 'Cancel flight',
+}
+
+/** How many minutes late a flight is expected to leave; 0 while it is on time. */
+export function delayMinutes(flight: Pick<FlightResponse, 'departureTime' | 'estimatedDepartureTime'>) {
+  if (!flight.estimatedDepartureTime) return 0
+  return Math.max(0, minutesBetween(flight.departureTime, flight.estimatedDepartureTime))
+}
+
+/** "45 min", "2 h", "1 h 30 min". */
+export function formatDelay(minutes: number) {
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return h === 0 ? `${m} min` : m === 0 ? `${h} h` : `${h} h ${m} min`
 }

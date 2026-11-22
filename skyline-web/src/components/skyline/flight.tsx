@@ -1,8 +1,9 @@
 import type * as React from 'react'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, Clock, DoorOpen } from 'lucide-react'
 
 import type { FlightResponse, RouteResponse } from '@/api/types'
 import { cn } from '@/lib/cn'
+import { delayMinutes, formatDelay } from '@/lib/flight-status'
 import { arrivalDayOffset, formatDateInZone, formatDuration, formatTimeInZone, minutesBetween } from '@/lib/format'
 import { PlaneGlyph } from './brand'
 import { FlightStatusBadge } from './status-badge'
@@ -131,6 +132,58 @@ export function FlightTimeline({
         align="end"
         size={size}
       />
+    </div>
+  )
+}
+
+/**
+ * What operations changed about a flight: the delay (new local times, the scheduled ones struck through) and
+ * the departure gate. Renders nothing for an on-time flight without a gate, or a flight that already left.
+ */
+export function FlightUpdates({
+  flight,
+  className,
+}: {
+  flight: Pick<
+    FlightResponse,
+    'departureTime' | 'arrivalTime' | 'estimatedDepartureTime' | 'estimatedArrivalTime' | 'gate' | 'status' | 'route'
+  >
+  className?: string
+}) {
+  if (flight.status === 'CANCELLED' || flight.status === 'DEPARTED' || flight.status === 'ARRIVED') return null
+  const delay = delayMinutes(flight)
+  if (!delay && !flight.gate) return null
+  const originZone = flight.route?.origin.timezone
+  const destinationZone = flight.route?.destination.timezone
+  return (
+    <div className={cn('flex flex-col gap-3 sm:flex-row sm:gap-6', className)} role="status">
+      {delay > 0 && flight.estimatedDepartureTime && (
+        <p className="flex items-start gap-2.5 text-sm">
+          <Clock className="mt-0.5 size-4 shrink-0 text-warning" strokeWidth={1.75} aria-hidden />
+          <span>
+            <span className="font-semibold">Delayed by {formatDelay(delay)}.</span> Now departs{' '}
+            <span className="font-semibold tabular">{formatTimeInZone(flight.estimatedDepartureTime, originZone)}</span>{' '}
+            <s className="text-muted-foreground tabular">{formatTimeInZone(flight.departureTime, originZone)}</s>
+            {flight.estimatedArrivalTime && (
+              <>
+                , arrives{' '}
+                <span className="font-semibold tabular">
+                  {formatTimeInZone(flight.estimatedArrivalTime, destinationZone)}
+                </span>
+              </>
+            )}
+            .
+          </span>
+        </p>
+      )}
+      {flight.gate && (
+        <p className="flex items-center gap-2.5 text-sm">
+          <DoorOpen className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.75} aria-hidden />
+          <span>
+            Gate <span className="font-mono font-semibold">{flight.gate}</span>
+          </span>
+        </p>
+      )}
     </div>
   )
 }

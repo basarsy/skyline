@@ -6,7 +6,7 @@ import { isApiError } from '@/api/http'
 import type { ReservationResponse } from '@/api/types'
 import { useAuth } from '@/auth/use-auth'
 import { ConfirmDialog } from '@/components/skyline/confirm-dialog'
-import { FlightTimeline, flightTimes, RouteLabel } from '@/components/skyline/flight'
+import { FlightTimeline, flightTimes, FlightUpdates, RouteLabel } from '@/components/skyline/flight'
 import { PnrDisplay } from '@/components/skyline/pnr'
 import { PriceTag } from '@/components/skyline/price-tag'
 import { FlightStatusBadge, ReservationStatusBadge } from '@/components/skyline/status-badge'
@@ -174,6 +174,9 @@ export function ReservationView({ reservation, redacted }: { reservation: Reserv
       {flight ? (
         <section aria-label="Flight" className="rounded-card border border-border bg-card p-5 sm:p-8">
           <FlightTimeline flight={flight} size="detail" />
+          {reservation.status !== 'CANCELLED' && (
+            <FlightUpdates flight={flight} className="mt-6 border-t border-border pt-5" />
+          )}
         </section>
       ) : (
         <p className="rounded-card border border-border bg-card p-6 text-muted-foreground">

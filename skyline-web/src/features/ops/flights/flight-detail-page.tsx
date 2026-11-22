@@ -10,6 +10,7 @@ import { Combobox } from '@/components/skyline/combobox'
 import { ConfirmDialog } from '@/components/skyline/confirm-dialog'
 import { FlightTimeline, flightTimes, RouteLabel } from '@/components/skyline/flight'
 import { FormField } from '@/components/skyline/form'
+import { Input } from '@/components/ui/input'
 import { ResponsiveSheet } from '@/components/skyline/responsive-sheet'
 import { EmptyState, ErrorState, LoadingRegion, SkeletonCard } from '@/components/skyline/states'
 import { FlightStatusBadge } from '@/components/skyline/status-badge'
@@ -18,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { cn } from '@/lib/cn'
 import {
   crewReadiness,
+  formatDelay,
   isCancellableFlight,
   isEditableFlight,
   MAIN_LINE,
@@ -25,12 +27,28 @@ import {
   requiresCrew,
   transitionCopy,
 } from '@/lib/flight-status'
-import { formatLocalDate } from '@/lib/format'
+import {
+  airportLocalToApi,
+  apiToAirportLocal,
+  formatLocalDate,
+  formatTimeInZone,
+  minutesBetween,
+  parseUtc,
+  toApiDateTime,
+} from '@/lib/format'
 import { useDebounced, useDocumentTitle } from '@/lib/hooks'
 import { crewRoleLabel, CREW_ROLES, flightStatusLabel } from '@/lib/labels'
 import { capacityOf, loadFactor } from '@/lib/pricing'
 import { useFlight } from '@/features/search/queries'
-import { useAssignCrew, useCancelFlight, useCrewList, useManifest, useRemoveCrew, useSetFlightStatus } from '../queries'
+import {
+  useAssignCrew,
+  useCancelFlight,
+  useCrewList,
+  useFlightOperations,
+  useManifest,
+  useRemoveCrew,
+  useSetFlightStatus,
+} from '../queries'
 
 const errorText = (error: unknown) =>
   isApiError(error) || error instanceof Error ? error.message : 'Please try again.'
@@ -174,6 +192,158 @@ function StatusCard({ flight, manifest }: { flight: FlightResponse; manifest: Fl
           )}
         </div>
       </ResponsiveSheet>
+    </section>
+  )
+}
+
+/** Statuses in which a delay can be set or lifted (the schedule service's rule). */
+const DELAYABLE: readonly FlightStatus[] = ['SCHEDULED', 'DELAYED', 'BOARDING']
+const GATE_CLOSED: readonly FlightStatus[] = ['DEPARTED', 'ARRIVED', 'CANCELLED']
+const DELAY_PRESETS = [15, 30, 60, 120] as const
+const GATE = /^[A-Za-z]{0,2}[0-9]{1,3}[A-Za-z]?$/
+
+/** Delay and gate: what passengers are told about when they change. Mounted again (keyed) after each save. */
+function OperationsCard({ flight }: { flight: FlightResponse }) {
+  const ops = useFlightOperations(flight.id)
+  const zone = flight.route?.origin.timezone
+  const scheduledLocal = apiToAirportLocal(flight.departureTime, zone)
+  const currentEstimate = flight.estimatedDepartureTime ? apiToAirportLocal(flight.estimatedDepartureTime, zone) : ''
+  const [estimateLocal, setEstimateLocal] = React.useState(currentEstimate)
+  const [gate, setGate] = React.useState(flight.gate ?? '')
+
+  const canDelay = DELAYABLE.includes(flight.status)
+  const gateOpen = !GATE_CLOSED.includes(flight.status)
+  const delayedBy = flight.estimatedDepartureTime
+    ? minutesBetween(flight.departureTime, flight.estimatedDepartureTime)
+    : 0
+  const preset = (minutes: number) =>
+    toApiDateTime(new Date(parseUtc(flight.departureTime).getTime() + minutes * 60_000))
+  const gateValid = GATE.test(gate.trim())
+  const error = ops.delay.error ?? ops.clearDelay.error ?? ops.setGate.error
+
+  return (
+    <section
+      aria-labelledby="operations-title"
+      className="flex flex-col gap-5 rounded-card border border-border bg-card p-5 sm:p-6"
+    >
+      <div className="flex flex-col gap-1">
+        <h2 id="operations-title" className="text-h3 font-semibold">
+          Delay &amp; gate
+        </h2>
+        <p className="text-sm text-muted-foreground">Passengers are told about every change.</p>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <span className="text-sm font-medium">Departure</span>
+          <span className="text-sm tabular">
+            {flight.estimatedDepartureTime ? (
+              <>
+                <s className="text-muted-foreground">{formatTimeInZone(flight.departureTime, zone)}</s>{' '}
+                <span className="font-semibold">{formatTimeInZone(flight.estimatedDepartureTime, zone)}</span>
+                <span className="text-muted-foreground"> · +{formatDelay(delayedBy)}</span>
+              </>
+            ) : (
+              <>
+                {formatTimeInZone(flight.departureTime, zone)}
+                <span className="text-muted-foreground"> · on time</span>
+              </>
+            )}
+          </span>
+        </div>
+        {canDelay ? (
+          <>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Delay by">
+              {DELAY_PRESETS.map((minutes) => (
+                <Button
+                  key={minutes}
+                  size="sm"
+                  variant="outline"
+                  disabled={ops.delay.isPending}
+                  onClick={() => ops.delay.mutate(preset(minutes))}
+                >
+                  +{formatDelay(minutes)}
+                </Button>
+              ))}
+            </div>
+            <form
+              className="flex items-end gap-2"
+              onSubmit={(event) => {
+                event.preventDefault()
+                if (estimateLocal) ops.delay.mutate(airportLocalToApi(estimateLocal, zone))
+              }}
+            >
+              <div className="min-w-0 flex-1">
+                <FormField label="Expected departure (airport time)">
+                  {(control) => (
+                    <Input
+                      {...control}
+                      type="datetime-local"
+                      className="min-w-0"
+                      min={scheduledLocal}
+                      value={estimateLocal}
+                      onChange={(event) => setEstimateLocal(event.target.value)}
+                    />
+                  )}
+                </FormField>
+              </div>
+              <Button type="submit" variant="outline" disabled={!estimateLocal} loading={ops.delay.isPending}>
+                Set
+              </Button>
+            </form>
+            {flight.estimatedDepartureTime && (
+              <Button
+                variant="ghost"
+                className="self-start"
+                loading={ops.clearDelay.isPending}
+                onClick={() => ops.clearDelay.mutate()}
+              >
+                Back on schedule
+              </Button>
+            )}
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">The departure time can’t change any more.</p>
+        )}
+      </div>
+
+      <form
+        className="flex items-end gap-2"
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (gateValid) ops.setGate.mutate(gate.trim())
+        }}
+      >
+        <div className="min-w-0 flex-1">
+          <FormField label="Gate">
+            {(control) => (
+              <Input
+                {...control}
+                value={gate}
+                maxLength={6}
+                placeholder="Not assigned"
+                disabled={!gateOpen}
+                className="font-mono uppercase"
+                onChange={(event) => setGate(event.target.value)}
+              />
+            )}
+          </FormField>
+        </div>
+        <Button
+          type="submit"
+          variant="outline"
+          disabled={!gateOpen || !gateValid || gate.trim().toUpperCase() === flight.gate}
+          loading={ops.setGate.isPending}
+        >
+          {flight.gate ? 'Change' : 'Assign'}
+        </Button>
+      </form>
+
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {errorText(error)}
+        </p>
+      )}
     </section>
   )
 }
@@ -521,8 +691,10 @@ export function Component() {
       <div className="rounded-card border border-border bg-card p-5 sm:p-6">
         <FlightTimeline flight={flight!} />
       </div>
-      <div className="grid gap-6 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <StatusCard flight={flight!} manifest={manifest} />
+        {/* Keyed on the server values, so the inputs start over from them after each change. */}
+        <OperationsCard key={`${flight!.estimatedDepartureTime}|${flight!.gate}`} flight={flight!} />
         <CrewCard flight={flight!} manifest={manifest} loading={manifestQuery.isPending} />
         <InventoryCard flight={flight!} />
       </div>

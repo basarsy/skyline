@@ -21,12 +21,17 @@ import com.basarsy.skyline.schedule.outbox.Outbox;
 import com.basarsy.skyline.schedule.repository.FlightRepository;
 import com.basarsy.skyline.schedule.repository.FlightSpecifications;
 import com.basarsy.skyline.schedule.event.FlightCancelledEvent;
+import com.basarsy.skyline.schedule.event.FlightChangeType;
+import com.basarsy.skyline.schedule.event.FlightChangedEvent;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -47,6 +52,13 @@ public class FlightServiceImpl implements FlightService {
 
     /** Statuses a passenger can book (see the reservation service), so the ones search must return. */
     static final Set<FlightStatus> BOOKABLE_STATUSES = EnumSet.of(FlightStatus.SCHEDULED, FlightStatus.DELAYED);
+
+    /** Statuses in which ops can set or lift a delay: the flight has not left yet. */
+    static final Set<FlightStatus> DELAYABLE_STATUSES =
+            EnumSet.of(FlightStatus.SCHEDULED, FlightStatus.DELAYED, FlightStatus.BOARDING);
+
+    /** A longer delay is a reschedule: move the flight's times instead. */
+    static final Duration MAX_DELAY = Duration.ofHours(24);
 
     private final FlightRepository flightRepository;
     private final FleetClient fleetClient;
@@ -98,11 +110,73 @@ public class FlightServiceImpl implements FlightService {
             flight.setAvailableSeats(seatsOnNewAircraft(flight, aircraft));
         }
 
+        Snapshot before = Snapshot.of(flight);
         flightMapper.updateEntity(flight, request);
         flight.setRouteId(route.id());
         flight.setAircraftId(aircraft.id());
+        if (before.timesDifferFrom(flight)) {
+            // The new times are the plan now: a delay against the old ones no longer applies.
+            liftDelay(flight);
+        }
 
-        return enrichFlightResponse(flightRepository.save(flight));
+        return saveAndAnnounce(flight, before);
+    }
+
+    @Override
+    @Transactional
+    public FlightResponse delayFlight(UUID id, LocalDateTime estimatedDepartureTime) {
+        Flight flight = getFlightEntity(id);
+        if (!DELAYABLE_STATUSES.contains(flight.getStatus())) {
+            throw new SkylineException("Cannot delay a flight in status: " + flight.getStatus(), HttpStatus.BAD_REQUEST);
+        }
+        if (!estimatedDepartureTime.isAfter(flight.getDepartureTime())) {
+            throw new SkylineException("Estimated departure must be after the scheduled departure",
+                    HttpStatus.BAD_REQUEST);
+        }
+        if (estimatedDepartureTime.isAfter(flight.getDepartureTime().plus(MAX_DELAY))) {
+            throw new SkylineException("A delay of more than " + MAX_DELAY.toHours()
+                    + " hours is a reschedule: change the flight's times instead", HttpStatus.BAD_REQUEST);
+        }
+
+        Snapshot before = Snapshot.of(flight);
+        flight.setEstimatedDepartureTime(estimatedDepartureTime);
+        flight.setStatus(FlightStatus.DELAYED);
+        return saveAndAnnounce(flight, before);
+    }
+
+    @Override
+    @Transactional
+    public FlightResponse clearDelay(UUID id) {
+        Flight flight = getFlightEntity(id);
+        if (!DELAYABLE_STATUSES.contains(flight.getStatus())) {
+            throw new SkylineException("Cannot change the delay of a flight in status: " + flight.getStatus(),
+                    HttpStatus.BAD_REQUEST);
+        }
+        Snapshot before = Snapshot.of(flight);
+        liftDelay(flight);
+        return saveAndAnnounce(flight, before);
+    }
+
+    @Override
+    @Transactional
+    public FlightResponse assignGate(UUID id, String gate) {
+        Flight flight = getFlightEntity(id);
+        if (flight.getStatus() == FlightStatus.DEPARTED || flight.getStatus() == FlightStatus.ARRIVED
+                || flight.getStatus() == FlightStatus.CANCELLED) {
+            throw new SkylineException("Cannot change the gate of a flight in status: " + flight.getStatus(),
+                    HttpStatus.BAD_REQUEST);
+        }
+        Snapshot before = Snapshot.of(flight);
+        flight.setGate(gate.trim().toUpperCase(Locale.ROOT));
+        return saveAndAnnounce(flight, before);
+    }
+
+    /** Back on schedule: no expected time, and a DELAYED flight is SCHEDULED again (BOARDING stays). */
+    private static void liftDelay(Flight flight) {
+        flight.setEstimatedDepartureTime(null);
+        if (flight.getStatus() == FlightStatus.DELAYED) {
+            flight.setStatus(FlightStatus.SCHEDULED);
+        }
     }
 
     @Override
@@ -129,8 +203,12 @@ public class FlightServiceImpl implements FlightService {
             crewClient.validateCrewForFlight(id);
         }
 
+        Snapshot before = Snapshot.of(flight);
         flight.setStatus(status);
-        return enrichFlightResponse(flightRepository.save(flight));
+        if (before.status() == FlightStatus.DELAYED && status == FlightStatus.SCHEDULED) {
+            liftDelay(flight);
+        }
+        return saveAndAnnounce(flight, before);
     }
 
     @Override
@@ -178,6 +256,11 @@ public class FlightServiceImpl implements FlightService {
             Function<UUID, AircraftResponse> aircraft) {
         FlightResponse res = flightMapper.toResponse(flight);
         res.setCurrency(pricing.currency());
+        if (flight.getEstimatedDepartureTime() != null) {
+            // Expected to land as late as it leaves.
+            Duration delay = Duration.between(flight.getDepartureTime(), flight.getEstimatedDepartureTime());
+            res.setEstimatedArrivalTime(flight.getArrivalTime().plus(delay));
+        }
         // Null when the other service is unreachable: clients render a fallback rather than failing the read.
         res.setRoute(routes.apply(flight.getRouteId()));
         res.setAircraft(aircraft.apply(flight.getAircraftId()));
@@ -211,6 +294,7 @@ public class FlightServiceImpl implements FlightService {
             throw new SkylineException("Cannot cancel flight in status: " + flight.getStatus(), HttpStatus.BAD_REQUEST);
         }
 
+        Snapshot before = Snapshot.of(flight);
         flight.setStatus(FlightStatus.CANCELLED);
         
         // Enrich to get seat count for reset
@@ -222,6 +306,64 @@ public class FlightServiceImpl implements FlightService {
         // Same transaction as the status change: the reservation service hears of it only if the cancellation
         // commits, and then at least once (the outbox publisher sends it after commit, off the request thread).
         outbox.append(KafkaTopicConfig.FLIGHT_CANCELLED_TOPIC, id, new FlightCancelledEvent(id));
+        announce(before, flight, fetchRoute(flight.getRouteId()));
+    }
+
+    /** Saves the flight, then records an event for each change since {@code before} (same transaction). */
+    private FlightResponse saveAndAnnounce(Flight flight, Snapshot before) {
+        FlightResponse response = enrichFlightResponse(flightRepository.save(flight));
+        announce(before, flight, response.getRoute());
+        return response;
+    }
+
+    /**
+     * Appends the {@link FlightChangedEvent}s that describe how {@code flight} differs from {@code before}: at
+     * most one for the schedule or status (cancelled, rescheduled, delayed, delay lifted, or another status
+     * change, in that order of precedence) and one for the gate. Nothing is appended when nothing changed.
+     */
+    private void announce(Snapshot before, Flight flight, RouteResponse route) {
+        FlightChangeType type = null;
+        if (flight.getStatus() == FlightStatus.CANCELLED && before.status() != FlightStatus.CANCELLED) {
+            type = FlightChangeType.CANCELLED;
+        } else if (before.timesDifferFrom(flight)) {
+            type = FlightChangeType.RESCHEDULED;
+        } else if (!Objects.equals(before.estimatedDepartureTime(), flight.getEstimatedDepartureTime())) {
+            type = flight.getEstimatedDepartureTime() != null
+                    ? FlightChangeType.DELAYED : FlightChangeType.DELAY_CLEARED;
+        } else if (before.status() != flight.getStatus()) {
+            type = FlightChangeType.STATUS_CHANGED;
+        }
+        if (type != null) {
+            append(type, before, flight, route);
+        }
+        if (!Objects.equals(before.gate(), flight.getGate())) {
+            append(FlightChangeType.GATE_CHANGED, before, flight, route);
+        }
+    }
+
+    private void append(FlightChangeType type, Snapshot before, Flight flight, RouteResponse route) {
+        FlightChangedEvent event = new FlightChangedEvent(type, flight.getId(), flight.getFlightNumber(),
+                route == null || route.origin() == null ? null : route.origin().iataCode(),
+                route == null || route.destination() == null ? null : route.destination().iataCode(),
+                flight.getStatus(), before.status(),
+                flight.getDepartureTime(), before.departureTime(), flight.getArrivalTime(),
+                flight.getEstimatedDepartureTime(), before.estimatedDepartureTime(),
+                flight.getGate(), before.gate(), LocalDateTime.now());
+        outbox.append(KafkaTopicConfig.FLIGHT_CHANGED_TOPIC, flight.getId(), event);
+    }
+
+    /** What a flight looked like before an operation, to tell what the operation changed. */
+    private record Snapshot(FlightStatus status, LocalDateTime departureTime, LocalDateTime arrivalTime,
+            LocalDateTime estimatedDepartureTime, String gate) {
+
+        static Snapshot of(Flight flight) {
+            return new Snapshot(flight.getStatus(), flight.getDepartureTime(), flight.getArrivalTime(),
+                    flight.getEstimatedDepartureTime(), flight.getGate());
+        }
+
+        boolean timesDifferFrom(Flight flight) {
+            return !departureTime.equals(flight.getDepartureTime()) || !arrivalTime.equals(flight.getArrivalTime());
+        }
     }
     @Override
     @Transactional

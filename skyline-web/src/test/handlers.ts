@@ -756,6 +756,52 @@ export const handlers = [
     flight.status = status
     return ok(flight, 'Flight status updated successfully')
   }),
+  http.put(`${API}/flights/:id/delay`, async ({ request, params }) => {
+    const { denied } = guard(request, ['STAFF', 'ADMIN'])
+    if (denied) return denied
+    const flight = findFlight(String(params.id))
+    if (!flight) return fail(404, 'Flight not found')
+    if (!['SCHEDULED', 'DELAYED', 'BOARDING'].includes(flight.status))
+      return fail(400, `Cannot delay a flight in status: ${flight.status}`)
+    const { estimatedDepartureTime } = (await request.json()) as { estimatedDepartureTime: string }
+    const delay = Date.parse(`${estimatedDepartureTime}Z`) - Date.parse(`${flight.departureTime}Z`)
+    if (!(delay > 0)) return fail(400, 'Estimated departure must be after the scheduled departure')
+    if (delay > 24 * 3_600_000)
+      return fail(400, "A delay of more than 24 hours is a reschedule: change the flight's times instead")
+    Object.assign(flight, {
+      status: 'DELAYED',
+      estimatedDepartureTime,
+      estimatedArrivalTime: toApiDateTime(new Date(Date.parse(`${flight.arrivalTime}Z`) + delay)),
+      updatedAt: now(),
+    })
+    return ok(flight, 'Flight delayed')
+  }),
+  http.delete(`${API}/flights/:id/delay`, ({ request, params }) => {
+    const { denied } = guard(request, ['STAFF', 'ADMIN'])
+    if (denied) return denied
+    const flight = findFlight(String(params.id))
+    if (!flight) return fail(404, 'Flight not found')
+    Object.assign(flight, {
+      status: flight.status === 'DELAYED' ? 'SCHEDULED' : flight.status,
+      estimatedDepartureTime: null,
+      estimatedArrivalTime: null,
+      updatedAt: now(),
+    })
+    return ok(flight, 'Flight delay lifted')
+  }),
+  http.put(`${API}/flights/:id/gate`, async ({ request, params }) => {
+    const { denied } = guard(request, ['STAFF', 'ADMIN'])
+    if (denied) return denied
+    const flight = findFlight(String(params.id))
+    if (!flight) return fail(404, 'Flight not found')
+    if (['DEPARTED', 'ARRIVED', 'CANCELLED'].includes(flight.status))
+      return fail(400, `Cannot change the gate of a flight in status: ${flight.status}`)
+    const { gate } = (await request.json()) as { gate: string }
+    if (!/^[A-Za-z]{0,2}[0-9]{1,3}[A-Za-z]?$/.test(gate.trim()))
+      return fail(400, 'Validation failed', ['gate: Gate must look like B12, G5 or 214A'])
+    Object.assign(flight, { gate: gate.trim().toUpperCase(), updatedAt: now() })
+    return ok(flight, 'Gate assigned')
+  }),
   http.delete(`${API}/flights/:id`, ({ request, params }) => {
     const { denied } = guard(request, ['ADMIN'])
     if (denied) return denied
@@ -1101,6 +1147,7 @@ export const handlers = [
     }
     const flight = findFlight(reservation.flight!.id)!
     const departure = new Date(`${flight.departureTime}Z`).getTime()
+    const expected = new Date(`${flight.estimatedDepartureTime ?? flight.departureTime}Z`).getTime()
     if (Date.now() < departure - 48 * 3_600_000) return fail(422, 'Check-in opens 48 hours before departure.')
     if (Date.now() > departure - 3_600_000) return fail(422, 'Check-in closes 1 hour before departure.')
     reservation.seatNumber ??= nextSeat(flight, reservation.cabinClass)
@@ -1113,8 +1160,9 @@ export const handlers = [
       origin: flight.route?.origin.iataCode ?? null,
       destination: flight.route?.destination.iataCode ?? null,
       departureTime: flight.departureTime,
-      boardingTime: toApiDateTime(new Date(departure - 45 * 60_000)),
-      gate: 'G7',
+      estimatedDepartureTime: flight.estimatedDepartureTime,
+      boardingTime: toApiDateTime(new Date(expected - 45 * 60_000)),
+      gate: flight.gate ?? 'G7',
       seatNumber: reservation.seatNumber,
       barcodeData: `SKY-${pnr}-3F9A1C2B`,
       issuedAt: now(),

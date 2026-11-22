@@ -14,5 +14,6 @@ public interface BoardingPassMapper {
     @Mapping(target = "origin", ignore = true)
     @Mapping(target = "destination", ignore = true)
     @Mapping(target = "departureTime", ignore = true)
+    @Mapping(target = "estimatedDepartureTime", ignore = true)
     BoardingPassResponse toResponse(BoardingPass boardingPass);
 }

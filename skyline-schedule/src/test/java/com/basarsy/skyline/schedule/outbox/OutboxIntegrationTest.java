@@ -64,7 +64,10 @@ import org.testcontainers.utility.DockerImageName;
 class OutboxIntegrationTest {
 
     /** Whether the only outbox row is published. */
-    static final String PUBLISHED = "SELECT published_at IS NOT NULL FROM outbox_events";
+    /** A cancellation also records a FlightChangedEvent; these tests follow the cancelled topic's row. */
+    static final String CANCELLED_ROW = "FROM outbox_events WHERE topic = '" + KafkaTopicConfig.FLIGHT_CANCELLED_TOPIC + "'";
+    /** Every row sent: the cancelled event and, after it (same flight, so in order), the change event. */
+    static final String PUBLISHED = "SELECT bool_and(published_at IS NOT NULL) FROM outbox_events";
 
     @Container
     @ServiceConnection
@@ -105,13 +108,19 @@ class OutboxIntegrationTest {
 
         flightService.cancelFlight(flight.getId());
 
-        Map<String, Object> row = jdbc.queryForMap("SELECT * FROM outbox_events");
+        Map<String, Object> row = jdbc.queryForMap("SELECT * " + CANCELLED_ROW);
         assertThat(row.get("aggregate_id")).isEqualTo(flight.getId());
         assertThat(row.get("event_type")).isEqualTo("FlightCancelledEvent");
         assertThat(row.get("topic")).isEqualTo(KafkaTopicConfig.FLIGHT_CANCELLED_TOPIC);
         assertThat(row.get("payload")).isEqualTo("{\"flightId\":\"" + flight.getId() + "\"}");
         assertThat(row.get("published_at")).isNull();
         assertThat(row.get("attempts")).isEqualTo(0);
+
+        Map<String, Object> change = jdbc.queryForMap("SELECT * FROM outbox_events WHERE topic = ?",
+                KafkaTopicConfig.FLIGHT_CHANGED_TOPIC);
+        assertThat(change.get("aggregate_id")).isEqualTo(flight.getId());
+        assertThat(change.get("event_type")).isEqualTo("FlightChangedEvent");
+        assertThat((String) change.get("payload")).contains("\"type\":\"CANCELLED\"", "\"previousStatus\":\"SCHEDULED\"");
     }
 
     @Test
@@ -165,14 +174,14 @@ class OutboxIntegrationTest {
             docker.unpauseContainerCmd(kafka.getContainerId()).exec();
         }
 
-        Map<String, Object> failed = jdbc.queryForMap("SELECT * FROM outbox_events");
+        Map<String, Object> failed = jdbc.queryForMap("SELECT * " + CANCELLED_ROW);
         assertThat(failed.get("published_at")).isNull();
         assertThat(failed.get("attempts")).isEqualTo(1);
         assertThat(failed.get("last_error")).isNotNull();
         // The send blocked for seconds, far longer than the 0.2s backoff. The backoff counts from the failure,
         // so the row is still not due once the run is over (counted from the claim, it would be overdue).
         assertThat(Duration.between(claimed, failedAt)).isGreaterThan(Duration.ofSeconds(1));
-        assertThat(jdbc.queryForObject("SELECT next_attempt_at FROM outbox_events", OffsetDateTime.class).toInstant())
+        assertThat(jdbc.queryForObject("SELECT next_attempt_at " + CANCELLED_ROW, OffsetDateTime.class).toInstant())
                 .isAfter(failedAt);
 
         publishUntil("delivered after Kafka is back", () -> jdbc.queryForObject(PUBLISHED, Boolean.class));
