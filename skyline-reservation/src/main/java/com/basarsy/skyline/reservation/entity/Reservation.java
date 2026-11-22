@@ -62,6 +62,10 @@ public class Reservation extends BaseEntity {
     @Column(nullable = false, unique = true, length = 6)
     private String pnr;
 
+    /** Where messages about this booking go; null on bookings made before it was recorded. */
+    @Column(name = "contact_email", length = 254)
+    private String contactEmail;
+
     @Version
     private Long version;
 }

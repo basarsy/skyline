@@ -30,6 +30,12 @@ final class CallerAccess {
         return user.getId();
     }
 
+    /** The calling user's email (their login). Like {@link #currentUserId()}, only for user accounts. */
+    static String currentUserEmail() {
+        currentUserId();
+        return ((SkylineUserDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getUsername();
+    }
+
     static boolean isStaffOrAdmin() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         return authentication != null && authentication.getAuthorities().stream()

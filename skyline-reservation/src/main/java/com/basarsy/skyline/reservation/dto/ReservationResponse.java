@@ -31,6 +31,8 @@ public class ReservationResponse {
     private BigDecimal totalPrice;
     /** Shared by reservations booked together; null for a single booking. */
     private UUID bookingGroupId;
+    /** Where messages about the booking go; left out of the public (PNR + last name) view. */
+    private String contactEmail;
     /** Paid extras (seat, bags, ...), every status, oldest first. */
     private java.util.List<AncillaryLineResponse> ancillaries;
     /** ISO 4217 code of {@code totalPrice}. */
