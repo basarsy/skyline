@@ -10,7 +10,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionOperations;
 
 /**
  * "Check-in is open": once per booking and flight, when the check-in window (48h → 1h before the scheduled
@@ -28,27 +28,36 @@ public class CheckInReminders {
     private final RecipientRepository recipients;
     private final Inbox inbox;
     private final Clock clock;
+    private final TransactionOperations transactions;
 
     @Scheduled(fixedDelayString = "${skyline.notification.check-in-reminder-interval}")
     void run() {
         send();
     }
 
-    /** Reminds one batch of due bookings and returns how many reservations it covered. */
-    @Transactional
+    /**
+     * Reminds one batch of due bookings and returns how many reservations it covered. The claim, the messages
+     * and marking them reminded share one transaction (opened here, not by a proxy: the scheduler calls this
+     * from {@link #run()} on the bean itself).
+     */
     public int send() {
-        List<Recipient> due = recipients.claimDueReminders(LocalDateTime.now(clock), OPENS_BEFORE, CLOSES_BEFORE, BATCH);
-        for (List<Recipient> booking : FlightChangeHandler.groupBy(due, r -> r.bookingId() + ":" + r.flightId())) {
-            Recipient first = booking.get(0);
-            Message message = Messages.checkInOpen(booking, "/checkin/" + first.pnr());
-            String key = "check-in:" + first.bookingId() + ":" + first.flightId();
-            inbox.toUser(first.userId(), message, key);
-            inbox.toEmail(first.contactEmail(), message, key);
+        Integer reminded = transactions.execute(status -> {
+            List<Recipient> due = recipients.claimDueReminders(LocalDateTime.now(clock), OPENS_BEFORE, CLOSES_BEFORE,
+                    BATCH);
+            for (List<Recipient> booking : FlightChangeHandler.groupBy(due, r -> r.bookingId() + ":" + r.flightId())) {
+                Recipient first = booking.get(0);
+                Message message = Messages.checkInOpen(booking, "/checkin/" + first.pnr());
+                String key = "check-in:" + first.bookingId() + ":" + first.flightId();
+                inbox.toUser(first.userId(), message, key);
+                inbox.toEmail(first.contactEmail(), message, key);
+            }
+            recipients.markReminded(due.stream().map(Recipient::reservationId).toList());
+            return due.size();
+        });
+        int count = reminded == null ? 0 : reminded;
+        if (count > 0) {
+            log.info("Sent check-in reminders for {} reservation(s)", count);
         }
-        recipients.markReminded(due.stream().map(Recipient::reservationId).toList());
-        if (!due.isEmpty()) {
-            log.info("Sent check-in reminders for {} reservation(s)", due.size());
-        }
-        return due.size();
+        return count;
     }
 }

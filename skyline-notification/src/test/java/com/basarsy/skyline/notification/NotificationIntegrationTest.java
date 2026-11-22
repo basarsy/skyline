@@ -285,10 +285,10 @@ class NotificationIntegrationTest {
 
     // ------------------------------------------------------------------ fixtures
 
-    /** Runs the reminder job once at {@code nowUtc}, in a transaction as the scheduler would. */
+    /** Runs the reminder job once at {@code nowUtc} exactly as the scheduler does: no transaction around it. */
     int remind(LocalDateTime nowUtc) {
         Clock clock = Clock.fixed(nowUtc.toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
-        return transactions.execute(status -> new CheckInReminders(recipients, inbox, clock).send());
+        return new CheckInReminders(recipients, inbox, clock, transactions).send();
     }
 
     void clearMessages() {

@@ -35,6 +35,8 @@ class NotificationsIT extends E2eTest {
         api(adminToken).body(Map.of("gate", "B12")).put("/flights/" + flightId + "/gate").then().statusCode(200);
 
         awaitKinds(ada, "BOOKING_CONFIRMED", "FLIGHT_DELAYED", "FLIGHT_GATE");
+        // The flight leaves in 24h, inside the check-in window: the reminder job (every minute) picks it up.
+        awaitKinds(ada, Duration.ofSeconds(120), "CHECK_IN_OPEN");
         List<String> links = api(ada.accessToken()).get("/notifications").then().statusCode(200)
                 .extract().path("data.content.link");
         assertThat(links).contains("/trips/" + booking.id());
@@ -46,7 +48,8 @@ class NotificationsIT extends E2eTest {
                 .untilAsserted(() -> assertThat(subjectsSentTo(ada.email()))
                         .anyMatch(s -> s.startsWith("Booking confirmed"))
                         .anyMatch(s -> s.endsWith(" is delayed"))
-                        .anyMatch(s -> s.contains(": gate B12")));
+                        .anyMatch(s -> s.contains(": gate B12"))
+                        .anyMatch(s -> s.startsWith("Check-in is open")));
 
         int unread = api(ada.accessToken()).get("/notifications/unread-count").then().extract().path("data.count");
         assertThat(unread).isGreaterThanOrEqualTo(3);
@@ -71,8 +74,12 @@ class NotificationsIT extends E2eTest {
 
     /** Waits until the user's inbox holds (at least) these kinds of notification. */
     private static void awaitKinds(User user, String... kinds) {
+        awaitKinds(user, Duration.ofSeconds(60), kinds);
+    }
+
+    private static void awaitKinds(User user, Duration atMost, String... kinds) {
         Awaitility.await("notifications " + List.of(kinds))
-                .atMost(Duration.ofSeconds(60))
+                .atMost(atMost)
                 .pollInterval(Duration.ofSeconds(1))
                 .untilAsserted(() -> assertThat((List<String>) api(user.accessToken()).get("/notifications")
                         .then().statusCode(200).extract().path("data.content.kind")).contains(kinds));
