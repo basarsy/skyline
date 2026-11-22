@@ -17,7 +17,7 @@ import com.basarsy.skyline.schedule.dto.FlightResponse;
 import com.basarsy.skyline.schedule.entity.Flight;
 import com.basarsy.skyline.schedule.entity.FlightStatus;
 import com.basarsy.skyline.schedule.mapper.FlightMapper;
-import com.basarsy.skyline.schedule.outbox.Outbox;
+import com.basarsy.skyline.common.outbox.Outbox;
 import com.basarsy.skyline.schedule.repository.FlightRepository;
 import com.basarsy.skyline.schedule.repository.FlightSpecifications;
 import com.basarsy.skyline.schedule.event.FlightCancelledEvent;
@@ -345,6 +345,8 @@ public class FlightServiceImpl implements FlightService {
         FlightChangedEvent event = new FlightChangedEvent(type, flight.getId(), flight.getFlightNumber(),
                 route == null || route.origin() == null ? null : route.origin().iataCode(),
                 route == null || route.destination() == null ? null : route.destination().iataCode(),
+                route == null || route.origin() == null ? null : route.origin().timezone(),
+                route == null || route.destination() == null ? null : route.destination().timezone(),
                 flight.getStatus(), before.status(),
                 flight.getDepartureTime(), before.departureTime(), flight.getArrivalTime(),
                 flight.getEstimatedDepartureTime(), before.estimatedDepartureTime(),

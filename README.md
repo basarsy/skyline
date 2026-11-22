@@ -35,7 +35,7 @@
 
 ## Overview
 
-Skyline is a full-stack airline management system: a set of Spring Boot services behind an API gateway, and a React web app on top. It covers the full lifecycle of airline operations — from aircraft fleet management and route scheduling to passenger reservations, check-in, and crew assignments.
+Skyline is a full-stack airline management system: a set of Spring Boot services behind an API gateway, and a React web app on top. It covers the full lifecycle of airline operations — from aircraft fleet management and route scheduling to passenger reservations, check-in, crew assignments, and passenger notifications (email and in-app) about bookings, delays and gate changes.
 
 The project is built as a **microservices architecture**: each bounded context runs as an independent Spring Boot application with its own database, communicating over HTTP (OpenFeign) and asynchronous events (Kafka). A Spring Cloud Gateway provides a unified API entry point.
 
@@ -160,10 +160,14 @@ SCREENSHOTS=1 pnpm exec playwright test e2e/screenshots.spec.ts
       │:5434 │  │:5435 │ │:5433││:5436││:5437  │ │:5438 ││:5439 │
       └──────┘  └──────┘ └─────┘└─────┘└───────┘ └──────┘└──────┘
 
-           ┌─────────┐              ┌─────────┐
-           │  Redis  │ :6379        │  Kafka  │ :9092
-           └─────────┘              └─────────┘
+           ┌─────────┐              ┌─────────┐       ┌──────────────┐  ┌───────┐  ┌──────────┐
+           │  Redis  │ :6379        │  Kafka  │ :9092 │ Notification │──│PG     │  │ Mailpit  │
+           └─────────┘              └────┬────┘       │    :8087     │  │:5440  │  │SMTP :1025│
+                                         └───────────▶│ (consumer)   │──┼───────┼─▶│ UI :8025 │
+                                                      └──────────────┘  └───────┘  └──────────┘
 ```
+
+Schedule and reservation publish events through transactional outboxes (`skyline.flight.cancelled`, `skyline.flight.changed`, `skyline.booking.events`); reservation and notification consume them. The gateway also routes `/api/v1/notifications/**` to the notification service.
 
 ### Modules
 
@@ -178,6 +182,7 @@ SCREENSHOTS=1 pnpm exec playwright test e2e/screenshots.spec.ts
 | `skyline-reservation` | `com.basarsy.skyline.reservation` | Bookings, passengers, ticketing, PNR generation |
 | `skyline-checkin` | `com.basarsy.skyline.checkin` | Online check-in & boarding passes |
 | `skyline-crew` | `com.basarsy.skyline.crew` | Crew members & flight crew assignments |
+| `skyline-notification` | `com.basarsy.skyline.notification` | Passenger notifications from Kafka events: booking confirmations, delays, gate changes, check-in reminders; email (SMTP) and in-app inbox |
 | `skyline-e2e` | `com.basarsy.skyline.e2e` | End-to-end API tests through the gateway (`-Pe2e`) |
 | `skyline-web` | — | React web app: passenger site and ops console ([README](skyline-web/README.md)) |
 
@@ -193,7 +198,8 @@ Each service owns its own `entity`, `dto`, `mapper`, `repository`, `service`, an
 | Framework | Spring Boot 3.5 |
 | Cloud | Spring Cloud 2025.0 (Gateway, OpenFeign) |
 | Database | PostgreSQL 16 (one instance per service) |
-| Messaging | Apache Kafka (Confluent 7.6, KRaft mode) |
+| Messaging | Apache Kafka (Confluent 7.6, KRaft mode), transactional outboxes |
+| Email | Spring Mail (SMTP); Mailpit as the local mail catcher |
 | Caching | Redis 7 |
 | ORM | Spring Data JPA / Hibernate |
 | Migrations | Flyway |
@@ -360,6 +366,16 @@ GET    /flights/{id}/crew          Crew manifest               [STAFF, ADMIN]
 DELETE /flights/{flightId}/crew/{crewMemberId}  Remove from flight [STAFF, ADMIN]
 ```
 
+### Notifications (skyline-notification · :8087)
+```
+GET    /notifications              My in-app notifications, newest first (page, size ≤ 50)  [signed in]
+GET    /notifications/unread-count { count }                                                 [signed in]
+POST   /notifications/{id}/read    Mark one read (someone else's: 404)                       [signed in]
+POST   /notifications/read-all     Mark all read                                             [signed in]
+```
+
+Bookings (`POST /reservations`, `POST /reservations/group`) take an optional `contactEmail`: where the confirmation and flight changes are emailed. It defaults to the account's email and is left out of the public PNR view.
+
 ### Dates and times
 
 **All date-times are UTC.** Every `LocalDateTime` the API accepts, stores, compares or returns (`departureTime`, `arrivalTime`, `bookedAt`, `boardingTime`, `issuedAt`, `createdAt`, the envelope `timestamp`, ...) is a UTC wall-clock time, serialized as ISO-8601 **without an offset**, e.g. `"2026-12-01T14:30:00"`. Clients send UTC the same way (no `Z`, no offset).
@@ -449,6 +465,13 @@ All endpoints return a consistent `ApiResponse<T>`:
 - Each event is self-contained (flight number, route IATA codes, current and previous status, times and gate), so a consumer can describe the change without calling the schedule service back. Nothing is recorded when an operation changes nothing
 - It is a separate topic from `skyline.flight.cancelled` on purpose: the reservation service cancels bookings for any record on that topic
 
+**Notifications**
+- The notification service keeps its own projection of who is booked on which flight, from the booking events (`BOOKED` once per booking with every reservation, `CANCELLED` per reservation a passenger cancels), so a flight change needs no call back to the reservation service. Bookings made before the service first ran are not in it
+- Email and in-app: booking confirmed or cancelled, delay (new local time), delay lifted, reschedule, gate change, airline cancellation, and "check-in is open" once per booking when the 48h window opens. In-app only: boarding started. Nothing for departed or arrived
+- One email per contact address and one inbox entry per account, listing the passengers they cover: a family booked together gets one message, not one each
+- Events arrive at least once; every message has a dedupe key (event + recipient), so a redelivery sends nothing new. A record that can't be handled is retried, then parked on `<topic>.DLT`
+- Emails are queued in the same transaction (`email_outbox`) and sent by a scheduled job with exponential backoff, so an SMTP outage delays emails instead of losing them. Locally, Mailpit catches every email (inbox at `http://localhost:8025`); nothing leaves the machine
+
 **Flight Cancellation**
 - Cancelling a flight resets available seats and records a `FlightCancelledEvent` in the schedule service's `outbox_events` table, in the same transaction as the status change
 - A scheduled outbox publisher sends pending events to Kafka (`skyline.flight.cancelled` topic, keyed by flight id) and retries with backoff while Kafka is unreachable, so no cancellation is lost and the cancel request never waits on Kafka (`skyline.outbox.*` settings)
@@ -489,8 +512,8 @@ The web app is served at `http://localhost:5173` and the API Gateway at `http://
 git clone https://github.com/your-org/skyline.git
 cd skyline
 
-# Start infrastructure only (7× PostgreSQL, Redis, Kafka)
-docker compose up -d auth-db fleet-db route-db schedule-db reservation-db checkin-db crew-db redis kafka
+# Start infrastructure only (8× PostgreSQL, Redis, Kafka, Mailpit)
+docker compose up -d auth-db fleet-db route-db schedule-db reservation-db checkin-db crew-db notification-db redis kafka mailpit
 
 # Configure secrets (see .env.example) and export them in each terminal
 cp .env.example .env   # then fill in JWT_SECRET, SKYLINE_INTERNAL_API_KEY, POSTGRES_PASSWORD, REDIS_PASSWORD
@@ -507,6 +530,7 @@ set -a; source .env; set +a
 ./mvnw -pl skyline-reservation spring-boot:run
 ./mvnw -pl skyline-checkin spring-boot:run
 ./mvnw -pl skyline-crew spring-boot:run
+./mvnw -pl skyline-notification spring-boot:run
 ./mvnw -pl skyline-gateway spring-boot:run
 ```
 
@@ -526,9 +550,11 @@ Swagger UI (checkin service): `http://localhost:8085/swagger-ui.html`
 | skyline-reservation | 8084 | 5437 | `skyline_reservation` |
 | skyline-checkin | 8085 | 5438 | `skyline_checkin` |
 | skyline-crew | 8086 | 5439 | `skyline_crew` |
+| skyline-notification | 8087 | 5440 | `skyline_notification` |
 | skyline-gateway | 8000 | — | — |
 | Redis | 6379 | — | — |
 | Kafka | 9092 | — | — |
+| Mailpit (SMTP / inbox UI) | 1025 / 8025 | — | — |
 
 `docker compose` publishes every port, the web app's `5173` included, on `127.0.0.1` only, so none of them is reachable from the network. Redis and PostgreSQL require the passwords from `.env`.
 
@@ -565,6 +591,11 @@ Each service reads configuration from its own `application.yml`. Infrastructure 
 | `FLEET_SERVICE_URL` | Fleet service base URL | `http://localhost:8081` |
 | `ROUTE_SERVICE_URL` | Route service base URL | `http://localhost:8082` |
 | `CREW_SERVICE_URL` | Crew service base URL | `http://localhost:8086` |
+| `NOTIFICATION_SERVICE_URL` | (gateway) Notification service base URL | `http://localhost:8087` |
+| `SMTP_HOST` / `SMTP_PORT` | (notification) SMTP server for emails; compose points them at Mailpit | `localhost` / `1025` |
+| `SMTP_USERNAME` / `SMTP_PASSWORD` | (notification) SMTP credentials, for a real server | — |
+| `SKYLINE_MAIL_FROM` | (notification) Sender of every email | `Skyline <no-reply@skyline.local>` |
+| `SKYLINE_WEB_BASE_URL` | (notification) Base of the links in emails | `http://localhost:5173` |
 | `SKYLINE_ADMIN_EMAIL` | (auth) Email of the initial ADMIN account, created on startup if missing | — (skipped) |
 | `SKYLINE_ADMIN_PASSWORD` | (auth) Password for the initial ADMIN account (min 12 chars) | — (skipped) |
 | `SKYLINE_CORS_ALLOWED_ORIGINS` | (gateway) Comma-separated browser origins allowed by CORS | `http://localhost:5173` |
@@ -634,7 +665,7 @@ Java and TypeScript code, and Dependabot proposes weekly dependency updates.
 
 **Spring Cloud Gateway** — Single entry point on port 8000 routes traffic to the correct service based on URL path predicates.
 
-**Kafka for async events** — Flight cancellation events are published to Kafka through a transactional outbox (no event is lost while Kafka is down), decoupling the schedule and reservation services for eventual consistency.
+**Kafka for async events** — Flight cancellations and changes (schedule) and booking events (reservation) are published to Kafka through a transactional outbox (`skyline-common`, opt-in per service with `skyline.outbox.enabled`; no event is lost while Kafka is down), decoupling the services for eventual consistency.
 
 **UUID primary keys** — avoids sequential ID enumeration, portable across services.
 

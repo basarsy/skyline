@@ -1,10 +1,9 @@
-package com.basarsy.skyline.schedule.outbox;
+package com.basarsy.skyline.common.outbox;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -12,7 +11,6 @@ import org.springframework.transaction.annotation.Transactional;
  * Records an event for Kafka in the caller's transaction; {@link OutboxPublisher} sends it after commit. If the
  * transaction rolls back the event is never sent, and once it commits the event is sent at least once.
  */
-@Component
 @RequiredArgsConstructor
 public class Outbox {
 

@@ -58,7 +58,10 @@ const passengerSchema = z.object({
     .refine((value) => value < isoFromLocalDate(new Date()), 'The date of birth must be in the past'),
   nationality: z.string({ error: 'Choose a nationality' }).min(1, 'Choose a nationality'),
 })
-const formSchema = z.object({ passengers: z.array(passengerSchema).min(1).max(MAX_PASSENGERS) })
+const formSchema = z.object({
+  passengers: z.array(passengerSchema).min(1).max(MAX_PASSENGERS),
+  contactEmail: z.string().trim().min(1, 'Enter an email address').max(254).email('Enter a valid email address'),
+})
 type PassengerValues = z.infer<typeof passengerSchema>
 type FormValues = z.infer<typeof formSchema>
 const PASSENGER_FIELDS = ['firstName', 'lastName', 'passportNumber', 'dateOfBirth', 'nationality'] as const
@@ -68,6 +71,7 @@ const FIELD_LABELS: Record<string, string> = {
   passportNumber: 'Passport number',
   dateOfBirth: 'Date of birth',
   nationality: 'Nationality',
+  contactEmail: 'Contact email',
 }
 const EMPTY_PASSENGER: PassengerValues = {
   firstName: '',
@@ -265,7 +269,8 @@ export function Component() {
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const userId = useAuthState().user?.id
+  const user = useAuthState().user
+  const userId = user?.id
   const { data: flight, isPending, isError, error, refetch } = useFlight(flightId)
   const catalog = useAncillaryCatalog()
   useDocumentTitle('Book your flight')
@@ -303,7 +308,7 @@ export function Component() {
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: { passengers: [{ ...EMPTY_PASSENGER, ...prefill }] },
+    defaultValues: { passengers: [{ ...EMPTY_PASSENGER, ...prefill }], contactEmail: user?.email ?? '' },
   })
   const passengers = useFieldArray({ control: form.control, name: 'passengers' })
   const { errors, submitCount } = form.formState
@@ -449,6 +454,7 @@ export function Component() {
         nationality: p.nationality,
       })),
       legs: [{ flightId: flight.id, cabinClass: cabin, fareType: fare }],
+      contactEmail: v.contactEmail.trim(),
       seats: Object.entries(seats).map(([index, seat]) => ({
         passengerIndex: Number(index),
         flightId: flight.id,
@@ -566,6 +572,22 @@ export function Component() {
                       Add a passenger
                     </Button>
                   )}
+                  <FormField
+                    label="Contact email"
+                    description="We’ll send the confirmation and any delay or gate change here."
+                    error={errors.contactEmail?.message}
+                  >
+                    {(control) => (
+                      <Input
+                        {...control}
+                        type="email"
+                        inputMode="email"
+                        autoComplete="email"
+                        className="sm:max-w-md"
+                        {...form.register('contactEmail')}
+                      />
+                    )}
+                  </FormField>
                 </form>
               )}
 
@@ -667,6 +689,9 @@ export function Component() {
                   <div className="rounded-card border border-border bg-card p-5 sm:p-6">
                     <FlightTimeline flight={flight} />
                   </div>
+                  <p className="text-sm text-muted-foreground">
+                    Updates go to <span className="font-medium text-foreground">{values.contactEmail}</span>
+                  </p>
                   {passengers.fields.map((field, index) => {
                     const p = values.passengers[index]!
                     const chosen = Object.entries(extras[index] ?? {}).filter(([, q]) => q > 0)

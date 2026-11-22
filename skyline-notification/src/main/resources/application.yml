@@ -1,0 +1,70 @@
+server:
+  port: 8087
+
+spring:
+  application:
+    name: skyline-notification
+  config:
+    import: classpath:skyline-common.yml
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5440/skyline_notification}
+    username: ${DATABASE_USERNAME:skyline_user}
+    password: ${DATABASE_PASSWORD:${POSTGRES_PASSWORD:}}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        # All LocalDateTime values are UTC (see README, "Dates and times").
+        jdbc.time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration/notification
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: notification-service
+      # A new consumer group starts at the beginning, so events from before the first start are not lost.
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      # Values are read as text and parsed per topic (see NotificationListeners): two topics, two shapes.
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      # Only the dead-letter recoverer produces: it republishes the original text.
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+  mail:
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:1025}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
+
+skyline:
+  internal:
+    api-key: ${SKYLINE_INTERNAL_API_KEY}
+  notification:
+    # Links in emails point here (the web app).
+    web-base-url: ${SKYLINE_WEB_BASE_URL:http://localhost:5173}
+    mail-from: ${SKYLINE_MAIL_FROM:Skyline <no-reply@skyline.local>}
+    # Pending emails are sent by EmailSender, retried with backoff while SMTP is unreachable.
+    email-send-interval: PT5S
+    email-batch-size: 20
+    email-retry-backoff: 10s
+    email-max-retry-backoff: 10m
+    # Check-in reminders go out once the 48h window opens (CheckInReminders).
+    check-in-reminder-interval: PT1M
+
+jwt:
+  secret: ${JWT_SECRET}
+
+management:
+  health:
+    mail:
+      # An SMTP outage only delays emails (EmailSender retries them), so it must not mark the service down.
+      enabled: false

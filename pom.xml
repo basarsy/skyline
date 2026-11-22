@@ -25,6 +25,7 @@
 		<module>skyline-reservation</module>
 		<module>skyline-checkin</module>
 		<module>skyline-crew</module>
+		<module>skyline-notification</module>
 		<module>skyline-e2e</module>
 	</modules>
 

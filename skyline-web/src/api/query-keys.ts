@@ -6,6 +6,12 @@ export const authKeys = {
   me: ['auth', 'me'] as const,
 }
 
+export const notificationKeys = {
+  all: ['notifications'] as const,
+  list: ['notifications', 'list'] as const,
+  unread: ['notifications', 'unread'] as const,
+}
+
 export const userKeys = {
   all: ['users'] as const,
   search: (params: { email?: string; role?: UserRole; page?: number }) => ['users', 'search', params] as const,

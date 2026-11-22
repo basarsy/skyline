@@ -10,6 +10,9 @@ import { ThemeToggle } from './theme-toggle'
 
 /** The account menu (Radix dropdown) loads only for logged-in users. */
 const UserMenu = React.lazy(() => import('./user-menu').then((module) => ({ default: module.UserMenu })))
+const NotificationBell = React.lazy(() =>
+  import('@/features/notifications/notification-bell').then((module) => ({ default: module.NotificationBell })),
+)
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   cn(
@@ -46,6 +49,7 @@ function PublicHeader() {
             <span className="size-11" aria-hidden />
           ) : isAuthenticated ? (
             <React.Suspense fallback={<span className="size-11" aria-hidden />}>
+              {isPassenger && <NotificationBell />}
               <UserMenu />
             </React.Suspense>
           ) : (

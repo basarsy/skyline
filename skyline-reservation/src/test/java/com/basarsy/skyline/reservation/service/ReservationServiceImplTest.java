@@ -55,11 +55,13 @@ class ReservationServiceImplTest {
     private final ReservationMapper reservationMapper = mock(ReservationMapper.class);
     private final PassengerMapper passengerMapper = mock(PassengerMapper.class);
 
+    private final com.basarsy.skyline.reservation.event.BookingEvents bookingEvents =
+            mock(com.basarsy.skyline.reservation.event.BookingEvents.class);
     private final ReservationServiceImpl service = new ReservationServiceImpl(
             reservationRepository, passengerRepository, scheduleClient, reservationMapper, passengerMapper, new PricingProperties("EUR"), mock(CabinInventory.class),
             mock(SeatLayoutProvider.class), mock(SeatPricing.class), mock(SeatSelectionService.class),
             mock(com.basarsy.skyline.reservation.repository.ReservationAncillaryRepository.class),
-            mock(AncillaryService.class));
+            mock(AncillaryService.class), bookingEvents);
 
     @BeforeEach
     void setUp() {
@@ -129,6 +131,55 @@ class ReservationServiceImplTest {
     }
 
     @Test
+    void theContactEmailDefaultsToTheAccountsAndTheBookingIsAnnounced() {
+        when(reservationRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(reservationMapper.toResponse(any())).thenReturn(new com.basarsy.skyline.reservation.dto.ReservationResponse());
+        var saved = org.mockito.ArgumentCaptor.forClass(Reservation.class);
+
+        service.bookFlight(request());
+
+        verify(reservationRepository).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getContactEmail()).isEqualTo("pax@test.local");
+        verify(bookingEvents).booked(org.mockito.ArgumentMatchers.eq(saved.getValue().getId()),
+                org.mockito.ArgumentMatchers.argThat(list -> list.size() == 1
+                        && list.get(0).reservation() == saved.getValue()
+                        && list.get(0).flight().getId().equals(FLIGHT_ID)));
+    }
+
+    @Test
+    void aGivenContactEmailIsKept() {
+        when(reservationRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(reservationMapper.toResponse(any())).thenReturn(new com.basarsy.skyline.reservation.dto.ReservationResponse());
+        var saved = org.mockito.ArgumentCaptor.forClass(Reservation.class);
+        var base = request();
+
+        service.bookFlight(new ReservationRequest(base.flightId(), base.passenger(), base.cabinClass(), null,
+                " family@example.com "));
+
+        verify(reservationRepository).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getContactEmail()).isEqualTo("family@example.com");
+    }
+
+    @Test
+    void aBookingThatFailsAnnouncesNothing() {
+        when(reservationRepository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("dup"));
+
+        assertThatThrownBy(() -> service.bookFlight(request())).isInstanceOf(DataIntegrityViolationException.class);
+
+        org.mockito.Mockito.verifyNoInteractions(bookingEvents);
+    }
+
+    @Test
+    void aCancellationIsAnnounced() {
+        Reservation reservation = existingReservation();
+        when(reservationRepository.findById(reservation.getId())).thenReturn(Optional.of(reservation));
+
+        service.cancelReservation(reservation.getId());
+
+        verify(bookingEvents).cancelled(org.mockito.ArgumentMatchers.eq(reservation), any());
+    }
+
+    @Test
     void cancellationReleasesTheSeatOnlyAfterCommit() {
         Reservation reservation = existingReservation();
         when(reservationRepository.findById(reservation.getId())).thenReturn(Optional.of(reservation));
@@ -179,6 +230,7 @@ class ReservationServiceImplTest {
         assertThat(response.getPassenger().passportNumber()).isEqualTo("******789");
         assertThat(response.getPassenger().dateOfBirth()).isNull();
         assertThat(response.getPassenger().userId()).isNull();
+        assertThat(response.getContactEmail()).as("no contact email in the public view").isNull();
     }
 
     @Test
@@ -269,6 +321,7 @@ class ReservationServiceImplTest {
         var response = new com.basarsy.skyline.reservation.dto.ReservationResponse();
         response.setPassenger(new com.basarsy.skyline.reservation.dto.PassengerResponse(UUID.randomUUID(),
                 reservation.getPassenger().getUserId(), "Ada", "Lovelace", "P12345789", LocalDate.of(1990, 1, 1), "TR"));
+        response.setContactEmail("pax@test.local");
         return response;
     }
 

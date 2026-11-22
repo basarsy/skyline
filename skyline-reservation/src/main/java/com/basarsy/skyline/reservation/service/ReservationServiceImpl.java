@@ -16,6 +16,7 @@ import com.basarsy.skyline.reservation.repository.ReservationAncillaryRepository
 import com.basarsy.skyline.reservation.dto.AncillaryPurchaseRequest;
 import com.basarsy.skyline.reservation.entity.ReservationAncillary;
 import com.basarsy.skyline.reservation.entity.SalesChannel;
+import com.basarsy.skyline.reservation.event.BookingEvents;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -77,6 +78,7 @@ public class ReservationServiceImpl implements ReservationService {
     private final SeatSelectionService seatSelectionService;
     private final ReservationAncillaryRepository ancillaryRepository;
     private final AncillaryService ancillaryService;
+    private final BookingEvents bookingEvents;
 
     @Override
     @Transactional
@@ -88,7 +90,8 @@ public class ReservationServiceImpl implements ReservationService {
 
         FareType fareType = request.fareType() == null ? FareType.STANDARD : request.fareType();
         Reservation saved = createReservation(flight, request.passenger(), request.cabinClass(), fareType,
-                currentUserId, null);
+                currentUserId, null, contactEmail(request.contactEmail()));
+        bookingEvents.booked(saved.getId(), List.of(new BookingEvents.Booked(saved, flight)));
         return enrichReservationResponse(saved, flight);
     }
 
@@ -101,6 +104,7 @@ public class ReservationServiceImpl implements ReservationService {
     public GroupReservationResponse bookGroup(GroupReservationRequest request) {
         validateGroup(request);
         UUID currentUserId = getCurrentUserId();
+        String contactEmail = contactEmail(request.contactEmail());
         UUID groupId = UUID.randomUUID();
         int passengers = request.passengers().size();
 
@@ -117,6 +121,7 @@ public class ReservationServiceImpl implements ReservationService {
                 });
 
         List<ReservationResponse> booked = new ArrayList<>();
+        List<BookingEvents.Booked> events = new ArrayList<>();
         BigDecimal total = BigDecimal.ZERO;
         for (GroupReservationRequest.Leg leg : request.legs()) {
             FlightResponse flight = flights.get(leg.flightId());
@@ -127,7 +132,7 @@ public class ReservationServiceImpl implements ReservationService {
             for (int i = 0; i < passengers; i++) {
                 takeInventory(flight);
                 Reservation reservation = createReservation(flight, request.passengers().get(i), leg.cabinClass(),
-                        fareType, currentUserId, groupId);
+                        fareType, currentUserId, groupId, contactEmail);
                 String seat = seatFor(request, i, flight.getId());
                 if (seat != null) {
                     if (layout == null) {
@@ -143,9 +148,12 @@ public class ReservationServiceImpl implements ReservationService {
                 }
                 ReservationResponse response = enrichReservationResponse(reservation, flight);
                 booked.add(response);
+                events.add(new BookingEvents.Booked(reservation, flight));
                 total = total.add(reservation.getTotalPrice());
             }
         }
+        // Totals include seats and add-ons bought above, so the event is recorded last.
+        bookingEvents.booked(groupId, events);
         return new GroupReservationResponse(groupId, booked, total, pricing.currency());
     }
 
@@ -218,8 +226,13 @@ public class ReservationServiceImpl implements ReservationService {
         releaseSeatUnlessCommitted(flight.getId());
     }
 
+    /** Where messages about a new booking go: the one given, else the account's email. */
+    private static String contactEmail(String requested) {
+        return requested != null && !requested.isBlank() ? requested.trim() : CallerAccess.currentUserEmail();
+    }
+
     private Reservation createReservation(FlightResponse flight, PassengerRequest passengerRequest, CabinClass cabin,
-            FareType fareType, UUID userId, UUID groupId) {
+            FareType fareType, UUID userId, UUID groupId, String contactEmail) {
         // Each booking gets its own passenger snapshot. Reusing one passenger per user meant that
         // booking for someone else rewrote the name/passport on all of the user's past reservations.
         Passenger passenger = passengerMapper.toEntity(passengerRequest);
@@ -236,6 +249,7 @@ public class ReservationServiceImpl implements ReservationService {
         reservation.setFarePrice(calculatePrice(flight, cabin, fareType));
         reservation.setTotalPrice(reservation.getFarePrice());
         reservation.setBookingGroupId(groupId);
+        reservation.setContactEmail(contactEmail);
 
         // In a real system, payment processing would happen here, and status would be CONFIRMED upon success
         reservation.setStatus(ReservationStatus.CONFIRMED);
@@ -267,6 +281,7 @@ public class ReservationServiceImpl implements ReservationService {
         if (lastName != null && lastName.trim().equalsIgnoreCase(reservation.getPassenger().getLastName().trim())) {
             ReservationResponse response = enrichReservationResponse(reservation, null);
             response.setPassenger(redacted(response.getPassenger()));
+            response.setContactEmail(null);
             return response;
         }
         throw pnrNotFound();
@@ -312,6 +327,7 @@ public class ReservationServiceImpl implements ReservationService {
         ancillaryRepository.flush();
         seatSelectionService.recalculateTotal(reservation);
         reservationRepository.save(reservation);
+        bookingEvents.cancelled(reservation, flight);
 
         // Return the seat only once the cancellation is durable. Releasing it before commit could
         // oversell the flight if the commit then failed.

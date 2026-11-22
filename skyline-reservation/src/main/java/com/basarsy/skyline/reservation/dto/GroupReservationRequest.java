@@ -15,17 +15,26 @@ import java.util.UUID;
 /**
  * Several passengers on one or more flights (a round trip, a connection), booked together: one reservation per
  * passenger per leg, all sharing a booking group. Each passenger may have one seat per leg; a chosen seat must
- * be held by the caller for that passenger ({@code POST /reservations/seat-holds}).
+ * be held by the caller for that passenger ({@code POST /reservations/seat-holds}). {@code contactEmail} is where
+ * messages about the booking go; the account's email when omitted.
  */
 public record GroupReservationRequest(
         @NotEmpty @Size(max = 9) @Valid List<PassengerRequest> passengers,
         @NotEmpty @Size(max = 4) @Valid List<Leg> legs,
         @Size(max = 36) @Valid List<SeatSelection> seats,
-        @Size(max = 100) @Valid List<Extra> extras) {
+        @Size(max = 100) @Valid List<Extra> extras,
+        @jakarta.validation.constraints.Email(message = "Contact email must be a valid email address")
+        @Size(max = 254) String contactEmail) {
 
     /** Without add-ons (the shape before add-ons could be bought at booking). */
     public GroupReservationRequest(List<PassengerRequest> passengers, List<Leg> legs, List<SeatSelection> seats) {
-        this(passengers, legs, seats, null);
+        this(passengers, legs, seats, null, null);
+    }
+
+    /** Contact email left to default to the account's. */
+    public GroupReservationRequest(List<PassengerRequest> passengers, List<Leg> legs, List<SeatSelection> seats,
+            List<Extra> extras) {
+        this(passengers, legs, seats, extras, null);
     }
 
     /** An add-on for one passenger on one leg, e.g. a 20 kg bag; priced on the server. */

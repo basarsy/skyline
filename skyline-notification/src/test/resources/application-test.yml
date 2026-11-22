@@ -1,0 +1,21 @@
+spring:
+  kafka:
+    admin:
+      auto-create: false
+    listener:
+      # No broker in these tests: they call the handlers directly.
+      auto-startup: false
+
+jwt:
+  secret: test-secret-key-at-least-32-characters-long
+  access-token-expiry-ms: 900000
+  refresh-token-expiry-ms: 604800000
+
+skyline:
+  internal:
+    api-key: test-internal-api-key-at-least-32-chars
+  notification:
+    web-base-url: http://skyline.test
+    # Tests drive the jobs by hand instead of racing their timers.
+    email-send-interval: PT1H
+    check-in-reminder-interval: PT1H

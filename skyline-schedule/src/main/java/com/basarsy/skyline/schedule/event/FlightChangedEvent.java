@@ -13,6 +13,8 @@ import java.util.UUID;
  * @param type                         what changed
  * @param origin                       origin IATA code, null if the route service was unreachable
  * @param destination                  destination IATA code, null if the route service was unreachable
+ * @param originTimezone               IANA zone of the origin airport (for local departure times), or null
+ * @param destinationTimezone          IANA zone of the destination airport, or null
  * @param departureTime                scheduled departure (after a reschedule, the new one)
  * @param estimatedDepartureTime       expected departure while delayed, else null
  * @param previousDepartureTime        scheduled departure before a reschedule, else equal to {@code departureTime}
@@ -26,6 +28,8 @@ public record FlightChangedEvent(
         String flightNumber,
         String origin,
         String destination,
+        String originTimezone,
+        String destinationTimezone,
         FlightStatus status,
         FlightStatus previousStatus,
         LocalDateTime departureTime,

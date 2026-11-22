@@ -19,10 +19,14 @@ public class KafkaTopicConfig {
      */
     public static final String FLIGHT_CHANGED_TOPIC = "skyline.flight.changed";
 
+    /** Bookings made and reservations cancelled by passengers (reservation service), keyed by booking. */
+    public static final String BOOKING_EVENTS_TOPIC = "skyline.booking.events";
+
     /** Dead-letter topic: records a consumer could not process after its retries (Spring Kafka's ".DLT" convention). */
     public static final String DEAD_LETTER_SUFFIX = ".DLT";
     public static final String FLIGHT_CANCELLED_DLT_TOPIC = FLIGHT_CANCELLED_TOPIC + DEAD_LETTER_SUFFIX;
     public static final String FLIGHT_CHANGED_DLT_TOPIC = FLIGHT_CHANGED_TOPIC + DEAD_LETTER_SUFFIX;
+    public static final String BOOKING_EVENTS_DLT_TOPIC = BOOKING_EVENTS_TOPIC + DEAD_LETTER_SUFFIX;
 
     @Value("${spring.kafka.topic.flight-cancellation.partitions:3}")
     private int partitions;
@@ -49,6 +53,16 @@ public class KafkaTopicConfig {
     @Bean
     public NewTopic flightChangedDeadLetterTopic() {
         return topic(FLIGHT_CHANGED_DLT_TOPIC);
+    }
+
+    @Bean
+    public NewTopic bookingEventsTopic() {
+        return topic(BOOKING_EVENTS_TOPIC);
+    }
+
+    @Bean
+    public NewTopic bookingEventsDeadLetterTopic() {
+        return topic(BOOKING_EVENTS_DLT_TOPIC);
     }
 
     private NewTopic topic(String name) {

@@ -105,6 +105,17 @@ services:
     volumes:
       - crew_pg_data:/var/lib/postgresql/data
 
+  notification-db:
+    <<: *postgres
+    container_name: skyline-notification-db
+    environment:
+      <<: *postgres-env
+      POSTGRES_DB: skyline_notification
+    ports:
+      - "127.0.0.1:5440:5432"
+    volumes:
+      - notification_pg_data:/var/lib/postgresql/data
+
   # ──────────────────────────────────────────────────────────────
   # Infrastructure
   # ──────────────────────────────────────────────────────────────
@@ -121,6 +132,19 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  # Catches every email the notification service sends: nothing leaves this machine. Inbox UI on :8025.
+  mailpit:
+    image: axllent/mailpit:v1.27
+    container_name: skyline-mailpit
+    ports:
+      - "127.0.0.1:8025:8025"
+      - "127.0.0.1:1025:1025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   kafka:
     image: confluentinc/cp-kafka:7.9.10
@@ -304,6 +328,32 @@ services:
       reservation-service:
         condition: service_healthy
 
+  notification-service:
+    build:
+      context: .
+      args:
+        MODULE: skyline-notification
+        APP_PORT: 8087
+    container_name: skyline-notification-service
+    ports:
+      - "127.0.0.1:8087:8087"
+    environment:
+      <<: *service-env
+      DATABASE_URL: jdbc:postgresql://notification-db:5432/skyline_notification
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      # Links in emails open the web app.
+      SKYLINE_WEB_BASE_URL: ${SKYLINE_WEB_BASE_URL:-http://localhost:5173}
+    depends_on:
+      notification-db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      # Not a hard dependency at runtime (emails wait and are retried), but the local stack should catch them.
+      mailpit:
+        condition: service_healthy
+
   gateway-service:
     build:
       context: .
@@ -322,6 +372,7 @@ services:
       CHECKIN_SERVICE_URL: http://checkin-service:8085
       CREW_SERVICE_URL: http://crew-service:8086
       SCHEDULE_SERVICE_URL: http://schedule-service:8080
+      NOTIFICATION_SERVICE_URL: http://notification-service:8087
       SKYLINE_CORS_ALLOWED_ORIGINS: ${SKYLINE_CORS_ALLOWED_ORIGINS:-http://localhost:5173}
       # Per client IP on login/register/refresh and PNR lookup: tokens per second, and the burst on top.
       SKYLINE_RATE_LIMIT_REPLENISH: ${SKYLINE_RATE_LIMIT_REPLENISH:-5}
@@ -344,6 +395,8 @@ services:
       checkin-service:
         condition: service_healthy
       crew-service:
+        condition: service_healthy
+      notification-service:
         condition: service_healthy
 
   # ──────────────────────────────────────────────────────────────
@@ -369,3 +422,4 @@ volumes:
   reservation_pg_data:
   checkin_pg_data:
   crew_pg_data:
+  notification_pg_data:

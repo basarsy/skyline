@@ -19,3 +19,6 @@ skyline:
   seats:
     hold-ttl: PT2S
     layout-cache-ttl: PT0S
+  outbox:
+    # No broker in these tests: rows are written, nothing sends them.
+    scheduling-enabled: false

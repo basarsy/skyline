@@ -41,6 +41,15 @@ spring:
         spring.json.use.type.headers: false
         spring.json.value.default.type: com.basarsy.skyline.reservation.client.dto.FlightCancelledEvent
         spring.json.trusted.packages: com.basarsy.skyline.reservation.client.dto
+    producer:
+      # Settings of the outbox publisher's producer (OutboxKafkaConfig), as in the schedule service: the JSON
+      # stored in outbox_events is sent as is, with no type headers.
+      acks: all
+      properties:
+        enable.idempotence: true
+        max.block.ms: 5000
+        delivery.timeout.ms: 9000
+        request.timeout.ms: 4000
 
 skyline:
   pricing:
@@ -53,6 +62,19 @@ skyline:
     hold-ttl: ${SKYLINE_SEAT_HOLD_TTL:PT15M}
     # How long a fetched aircraft layout is reused before asking the fleet service again.
     layout-cache-ttl: PT5M
+  # Transactional outbox for booking events (skyline-common, see OutboxPublisher).
+  outbox:
+    enabled: true
+    publish-interval: PT1S
+    batch-size: 100
+    # At least delivery.timeout.ms above, so the producer gives up before the publisher stops waiting.
+    send-timeout: 10s
+    retry-backoff: 1s
+    max-retry-backoff: 1m
+    error-after-attempts: 10
+    retention: 7d
+    cleanup-batch-size: 1000
+    cleanup-interval: PT1H
 
 jwt:
   secret: ${JWT_SECRET}

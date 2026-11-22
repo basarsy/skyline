@@ -144,6 +144,8 @@ export interface ReservationResponse {
   totalPrice: number
   /** Shared by reservations booked together; null for a single booking. */
   bookingGroupId: UUID | null
+  /** Where messages about the booking go; null on old bookings and in the public (PNR + last name) view. */
+  contactEmail?: string | null
   /** Paid extras, every status, oldest first. */
   ancillaries: AncillaryLine[] | null
   /** ISO 4217 */
@@ -345,7 +347,23 @@ export interface GroupReservationRequest {
   legs: { flightId: UUID; cabinClass: CabinClass; fareType: FareType }[]
   seats?: { passengerIndex: number; flightId: UUID; seatNumber: string }[]
   extras?: { passengerIndex: number; flightId: UUID; productCode: string; quantity: number }[]
+  /** Where the confirmation and flight changes are sent; the account's email when omitted. */
+  contactEmail?: string
 }
+/** An entry of the in-app inbox (skyline-notification). */
+export interface NotificationResponse {
+  id: UUID
+  /** FLIGHT_DELAYED, FLIGHT_ON_TIME, FLIGHT_RESCHEDULED, FLIGHT_GATE, FLIGHT_CANCELLED, FLIGHT_BOARDING,
+   *  BOOKING_CONFIRMED, BOOKING_CANCELLED, CHECK_IN_OPEN; others may be added. */
+  kind: string
+  title: string
+  body: string
+  /** Path in this app, e.g. /trips/<id>. */
+  link: string | null
+  createdAt: LocalDateTime
+  read: boolean
+}
+
 export interface GroupReservationResponse {
   bookingGroupId: UUID
   reservations: ReservationResponse[]
