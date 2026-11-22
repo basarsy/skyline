@@ -220,6 +220,42 @@ test('crew, the status lifecycle, and role gating', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'You don’t have access' })).toBeVisible()
 })
 
+test('staff delay a flight and assign a gate; the passenger sees both on the booking', async ({ page, request }) => {
+  test.slow()
+  const flight = await bookableFlight(request, 30)
+  await freshApp(page)
+  const passenger = uniqueEmail('delayed')
+  await register(page, passenger)
+  const booking = await bookViaApi(page, flight.id, 'Lovelace')
+
+  await logOut(page)
+  await logIn(page, ADMIN.email, ADMIN.password)
+  await page.goto(`/ops/flights/${flight.id}`)
+  const card = page.getByRole('heading', { name: 'Delay & gate' }).locator('..').locator('..')
+  await expect(card).toContainText('on time')
+  await card.getByRole('button', { name: '+30 min' }).click()
+  await expect(card).toContainText('+30 min')
+  await expect(page.getByRole('heading', { name: 'Status' }).locator('..')).toContainText('Delayed')
+  await card.getByLabel('Gate').fill('b12')
+  await card.getByRole('button', { name: 'Assign' }).click()
+  await expect(card.getByLabel('Gate')).toHaveValue('B12')
+
+  await logOut(page)
+  await logIn(page, passenger, 'Passw0rd!!')
+  await page.goto(`/trips/${booking.id}`)
+  const updates = page.getByRole('status').filter({ hasText: 'Delayed by 30 min' })
+  await expect(updates).toBeVisible()
+  await expect(updates).toContainText('Gate B12')
+
+  // Back on schedule: the delay notice goes, the gate stays.
+  await logOut(page)
+  await logIn(page, ADMIN.email, ADMIN.password)
+  await page.goto(`/ops/flights/${flight.id}`)
+  await page.getByRole('button', { name: 'Back on schedule' }).click()
+  await expect(card).toContainText('on time')
+  await expect(page.getByRole('heading', { name: 'Status' }).locator('..')).toContainText('Scheduled')
+})
+
 test('admin cancels a flight and its passengers see their booking cancelled; passengers get 403 in ops', async ({
   page,
   request,

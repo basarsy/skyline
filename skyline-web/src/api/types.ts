@@ -99,8 +99,15 @@ export interface FlightResponse {
   route: RouteResponse | null
   /** Null likewise; render a graceful fallback. */
   aircraft: AircraftResponse | null
+  /** Scheduled departure; a delay never moves it (see estimatedDepartureTime). */
   departureTime: LocalDateTime
   arrivalTime: LocalDateTime
+  /** Expected departure while delayed, else null. */
+  estimatedDepartureTime: LocalDateTime | null
+  /** arrivalTime shifted by the delay, else null. */
+  estimatedArrivalTime: LocalDateTime | null
+  /** Departure gate; null until ops assign one. */
+  gate: string | null
   status: FlightStatus
   availableSeats: number
   basePrice: number
@@ -153,8 +160,11 @@ export interface BoardingPassResponse {
   /** IATA codes */
   origin: string | null
   destination: string | null
+  /** Scheduled departure. */
   departureTime: LocalDateTime
-  /** Departure − 45 min. */
+  /** Expected departure while the flight is delayed, else null. */
+  estimatedDepartureTime: LocalDateTime | null
+  /** Expected (or scheduled) departure − 45 min. */
   boardingTime: LocalDateTime
   gate: string
   seatNumber: string

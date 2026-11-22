@@ -19,9 +19,11 @@ import type {
   FlightBoardParams,
   FlightCrewAssignmentRequest,
   FlightRequest,
+  FlightResponse,
   FlightStatus,
   RouteRequest,
 } from '@/api/types'
+import type { ApiResult } from '@/api/http'
 import { STATIC_STALE_TIME } from '@/app/query-client'
 
 // ------------------------------------------------------------------ flights
@@ -46,6 +48,24 @@ export function useSetFlightStatus(flightId: string) {
       await queryClient.invalidateQueries({ queryKey: flightKeys.all })
     },
   })
+}
+
+/** Delay, lift a delay, or change the gate; each one is announced to passengers by the schedule service. */
+export function useFlightOperations(flightId: string) {
+  const queryClient = useQueryClient()
+  const onSuccess = async (result: ApiResult<FlightResponse>) => {
+    queryClient.setQueryData(flightKeys.detail(flightId), result.data)
+    toast.success(result.message ?? 'Flight updated')
+    await queryClient.invalidateQueries({ queryKey: flightKeys.all })
+  }
+  return {
+    delay: useMutation({
+      mutationFn: (estimatedDepartureTime: string) => scheduleApi.delay(flightId, estimatedDepartureTime),
+      onSuccess,
+    }),
+    clearDelay: useMutation({ mutationFn: () => scheduleApi.clearDelay(flightId), onSuccess }),
+    setGate: useMutation({ mutationFn: (gate: string) => scheduleApi.setGate(flightId, gate), onSuccess }),
+  }
 }
 
 /** Cancelling invalidates the flight, the board and every reservation (bookings are cancelled via Kafka). */

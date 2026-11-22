@@ -44,6 +44,14 @@ public class Flight extends BaseEntity {
     @Column(name = "base_price", nullable = false)
     private BigDecimal basePrice;
 
+    /** When ops now expect the flight to leave; null while it is on time. Always after {@code departureTime}. */
+    @Column(name = "estimated_departure_time")
+    private LocalDateTime estimatedDepartureTime;
+
+    /** Departure gate; null until ops assign one. */
+    @Column(length = 8)
+    private String gate;
+
     @Version
     private Long version;
 }

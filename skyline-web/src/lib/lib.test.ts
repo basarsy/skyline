@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { makeFlight, makeReservation } from '@/test/fixtures'
 import { checkinWindow, isCancellable } from './checkin-window'
-import { crewReadiness, nextStatuses } from './flight-status'
+import { crewReadiness, delayMinutes, formatDelay, nextStatuses } from './flight-status'
 import {
   addIsoDays,
   airportLocalToApi,
@@ -160,5 +160,20 @@ describe('PNR input', () => {
     expect(isValidPnr('K7Q2M0')).toBe(false)
     expect(hasAmbiguousCharacter('ab1')).toBe(true)
     expect(hasAmbiguousCharacter('K7Q2MX')).toBe(false)
+  })
+})
+
+describe('delays', () => {
+  it('counts the minutes between the scheduled and the expected departure', () => {
+    expect(delayMinutes(makeFlight({ departureTime: '2030-06-01T09:00:00', estimatedDepartureTime: null }))).toBe(0)
+    expect(
+      delayMinutes(makeFlight({ departureTime: '2030-06-01T09:00:00', estimatedDepartureTime: '2030-06-01T10:35:00' })),
+    ).toBe(95)
+  })
+
+  it('formats minutes and hours', () => {
+    expect(formatDelay(45)).toBe('45 min')
+    expect(formatDelay(120)).toBe('2 h')
+    expect(formatDelay(95)).toBe('1 h 35 min')
   })
 })

@@ -34,6 +34,7 @@ public class CheckInServiceImpl implements CheckInService {
 
     private static final Set<String> STAFF_ROLES = Set.of("ROLE_STAFF", "ROLE_ADMIN");
     private static final int GATE_COUNT = 20;
+    private static final int BOARDING_BEFORE_DEPARTURE_MINUTES = 45;
     /** Flights still taking passengers (the same statuses as booking). */
     private static final Set<FlightStatus> CHECK_IN_STATUSES = EnumSet.of(FlightStatus.SCHEDULED, FlightStatus.DELAYED);
 
@@ -130,6 +131,13 @@ public class CheckInServiceImpl implements CheckInService {
         response.setPassengerName(reservation.passenger().firstName() + " " + reservation.passenger().lastName());
         response.setFlightNumber(flight.getFlightNumber());
         response.setDepartureTime(flight.getDepartureTime());
+        response.setEstimatedDepartureTime(flight.getEstimatedDepartureTime());
+        // Gate and boarding time follow operations: a pass issued before a gate change or a delay shows the
+        // current values, not the ones stored when it was issued.
+        if (flight.getGate() != null) {
+            response.setGate(flight.getGate());
+        }
+        response.setBoardingTime(boardingTimeOf(flight));
 
         // The flight already embeds its route (schedule enriches it), so no extra call to the route service.
         RouteResponse route = flight.getRoute();
@@ -173,14 +181,21 @@ public class CheckInServiceImpl implements CheckInService {
         BoardingPass bp = new BoardingPass();
         bp.setReservationId(reservation.id());
         bp.setSeatNumber(reservation.seatNumber());
-        bp.setGate(gateFor(flight.getId()));
-        bp.setBoardingTime(flight.getDepartureTime().minusMinutes(45));
+        bp.setGate(flight.getGate() != null ? flight.getGate() : gateFor(flight.getId()));
+        bp.setBoardingTime(boardingTimeOf(flight));
         bp.setBarcodeData("SKY-" + reservation.pnr() + "-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase());
         bp.setIssuedAt(LocalDateTime.now(clock));
         return bp;
     }
 
-    /** Placeholder until gates come from operations data: stable per flight, so all passengers agree. */
+    /** Boarding starts 45 minutes before the flight is expected to leave (its delayed time, if any). */
+    static LocalDateTime boardingTimeOf(FlightResponse flight) {
+        LocalDateTime departure = flight.getEstimatedDepartureTime() != null
+                ? flight.getEstimatedDepartureTime() : flight.getDepartureTime();
+        return departure.minusMinutes(BOARDING_BEFORE_DEPARTURE_MINUTES);
+    }
+
+    /** Fallback while ops have not assigned a gate: stable per flight, so all passengers agree. */
     static String gateFor(UUID flightId) {
         return "G" + (Math.floorMod(flightId.hashCode(), GATE_COUNT) + 1);
     }

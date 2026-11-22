@@ -15,6 +15,8 @@ public interface FlightMapper {
     @Mapping(target = "aircraftId", ignore = true)
     @Mapping(target = "status", ignore = true)
     @Mapping(target = "availableSeats", ignore = true)
+    @Mapping(target = "estimatedDepartureTime", ignore = true)
+    @Mapping(target = "gate", ignore = true)
     @Mapping(target = "version", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
@@ -23,6 +25,7 @@ public interface FlightMapper {
     @Mapping(target = "route", ignore = true)
     @Mapping(target = "aircraft", ignore = true)
     @Mapping(target = "currency", ignore = true)
+    @Mapping(target = "estimatedArrivalTime", ignore = true)
     FlightResponse toResponse(Flight flight);
 
     @Mapping(target = "id", ignore = true)
@@ -30,9 +33,10 @@ public interface FlightMapper {
     @Mapping(target = "aircraftId", ignore = true)
     @Mapping(target = "status", ignore = true)
     @Mapping(target = "availableSeats", ignore = true)
+    @Mapping(target = "estimatedDepartureTime", ignore = true)
+    @Mapping(target = "gate", ignore = true)
     @Mapping(target = "version", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
     void updateEntity(@MappingTarget Flight flight, FlightRequest request);
 }
-

@@ -282,6 +282,10 @@ POST   /flights                    Create flight (aircraft must be ACTIVE) [STAF
 PUT    /flights/{id}               Update flight (aircraft must be ACTIVE) [STAFF, ADMIN]
 PATCH  /flights/{id}/status        Update flight status        [STAFF, ADMIN; CANCELLED: ADMIN only,
                                    same full cancellation as DELETE]
+PUT    /flights/{id}/delay         Delay: set estimatedDepartureTime (after the scheduled departure,
+                                   by at most 24h); status becomes DELAYED  [STAFF, ADMIN]
+DELETE /flights/{id}/delay         Lift the delay; a DELAYED flight is SCHEDULED again  [STAFF, ADMIN]
+PUT    /flights/{id}/gate          Assign or change the gate ("B12", "G5", "214A")  [STAFF, ADMIN]
 DELETE /flights/{id}               Cancel flight               [ADMIN]
 ```
 
@@ -434,6 +438,16 @@ All endpoints return a consistent `ApiResponse<T>`:
 - A flight cannot depart without at least 1 `CAPTAIN` + 1 `FIRST_OFFICER`
 - Crew members cannot be double-assigned to overlapping flights
 - License expiry is validated at assignment time
+
+**Delays and gates**
+- `departureTime`/`arrivalTime` are always the scheduled times. A delay sets `estimatedDepartureTime` (and the response derives `estimatedArrivalTime` by the same shift); lifting it, moving a DELAYED flight back to SCHEDULED, or rescheduling the flight clears it
+- Search, the check-in window and add-on cut-offs keep using the scheduled departure; the boarding pass shows the current gate and boards 45 minutes before the expected departure, also on a pass issued before the change
+- A flight without a gate falls back to a stable placeholder gate on its boarding pass
+
+**Flight change events**
+- Every change a passenger should hear about is recorded through the same outbox as a `FlightChangedEvent` on `skyline.flight.changed` (keyed by flight id, so in order per flight): `STATUS_CHANGED`, `DELAYED`, `DELAY_CLEARED`, `RESCHEDULED`, `GATE_CHANGED`, `CANCELLED`
+- Each event is self-contained (flight number, route IATA codes, current and previous status, times and gate), so a consumer can describe the change without calling the schedule service back. Nothing is recorded when an operation changes nothing
+- It is a separate topic from `skyline.flight.cancelled` on purpose: the reservation service cancels bookings for any record on that topic
 
 **Flight Cancellation**
 - Cancelling a flight resets available seats and records a `FlightCancelledEvent` in the schedule service's `outbox_events` table, in the same transaction as the status change

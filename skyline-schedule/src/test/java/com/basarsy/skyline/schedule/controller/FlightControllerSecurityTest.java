@@ -5,7 +5,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -22,6 +24,7 @@ import com.basarsy.skyline.schedule.dto.FlightResponse;
 import com.basarsy.skyline.schedule.entity.FlightStatus;
 import com.basarsy.skyline.schedule.service.FlightService;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.UUID;
@@ -35,6 +38,7 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -128,6 +132,49 @@ class FlightControllerSecurityTest {
         mvc.perform(get("/api/v1/flights/board").header(HttpHeaders.AUTHORIZATION, bearer("ROLE_STAFF"))
                         .param("status", "LOST"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void staffCanDelayAFlightAndAssignAGate() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(flightService.delayFlight(id, LocalDateTime.of(2030, 6, 1, 10, 30)))
+                .thenReturn(FlightResponse.builder().id(id).status(FlightStatus.DELAYED).build());
+        when(flightService.assignGate(id, "B12")).thenReturn(FlightResponse.builder().id(id).gate("B12").build());
+        when(flightService.clearDelay(id)).thenReturn(FlightResponse.builder().id(id).build());
+
+        mvc.perform(put("/api/v1/flights/" + id + "/delay").header(HttpHeaders.AUTHORIZATION, bearer("ROLE_STAFF"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"estimatedDepartureTime\":\"2030-06-01T10:30:00\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("DELAYED"));
+        mvc.perform(put("/api/v1/flights/" + id + "/gate").header(HttpHeaders.AUTHORIZATION, bearer("ROLE_STAFF"))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"gate\":\"B12\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.gate").value("B12"));
+        mvc.perform(delete("/api/v1/flights/" + id + "/delay").header(HttpHeaders.AUTHORIZATION, bearer("ROLE_ADMIN")))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void passengersCannotDelayFlightsOrMoveGates() throws Exception {
+        UUID id = UUID.randomUUID();
+        mvc.perform(put("/api/v1/flights/" + id + "/delay").header(HttpHeaders.AUTHORIZATION, bearer("ROLE_PASSENGER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"estimatedDepartureTime\":\"2030-06-01T10:30:00\"}"))
+                .andExpect(status().isForbidden());
+        mvc.perform(put("/api/v1/flights/" + id + "/gate").header(HttpHeaders.AUTHORIZATION, bearer("ROLE_PASSENGER"))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"gate\":\"B12\"}"))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(flightService);
+    }
+
+    @Test
+    void aMalformedGateIsA400() throws Exception {
+        mvc.perform(put("/api/v1/flights/" + UUID.randomUUID() + "/gate")
+                        .header(HttpHeaders.AUTHORIZATION, bearer("ROLE_STAFF"))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"gate\":\"gate twelve\"}"))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(flightService);
     }
 
     private String bearer(String role) {

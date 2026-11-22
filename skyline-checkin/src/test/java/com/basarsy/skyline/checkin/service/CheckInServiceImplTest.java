@@ -262,6 +262,49 @@ class CheckInServiceImplTest {
 
     private static final UUID RESERVATION_ID = UUID.randomUUID();
 
+    @Test
+    void aNewPassUsesTheGateAndDelayFromOperations() {
+        loginAs(OWNER_ID, "ROLE_PASSENGER");
+        ReservationResponse confirmed = delayedAtGate(reservation(ReservationStatus.CONFIRMED, null), "C7");
+        when(reservationClient.getReservationByPnr(PNR)).thenReturn(confirmed);
+        when(repository.findByReservationId(confirmed.id())).thenReturn(Optional.empty());
+        when(reservationClient.checkIn(confirmed.id()))
+                .thenReturn(delayedAtGate(reservation(ReservationStatus.CHECKED_IN, "1A"), "C7"));
+
+        BoardingPassResponse pass = service.performCheckIn(new CheckInRequest(PNR));
+
+        assertThat(pass.getGate()).isEqualTo("C7");
+        assertThat(pass.getDepartureTime()).isEqualTo(NOW_UTC.plusHours(24));
+        assertThat(pass.getEstimatedDepartureTime()).isEqualTo(NOW_UTC.plusHours(25));
+        assertThat(pass.getBoardingTime()).isEqualTo(NOW_UTC.plusHours(25).minusMinutes(45));
+    }
+
+    @Test
+    void aStoredPassShowsTheCurrentGateAndBoardingTime() {
+        loginAs(OWNER_ID, "ROLE_PASSENGER");
+        ReservationResponse checkedIn = delayedAtGate(reservation(ReservationStatus.CHECKED_IN, "1A"), "D2");
+        when(reservationClient.getReservationByPnr(PNR)).thenReturn(checkedIn);
+        BoardingPass stored = new BoardingPass();
+        stored.setReservationId(checkedIn.id());
+        stored.setSeatNumber("1A");
+        stored.setGate("G3");
+        stored.setBoardingTime(NOW_UTC.plusHours(24).minusMinutes(45));
+        when(repository.findByReservationId(checkedIn.id())).thenReturn(Optional.of(stored));
+
+        BoardingPassResponse pass = service.getBoardingPass(PNR);
+
+        assertThat(pass.getGate()).isEqualTo("D2");
+        assertThat(pass.getBoardingTime()).isEqualTo(NOW_UTC.plusHours(25).minusMinutes(45));
+    }
+
+    /** The same reservation, its flight delayed by an hour and assigned {@code gate}. */
+    private static ReservationResponse delayedAtGate(ReservationResponse reservation, String gate) {
+        reservation.flight().setEstimatedDepartureTime(reservation.flight().getDepartureTime().plusHours(1));
+        reservation.flight().setGate(gate);
+        reservation.flight().setStatus(FlightStatus.DELAYED);
+        return reservation;
+    }
+
     private static ReservationResponse reservation(ReservationStatus status, String seat) {
         return reservation(status, seat, NOW_UTC.plusHours(24));
     }
