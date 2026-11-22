@@ -714,6 +714,8 @@ export const handlers = [
     const body = (await request.json()) as Record<string, unknown>
     const plane = db.aircraft.find((a) => a.id === body.aircraftId)
     if (plane && plane.status !== 'ACTIVE') return fail(400, `Aircraft ${plane.tailNumber} is not active`)
+    // New times are the plan now: like the server, a reschedule lifts the delay.
+    const rescheduled = body.departureTime !== flight.departureTime || body.arrivalTime !== flight.arrivalTime
     Object.assign(flight, {
       flightNumber: String(body.flightNumber),
       route: db.routes.find((r) => r.id === body.routeId) ?? flight.route,
@@ -722,6 +724,11 @@ export const handlers = [
       arrivalTime: String(body.arrivalTime),
       basePrice: Number(body.basePrice),
       updatedAt: now(),
+      ...(rescheduled && {
+        status: flight.status === 'DELAYED' ? 'SCHEDULED' : flight.status,
+        estimatedDepartureTime: null,
+        estimatedArrivalTime: null,
+      }),
     })
     return ok(flight, 'Flight updated successfully')
   }),
@@ -752,6 +759,11 @@ export const handlers = [
       ) {
         return fail(400, 'Flight must have at least one CAPTAIN and one FIRST_OFFICER to proceed')
       }
+    }
+    if (flight.status === 'DELAYED' && status === 'SCHEDULED') {
+      // Back on schedule lifts the delay, as on the server.
+      flight.estimatedDepartureTime = null
+      flight.estimatedArrivalTime = null
     }
     flight.status = status
     return ok(flight, 'Flight status updated successfully')

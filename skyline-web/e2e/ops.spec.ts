@@ -234,7 +234,9 @@ test('staff delay a flight and assign a gate; the passenger sees both on the boo
   const card = page.getByRole('heading', { name: 'Delay & gate' }).locator('..').locator('..')
   await expect(card).toContainText('on time')
   await card.getByRole('button', { name: '+30 min' }).click()
-  await expect(card).toContainText('+30 min')
+  // The departure row (not the preset button, which has the same label) now shows the delay.
+  await expect(card).not.toContainText('on time')
+  await expect(card.getByText(/· \+30 min/)).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Status' }).locator('..')).toContainText('Delayed')
   await card.getByLabel('Gate').fill('b12')
   await card.getByRole('button', { name: 'Assign' }).click()
