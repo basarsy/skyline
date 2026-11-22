@@ -198,6 +198,8 @@ class FlightServiceImplTest {
         assertThat(event.type()).isEqualTo(FlightChangeType.CANCELLED);
         assertThat(event.origin()).isEqualTo("IST");
         assertThat(event.destination()).isEqualTo("LHR");
+        assertThat(event.originTimezone()).isEqualTo("Europe/Istanbul");
+        assertThat(event.destinationTimezone()).isEqualTo("Europe/London");
     }
 
     // ------------------------------------------------------------------ delays and gates

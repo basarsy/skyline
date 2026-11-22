@@ -345,6 +345,8 @@ public class FlightServiceImpl implements FlightService {
         FlightChangedEvent event = new FlightChangedEvent(type, flight.getId(), flight.getFlightNumber(),
                 route == null || route.origin() == null ? null : route.origin().iataCode(),
                 route == null || route.destination() == null ? null : route.destination().iataCode(),
+                route == null || route.origin() == null ? null : route.origin().timezone(),
+                route == null || route.destination() == null ? null : route.destination().timezone(),
                 flight.getStatus(), before.status(),
                 flight.getDepartureTime(), before.departureTime(), flight.getArrivalTime(),
                 flight.getEstimatedDepartureTime(), before.estimatedDepartureTime(),
