@@ -16,6 +16,7 @@ import type {
   CrewMemberResponse,
   FlightCrewResponse,
   FlightResponse,
+  NotificationResponse,
   ReservationResponse,
   RouteResponse,
   UserResponse,
@@ -64,6 +65,8 @@ interface Db {
   manifests: Map<string, FlightCrewResponse[]>
   /** flight id → seat → hold owner ("userId:slot"); holds never expire in the mock */
   holds: Map<string, Map<string, string>>
+  /** In-app inbox entries, newest last; the mock writes them synchronously (the real service via Kafka). */
+  notifications?: (NotificationResponse & { userId: string })[]
 }
 
 let counter = 0
@@ -133,6 +136,7 @@ function freshDb(): Db {
     crew: [],
     manifests: new Map(),
     holds: new Map(),
+    notifications: [],
   }
 }
 
@@ -186,6 +190,25 @@ function guard(request: Request, roles?: UserRole[]) {
   if (!user) return { denied: fail(401, 'Authentication required'), user: null }
   if (roles && !roles.includes(user.role)) return { denied: fail(403, 'Access denied'), user }
   return { denied: null, user }
+}
+
+/** Adds an inbox entry, as the notification service would after a booking or a flight change. */
+function notify(userId: string | null, kind: string, title: string, body: string, link: string | null) {
+  if (!userId) return
+  db.notifications ??= []
+  db.notifications.push({ id: uuid(), userId, kind, title, body, link, createdAt: now(), read: false })
+}
+
+/** Tells each account with an active booking on the flight, once per account. */
+function notifyFlight(flight: FlightResponse, kind: string, title: string, body: string) {
+  const seen = new Set<string>()
+  for (const reservation of db.reservations) {
+    const userId = reservation.passenger.userId
+    if (reservation.flight?.id !== flight.id || reservation.status === 'CANCELLED' || !userId || seen.has(userId))
+      continue
+    seen.add(userId)
+    notify(userId, kind, title, body, `/trips/${reservation.id}`)
+  }
 }
 
 function issueTokens(user: MockUser) {
@@ -768,6 +791,35 @@ export const handlers = [
     flight.status = status
     return ok(flight, 'Flight status updated successfully')
   }),
+  // ---- notifications
+  http.get(`${API}/notifications`, ({ request }) => {
+    const { denied, user } = guard(request)
+    if (denied) return denied
+    const mine = (db.notifications ?? [])
+      .filter((n) => n.userId === user!.id)
+      .reverse()
+      .map(({ userId: _userId, ...n }) => n)
+    return ok(page(mine, new URL(request.url)), 'Notifications retrieved')
+  }),
+  http.get(`${API}/notifications/unread-count`, ({ request }) => {
+    const { denied, user } = guard(request)
+    if (denied) return denied
+    return ok({ count: (db.notifications ?? []).filter((n) => n.userId === user!.id && !n.read).length })
+  }),
+  http.post(`${API}/notifications/read-all`, ({ request }) => {
+    const { denied, user } = guard(request)
+    if (denied) return denied
+    for (const n of db.notifications ?? []) if (n.userId === user!.id) n.read = true
+    return ok({ count: 0 }, 'All notifications marked as read')
+  }),
+  http.post(`${API}/notifications/:id/read`, ({ request, params }) => {
+    const { denied, user } = guard(request)
+    if (denied) return denied
+    const entry = (db.notifications ?? []).find((n) => n.id === params.id && n.userId === user!.id)
+    if (!entry) return fail(404, 'Notification not found')
+    entry.read = true
+    return ok(null, 'Notification marked as read')
+  }),
   http.put(`${API}/flights/:id/delay`, async ({ request, params }) => {
     const { denied } = guard(request, ['STAFF', 'ADMIN'])
     if (denied) return denied
@@ -786,6 +838,7 @@ export const handlers = [
       estimatedArrivalTime: toApiDateTime(new Date(Date.parse(`${flight.arrivalTime}Z`) + delay)),
       updatedAt: now(),
     })
+    notifyFlight(flight, 'FLIGHT_DELAYED', `${flight.flightNumber} is delayed`, 'A new departure time is set.')
     return ok(flight, 'Flight delayed')
   }),
   http.delete(`${API}/flights/:id/delay`, ({ request, params }) => {
@@ -812,6 +865,12 @@ export const handlers = [
     if (!/^[A-Za-z]{0,2}[0-9]{1,3}[A-Za-z]?$/.test(gate.trim()))
       return fail(400, 'Validation failed', ['gate: Gate must look like B12, G5 or 214A'])
     Object.assign(flight, { gate: gate.trim().toUpperCase(), updatedAt: now() })
+    notifyFlight(
+      flight,
+      'FLIGHT_GATE',
+      `${flight.flightNumber}: gate ${flight.gate}`,
+      `Departs from gate ${flight.gate}.`,
+    )
     return ok(flight, 'Gate assigned')
   }),
   http.delete(`${API}/flights/:id`, ({ request, params }) => {
@@ -849,7 +908,15 @@ export const handlers = [
     if (flight.availableSeats <= 0) return fail(400, 'Flight is fully booked')
     flight.availableSeats -= 1
     const reservation = newReservation(flight, body.passenger, user!.id, body.cabinClass, 'STANDARD', null)
+    reservation.contactEmail = user!.email
     db.reservations.push(reservation)
+    notify(
+      user!.id,
+      'BOOKING_CONFIRMED',
+      `Booking confirmed: ${reservation.pnr}`,
+      'Your trip is booked.',
+      `/trips/${reservation.id}`,
+    )
     return ok(withFlight(reservation), 'Flight booked successfully', 201)
   }),
   http.post(`${API}/reservations/group`, async ({ request }) => {
@@ -917,10 +984,18 @@ export const handlers = [
             refundable: leg.fareType === 'FLEX' || product.alwaysRefundable,
           })
         }
+        reservation.contactEmail = body.contactEmail?.trim() || user!.email
         db.reservations.push(reservation)
         booked.push(withFlight(reservation))
       })
     }
+    notify(
+      user!.id,
+      'BOOKING_CONFIRMED',
+      `Booking confirmed: ${[...new Set(booked.map((r) => r.pnr))].join(', ')}`,
+      booked.length === 1 ? 'Your trip is booked.' : `${booked.length} reservations are booked.`,
+      booked[0] ? `/trips/${booked[0].id}` : null,
+    )
     const totalPrice = booked.reduce((sum, r) => sum + r.totalPrice, 0)
     return ok(
       { bookingGroupId: groupId, reservations: booked, totalPrice, currency: booked[0]!.currency },
