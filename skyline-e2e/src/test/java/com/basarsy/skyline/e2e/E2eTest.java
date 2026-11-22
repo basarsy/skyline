@@ -92,7 +92,8 @@ abstract class E2eTest {
                                     api(null).get("/flights/" + unknown),                         // schedule
                                     api(token).get("/reservations/" + unknown),                   // reservation
                                     api(token).get("/checkin/ZZZZZZ/boarding-pass"),              // check-in
-                                    api(token).get("/flights/" + unknown + "/crew"))              // crew
+                                    api(token).get("/flights/" + unknown + "/crew"),              // crew
+                                    api(token).get("/notifications/unread-count"))                // notification
                             .stream()
                             .allMatch(r -> r.statusCode() < 500);
                 });

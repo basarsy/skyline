@@ -78,6 +78,10 @@ spring:
               uri: ${CREW_SERVICE_URL:http://localhost:8086}
               predicates:
                 - Path=/api/v1/crew/**, /api/v1/flights/*/crew, /api/v1/flights/*/crew/**
+            - id: notification-service
+              uri: ${NOTIFICATION_SERVICE_URL:http://localhost:8087}
+              predicates:
+                - Path=/api/v1/notifications/**
             - id: schedule-service
               uri: ${SCHEDULE_SERVICE_URL:http://localhost:8080}
               predicates:
