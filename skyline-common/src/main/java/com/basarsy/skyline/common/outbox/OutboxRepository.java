@@ -1,4 +1,4 @@
-package com.basarsy.skyline.schedule.outbox;
+package com.basarsy.skyline.common.outbox;
 
 import java.sql.PreparedStatement;
 import java.time.Duration;
@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.stereotype.Repository;
 
 /**
  * Plain JDBC access to {@code outbox_events}. It joins the surrounding (JPA) transaction, so a row written here
@@ -19,7 +18,6 @@ import org.springframework.stereotype.Repository;
  * ({@code published_at}, {@code next_attempt_at}) use {@code clock_timestamp()}: the publisher's transaction
  * spans the sends, so {@code now()} there would be the claim time, seconds before the ack or failure.
  */
-@Repository
 @RequiredArgsConstructor
 class OutboxRepository {
 

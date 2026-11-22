@@ -1,4 +1,4 @@
-package com.basarsy.skyline.schedule.outbox;
+package com.basarsy.skyline.common.outbox;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -13,7 +13,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.event.Level;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionOperations;
 
 /**
@@ -34,7 +33,6 @@ import org.springframework.transaction.support.TransactionOperations;
  * key holds because a batch never holds two rows of one aggregate (see {@link OutboxRepository#claimBatch}).
  */
 @Slf4j
-@Component
 @RequiredArgsConstructor
 public class OutboxPublisher {
 

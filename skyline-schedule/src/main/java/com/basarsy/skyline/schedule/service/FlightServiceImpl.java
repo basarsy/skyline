@@ -17,7 +17,7 @@ import com.basarsy.skyline.schedule.dto.FlightResponse;
 import com.basarsy.skyline.schedule.entity.Flight;
 import com.basarsy.skyline.schedule.entity.FlightStatus;
 import com.basarsy.skyline.schedule.mapper.FlightMapper;
-import com.basarsy.skyline.schedule.outbox.Outbox;
+import com.basarsy.skyline.common.outbox.Outbox;
 import com.basarsy.skyline.schedule.repository.FlightRepository;
 import com.basarsy.skyline.schedule.repository.FlightSpecifications;
 import com.basarsy.skyline.schedule.event.FlightCancelledEvent;

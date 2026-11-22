@@ -30,7 +30,7 @@ import com.basarsy.skyline.schedule.event.FlightChangedEvent;
 import com.basarsy.skyline.schedule.entity.FlightStatus;
 import com.basarsy.skyline.schedule.mapper.FlightMapper;
 import com.basarsy.skyline.schedule.mapper.FlightMapperImpl;
-import com.basarsy.skyline.schedule.outbox.Outbox;
+import com.basarsy.skyline.common.outbox.Outbox;
 import com.basarsy.skyline.schedule.repository.FlightRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;

@@ -44,8 +44,9 @@ skyline:
     currency: ${SKYLINE_CURRENCY:EUR}
   internal:
     api-key: ${SKYLINE_INTERNAL_API_KEY}
-  # Transactional outbox for Kafka events (see OutboxPublisher).
+  # Transactional outbox for Kafka events (skyline-common, see OutboxPublisher).
   outbox:
+    enabled: true
     publish-interval: PT1S
     batch-size: 100
     # At least delivery.timeout.ms above, so the producer gives up before the publisher stops waiting.

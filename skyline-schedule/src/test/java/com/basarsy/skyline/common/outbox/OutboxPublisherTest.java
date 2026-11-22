@@ -1,4 +1,4 @@
-package com.basarsy.skyline.schedule.outbox;
+package com.basarsy.skyline.common.outbox;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
