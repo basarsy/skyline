@@ -440,7 +440,7 @@ All endpoints return a consistent `ApiResponse<T>`:
 **Seat Availability**
 - Optimistic locking (`@Version`) prevents double-booking under concurrent requests
 - Atomic decrement via `@Modifying` JPQL query
-- Cross-service seat management via internal OpenFeign calls (schedule ↔ reservation)
+- Cross-service seat management via internal OpenFeign calls (schedule ↔ reservation). Each booking holds its seat under a **claim** id the reservation service chooses (`PUT/DELETE /flights/{id}/inventory/claims/{claimId}`, `seat_claims` in schedule): claiming twice takes one seat and releasing a claim that never landed gives nothing back. The release is registered before the claim call, so a booking that rolls back (even after a timed-out claim) returns its seat, and a cancellation releases it by the id kept on the reservation. When a commit's outcome is unknown the seat is kept and `SEAT_CLAIM_UNKNOWN` is logged; a failed release logs `SEAT_RELEASE_FAILED`, and releasing again is safe
 - Sales close **1 hour** before the scheduled departure, with check-in and online add-ons: search stops listing the flight and booking it is refused, so every seat sold can still be checked in
 
 **Check-In Window**
@@ -471,7 +471,7 @@ All endpoints return a consistent `ApiResponse<T>`:
 - The notification service keeps its own projection of who is booked on which flight, from the booking events (`BOOKED` once per booking with every reservation, `CANCELLED` per reservation a passenger cancels), so a flight change needs no call back to the reservation service. Bookings made before the service first ran are not in it
 - Email and in-app: booking confirmed or cancelled, delay (new local time), delay lifted, reschedule, gate change, airline cancellation, and "check-in is open" once per booking when the 48h window opens. In-app only: boarding started. Nothing for departed or arrived
 - One email per contact address and one inbox entry per account, listing the passengers they cover: a family booked together gets one message, not one each
-- Events arrive at least once; every message has a dedupe key (event + recipient, the address as a SHA-256 digest), so a redelivery sends nothing new. A record that can't be handled is retried, then parked on `<topic>.DLT`
+- Events arrive at least once; every message has a dedupe key (event + recipient, the address as a SHA-256 digest), so a redelivery sends nothing new. A record that can't be handled is retried with growing waits for 5 minutes (enough to ride out a database or broker restart), then parked on `<topic>.DLT` with a `KAFKA_RECORD_PARKED` log line; malformed JSON is parked at once (see [Dead-lettered records](#dead-lettered-records))
 - A reschedule moves the check-in reminder with the flight: one already sent before the new window opened goes out again when it does
 - Emails are queued in the same transaction (`email_outbox`) and sent by a scheduled job with exponential backoff, so an SMTP outage delays emails instead of losing them. Locally, Mailpit catches every email (inbox at `http://localhost:8025`); nothing leaves the machine
 
@@ -608,6 +608,9 @@ Each service reads configuration from its own `application.yml`. Infrastructure 
 | `SPRING_PROFILES_ACTIVE` | `dev` logs every SQL statement (`show-sql`) | — |
 | `SKYLINE_CURRENCY` | (schedule, reservation) ISO 4217 currency of every price, returned as `currency`; validated at startup. Set the same value on both | `EUR` |
 | `SKYLINE_SEAT_HOLD_TTL` | (reservation) How long a chosen seat stays held, ISO-8601 duration | `PT15M` |
+| `SKYLINE_FEIGN_CONNECT_TIMEOUT_MS` / `SKYLINE_FEIGN_READ_TIMEOUT_MS` | (every service) Timeouts of calls to other services | `2000` / `5000` |
+| `SKYLINE_GATEWAY_CONNECT_TIMEOUT_MS` / `SKYLINE_GATEWAY_RESPONSE_TIMEOUT` | (gateway) Timeouts of routed requests; past the response timeout the gateway answers `504` | `2000` / `15s` |
+| `SKYLINE_KAFKA_CONSUMERRETRY_*` | (reservation, notification) `INITIALINTERVAL`, `MULTIPLIER`, `MAXINTERVAL`, `MAXELAPSEDTIME` (`skyline.kafka.consumer-retry.*`): how a failing record is retried before it is dead-lettered | `1s`, `2`, `60s`, `5m` |
 
 > Public registration always creates `PASSENGER` accounts. Set `SKYLINE_ADMIN_EMAIL` / `SKYLINE_ADMIN_PASSWORD` on the auth service to bootstrap the first `ADMIN`, who can then create further `STAFF` and `ADMIN` accounts with `POST /users`.
 
@@ -624,6 +627,24 @@ skyline-<module>/src/main/resources/db/migration/<module>/
 They are packaged with the service and applied on startup (`classpath:db/migration/<module>`), so that directory is the only copy.
 
 **Never edit an existing migration.** Always create a new versioned file.
+
+---
+
+## Dead-lettered records
+
+A record a consumer still can't handle after retrying for 5 minutes is parked on `<topic>.DLT` (same partition), and the service logs `KAFKA_RECORD_PARKED topic=… partition=… offset=…`: alert on that line. Parked records are not processed again on their own. Once the cause is fixed, replay them onto the original topic; every consumer is idempotent, so a record handled twice changes nothing:
+
+```bash
+# Look at what is parked
+docker exec skyline-kafka kafka-console-consumer --bootstrap-server localhost:9092 \
+  --topic skyline.flight.cancelled.DLT --from-beginning --property print.key=true --timeout-ms 5000
+
+# Replay it (keys kept, so per-flight ordering holds)
+docker exec skyline-kafka sh -c "kafka-console-consumer --bootstrap-server localhost:9092 \
+  --topic skyline.flight.cancelled.DLT --from-beginning --property print.key=true --property key.separator='|' \
+  --timeout-ms 5000 | kafka-console-producer --bootstrap-server localhost:9092 \
+  --topic skyline.flight.cancelled --property parse.key=true --property key.separator='|'"
+```
 
 ---
 
