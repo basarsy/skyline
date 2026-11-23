@@ -124,6 +124,18 @@ class AncillaryIntegrationTest {
     }
 
     @Test
+    void aTopUpListedBeforeItsBagIsStillAccepted() {
+        ReservationResponse basic = book(international, FareType.BASIC);
+
+        ancillaries.purchase(basic.getId(), new AncillaryPurchaseRequest(List.of(
+                new AncillaryPurchaseRequest.Item("EXTRA_WEIGHT_10", 1),
+                new AncillaryPurchaseRequest.Item("CHECKED_BAG_20", 1)), null));
+
+        assertThat(reservations.getReservation(basic.getId()).getAncillaries()).extracting(l -> l.productCode())
+                .containsExactlyInAnyOrder("CHECKED_BAG_20", "EXTRA_WEIGHT_10");
+    }
+
+    @Test
     void whatTheFareIncludesCannotBeBoughtAgainAndPassengersCannotSellAtAirportPrices() {
         ReservationResponse standard = book(international, FareType.STANDARD);
 
