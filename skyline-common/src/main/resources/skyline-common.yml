@@ -16,6 +16,18 @@ management:
         readiness:
           include: readinessState, db
 
+# Calls between services fail fast instead of holding a request thread, a DB connection and (for bookings) the
+# cabin lock for OpenFeign's 60s default. A booking's seat claim is safe to time out: its release is registered
+# before the call.
+spring:
+  cloud:
+    openfeign:
+      client:
+        config:
+          default:
+            connect-timeout: ${SKYLINE_FEIGN_CONNECT_TIMEOUT_MS:2000}
+            read-timeout: ${SKYLINE_FEIGN_READ_TIMEOUT_MS:5000}
+
 ---
 # Local debugging: SPRING_PROFILES_ACTIVE=dev logs every SQL statement.
 spring:
