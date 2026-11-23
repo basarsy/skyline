@@ -1,5 +1,6 @@
 package com.basarsy.skyline.reservation.config;
 
+import com.basarsy.skyline.common.kafka.ConsumerRetryProperties;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -8,6 +9,7 @@ import org.apache.kafka.common.serialization.Serializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.kafka.KafkaProperties;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.ssl.SslBundles;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -17,24 +19,22 @@ import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.support.serializer.DelegatingByTypeSerializer;
 import org.springframework.kafka.support.serializer.JsonSerializer;
-import org.springframework.util.backoff.FixedBackOff;
 
 /**
- * Consumer error handling: a failing record is retried a few times, then parked on its dead-letter topic
- * ({@code <topic>.DLT}, same partition; see {@code KafkaTopicConfig}) instead of being retried forever or
- * skipped silently. Records that can't be deserialized are not retryable and go to the DLT directly.
- * Spring Boot wires this {@code CommonErrorHandler} bean into the auto-configured listener container factory.
+ * Consumer error handling: a failing record is retried with growing waits for minutes (see
+ * {@link ConsumerRetryProperties}), then parked on its dead-letter topic ({@code <topic>.DLT}, same partition;
+ * see {@code KafkaTopicConfig}) instead of being retried forever or skipped silently. Records that can't be
+ * deserialized are not retryable and go to the DLT directly. Spring Boot wires this {@code CommonErrorHandler}
+ * bean into the auto-configured listener container factory.
  */
 @Configuration
+@EnableConfigurationProperties(ConsumerRetryProperties.class)
 public class KafkaErrorHandlingConfig {
 
-    static final long RETRY_INTERVAL_MS = 1_000;
-    static final long MAX_RETRIES = 3;
-
     @Bean
-    public DefaultErrorHandler kafkaErrorHandler(KafkaTemplate<Object, Object> deadLetterKafkaTemplate) {
-        return new DefaultErrorHandler(new DeadLetterPublishingRecoverer(deadLetterKafkaTemplate),
-                new FixedBackOff(RETRY_INTERVAL_MS, MAX_RETRIES));
+    public DefaultErrorHandler kafkaErrorHandler(KafkaTemplate<Object, Object> deadLetterKafkaTemplate,
+            ConsumerRetryProperties retry) {
+        return retry.errorHandler(new DeadLetterPublishingRecoverer(deadLetterKafkaTemplate));
     }
 
     /**
