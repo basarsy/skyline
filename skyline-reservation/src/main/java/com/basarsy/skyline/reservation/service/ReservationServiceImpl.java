@@ -44,6 +44,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -91,11 +92,11 @@ public class ReservationServiceImpl implements ReservationService {
         FlightResponse flight = bookableFlight(request.flightId(), 1);
         UUID currentUserId = getCurrentUserId();
         cabinInventory.reserve(flight, request.cabinClass(), 1);
-        takeInventory(flight);
+        UUID seatClaim = takeInventory(flight);
 
         FareType fareType = request.fareType() == null ? FareType.STANDARD : request.fareType();
         Reservation saved = createReservation(flight, request.passenger(), request.cabinClass(), fareType,
-                currentUserId, null, contactEmail(request.contactEmail()));
+                currentUserId, null, contactEmail(request.contactEmail()), seatClaim);
         bookingEvents.booked(saved.getId(), List.of(new BookingEvents.Booked(saved, flight)));
         return enrichReservationResponse(saved, flight);
     }
@@ -135,9 +136,9 @@ public class ReservationServiceImpl implements ReservationService {
             SeatPricing.PriceList prices = null;
 
             for (int i = 0; i < passengers; i++) {
-                takeInventory(flight);
+                UUID seatClaim = takeInventory(flight);
                 Reservation reservation = createReservation(flight, request.passengers().get(i), leg.cabinClass(),
-                        fareType, currentUserId, groupId, contactEmail);
+                        fareType, currentUserId, groupId, contactEmail, seatClaim);
                 String seat = seatFor(request, i, flight.getId());
                 if (seat != null) {
                     if (layout == null) {
@@ -226,13 +227,25 @@ public class ReservationServiceImpl implements ReservationService {
     }
 
     /**
-     * The seat lives in the schedule service, so it can't join this transaction. Hold it remotely, then give it
-     * back if this transaction does not commit for ANY reason, including failures at commit time (e.g. a
-     * constraint violation on flush), which a try/catch here can never see.
+     * The seat lives in the schedule service, so it can't join this transaction. It is held there under a claim
+     * id chosen here, and the give-back is registered BEFORE the call: if this transaction rolls back for any
+     * reason (including a claim whose response was lost, or a failure at commit time that a try/catch here can
+     * never see), the claim is released, which gives back nothing if the claim never landed.
      */
-    private void takeInventory(FlightResponse flight) {
-        scheduleClient.decrementSeat(flight.getId());
-        releaseSeatUnlessCommitted(flight.getId());
+    private UUID takeInventory(FlightResponse flight) {
+        UUID claimId = UUID.randomUUID();
+        AtomicBoolean mayHoldSeat = new AtomicBoolean(true);
+        releaseSeatUnlessCommitted(flight.getId(), claimId, mayHoldSeat);
+        try {
+            scheduleClient.claimSeat(flight.getId(), claimId);
+        } catch (SkylineException refused) {
+            // A definite answer (full, sales closed, not bookable): no seat was taken, so nothing to release.
+            if (refused.getStatus().is4xxClientError()) {
+                mayHoldSeat.set(false);
+            }
+            throw refused;
+        }
+        return claimId;
     }
 
     /** Where messages about a new booking go: the one given, else the account's email. */
@@ -241,7 +254,7 @@ public class ReservationServiceImpl implements ReservationService {
     }
 
     private Reservation createReservation(FlightResponse flight, PassengerRequest passengerRequest, CabinClass cabin,
-            FareType fareType, UUID userId, UUID groupId, String contactEmail) {
+            FareType fareType, UUID userId, UUID groupId, String contactEmail, UUID seatClaimId) {
         // Each booking gets its own passenger snapshot. Reusing one passenger per user meant that
         // booking for someone else rewrote the name/passport on all of the user's past reservations.
         Passenger passenger = passengerMapper.toEntity(passengerRequest);
@@ -259,6 +272,7 @@ public class ReservationServiceImpl implements ReservationService {
         reservation.setTotalPrice(reservation.getFarePrice());
         reservation.setBookingGroupId(groupId);
         reservation.setContactEmail(contactEmail);
+        reservation.setSeatClaimId(seatClaimId);
 
         // In a real system, payment processing would happen here, and status would be CONFIRMED upon success
         reservation.setStatus(ReservationStatus.CONFIRMED);
@@ -340,7 +354,7 @@ public class ReservationServiceImpl implements ReservationService {
 
         // Return the seat only once the cancellation is durable. Releasing it before commit could
         // oversell the flight if the commit then failed.
-        releaseSeatAfterCommit(reservation.getFlightId());
+        releaseSeatAfterCommit(reservation.getFlightId(), reservation.getSeatClaimId());
     }
 
     private ReservationResponse enrichReservationResponse(Reservation reservation, FlightResponse flight) {
@@ -423,34 +437,47 @@ public class ReservationServiceImpl implements ReservationService {
                 .setScale(2, RoundingMode.HALF_UP);
     }
 
-    private void releaseSeatUnlessCommitted(UUID flightId) {
+    private void releaseSeatUnlessCommitted(UUID flightId, UUID claimId, AtomicBoolean mayHoldSeat) {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCompletion(int status) {
-                if (status != STATUS_COMMITTED) {
-                    releaseSeat(flightId, "booking transaction did not commit");
+                if (!mayHoldSeat.get()) {
+                    return;
+                }
+                if (status == STATUS_ROLLED_BACK) {
+                    releaseSeat(flightId, claimId, "booking transaction did not commit");
+                } else if (status == STATUS_UNKNOWN) {
+                    // The booking may exist. Giving its seat back could oversell the flight for good; keeping it
+                    // costs at most one seat, and an orphan claim (no reservation with that id) can be found.
+                    log.error("SEAT_CLAIM_UNKNOWN flightId={} claimId={}: commit outcome unknown, seat kept",
+                            flightId, claimId);
                 }
             }
         });
     }
 
-    private void releaseSeatAfterCommit(UUID flightId) {
+    private void releaseSeatAfterCommit(UUID flightId, UUID claimId) {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                releaseSeat(flightId, "reservation cancelled");
+                releaseSeat(flightId, claimId, "reservation cancelled");
             }
         });
     }
 
-    private void releaseSeat(UUID flightId, String reason) {
+    /** By claim when there is one; bookings made before claims existed give the seat back with an increment. */
+    private void releaseSeat(UUID flightId, UUID claimId, String reason) {
         try {
-            scheduleClient.incrementSeat(flightId);
+            if (claimId != null) {
+                scheduleClient.releaseSeat(flightId, claimId);
+            } else {
+                scheduleClient.incrementSeat(flightId);
+            }
         } catch (Exception ex) {
             // Runs after the transaction finished, so there is nothing left to roll back. Log loudly with a
-            // stable marker so the seat count can be reconciled (alerting / a retry job can key off it).
-            log.error("SEAT_RELEASE_FAILED flightId={} reason={}: seat inventory needs reconciliation",
-                    flightId, reason, ex);
+            // stable marker so the seat count can be reconciled; releasing a claim again is safe.
+            log.error("SEAT_RELEASE_FAILED flightId={} claimId={} reason={}: seat inventory needs reconciliation",
+                    flightId, claimId, reason, ex);
         }
     }
 

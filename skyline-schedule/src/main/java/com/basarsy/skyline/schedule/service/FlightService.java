@@ -32,4 +32,13 @@ public interface FlightService {
     void decrementSeat(UUID id);
 
     void incrementSeat(UUID id);
+
+    /**
+     * Holds one seat for {@code claimId}, once: claiming the same id again changes nothing, so a call whose
+     * response was lost can be repeated. Refused like {@link #decrementSeat} (full, sales closed, not bookable).
+     */
+    void claimSeat(UUID flightId, UUID claimId);
+
+    /** Gives back the seat {@code claimId} holds; nothing when it holds none (never landed, already released). */
+    void releaseSeat(UUID flightId, UUID claimId);
 }

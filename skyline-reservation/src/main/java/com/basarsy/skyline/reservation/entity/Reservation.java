@@ -66,6 +66,10 @@ public class Reservation extends BaseEntity {
     @Column(name = "contact_email", length = 254)
     private String contactEmail;
 
+    /** The schedule service's claim on this booking's seat; null on bookings made before claims existed. */
+    @Column(name = "seat_claim_id")
+    private UUID seatClaimId;
+
     @Version
     private Long version;
 }

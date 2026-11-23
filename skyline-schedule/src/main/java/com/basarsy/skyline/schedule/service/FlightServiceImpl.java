@@ -19,6 +19,7 @@ import com.basarsy.skyline.schedule.entity.FlightStatus;
 import com.basarsy.skyline.schedule.mapper.FlightMapper;
 import com.basarsy.skyline.common.outbox.Outbox;
 import com.basarsy.skyline.schedule.repository.FlightRepository;
+import com.basarsy.skyline.schedule.repository.SeatClaimRepository;
 import com.basarsy.skyline.schedule.repository.FlightSpecifications;
 import com.basarsy.skyline.schedule.event.FlightCancelledEvent;
 import com.basarsy.skyline.schedule.event.FlightChangeType;
@@ -67,6 +68,7 @@ public class FlightServiceImpl implements FlightService {
     static final Duration SALES_CLOSE_BEFORE = Duration.ofHours(1);
 
     private final FlightRepository flightRepository;
+    private final SeatClaimRepository seatClaims;
     private final FleetClient fleetClient;
     private final RouteClient routeClient;
     private final CrewClient crewClient;
@@ -312,8 +314,9 @@ public class FlightServiceImpl implements FlightService {
         // Enrich to get seat count for reset
         AircraftResponse aircraft = fleetClient.getAircraft(flight.getAircraftId());
         flight.setAvailableSeats(aircraft.aircraftType().totalSeats());
-        
+
         flightRepository.save(flight);
+        seatClaims.releaseAllOnFlight(id);
 
         // Same transaction as the status change: the reservation service hears of it only if the cancellation
         // commits, and then at least once (the outbox publisher sends it after commit, off the request thread).
@@ -402,6 +405,32 @@ public class FlightServiceImpl implements FlightService {
     @Transactional
     public void incrementSeat(UUID id) {
         flightRepository.incrementSeat(id, FlightStatus.CANCELLED, LocalDateTime.now());
+    }
+
+    @Override
+    @Transactional
+    public void claimSeat(UUID flightId, UUID claimId) {
+        if (!seatClaims.insert(claimId, flightId)) {
+            // Rows are never deleted, so a conflicting id is always found.
+            SeatClaimRepository.Claim claim = seatClaims.find(claimId).orElseThrow();
+            if (!claim.flightId().equals(flightId)) {
+                throw new SkylineException("Seat claim " + claimId + " is for another flight", HttpStatus.CONFLICT);
+            }
+            if (claim.released()) {
+                // Its booking gave up (the release overtook this call): taking a seat now would leak it.
+                throw new SkylineException("Seat claim " + claimId + " was released", HttpStatus.CONFLICT);
+            }
+            return; // Already holds its seat: a repeated call.
+        }
+        decrementSeat(flightId); // Refused (full, closed, not bookable): the claim rolls back with it.
+    }
+
+    @Override
+    @Transactional
+    public void releaseSeat(UUID flightId, UUID claimId) {
+        if (seatClaims.release(claimId, flightId)) {
+            incrementSeat(flightId);
+        }
     }
 
     /**
