@@ -12,6 +12,6 @@ import jakarta.validation.constraints.Size;
  * themselves), and the password rule matches the bootstrap admin's: at least 12 characters.
  */
 public record CreateUserRequest(
-        @NotBlank @Email String email,
+        @NotBlank @Email @Size(max = 254) String email,
         @NotBlank @Size(min = 12, max = 128) @MaxBytes(MaxBytes.BCRYPT) String password,
         @NotNull UserRole role) {}
