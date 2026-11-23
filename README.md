@@ -278,7 +278,8 @@ POST   /users                      Create a STAFF or ADMIN account
 ### Flights (skyline-schedule · :8080)
 ```
 GET    /flights                    Search bookable flights: SCHEDULED + DELAYED (origin, destination IATA;
-                                   date = calendar day at the origin airport, in its time zone)
+                                   date = calendar day at the origin airport, in its time zone;
+                                   only flights whose sales are open, i.e. departing in over an hour)
 GET    /flights/board              Operations flight board, every status [STAFF, ADMIN]
                                    (optional: date = UTC day, status (repeatable), flightNumber
                                     (contains, case-insensitive), routeId; paged, default size 50,
@@ -440,6 +441,7 @@ All endpoints return a consistent `ApiResponse<T>`:
 - Optimistic locking (`@Version`) prevents double-booking under concurrent requests
 - Atomic decrement via `@Modifying` JPQL query
 - Cross-service seat management via internal OpenFeign calls (schedule ↔ reservation)
+- Sales close **1 hour** before the scheduled departure, with check-in and online add-ons: search stops listing the flight and booking it is refused, so every seat sold can still be checked in
 
 **Check-In Window**
 - Opens **48 hours** before departure
@@ -469,7 +471,8 @@ All endpoints return a consistent `ApiResponse<T>`:
 - The notification service keeps its own projection of who is booked on which flight, from the booking events (`BOOKED` once per booking with every reservation, `CANCELLED` per reservation a passenger cancels), so a flight change needs no call back to the reservation service. Bookings made before the service first ran are not in it
 - Email and in-app: booking confirmed or cancelled, delay (new local time), delay lifted, reschedule, gate change, airline cancellation, and "check-in is open" once per booking when the 48h window opens. In-app only: boarding started. Nothing for departed or arrived
 - One email per contact address and one inbox entry per account, listing the passengers they cover: a family booked together gets one message, not one each
-- Events arrive at least once; every message has a dedupe key (event + recipient), so a redelivery sends nothing new. A record that can't be handled is retried, then parked on `<topic>.DLT`
+- Events arrive at least once; every message has a dedupe key (event + recipient, the address as a SHA-256 digest), so a redelivery sends nothing new. A record that can't be handled is retried, then parked on `<topic>.DLT`
+- A reschedule moves the check-in reminder with the flight: one already sent before the new window opened goes out again when it does
 - Emails are queued in the same transaction (`email_outbox`) and sent by a scheduled job with exponential backoff, so an SMTP outage delays emails instead of losing them. Locally, Mailpit catches every email (inbox at `http://localhost:8025`); nothing leaves the machine
 
 **Flight Cancellation**
