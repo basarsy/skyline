@@ -18,6 +18,6 @@ class HttpClientTimeoutsTest {
     @Test
     void downstreamCallsHaveConnectAndResponseTimeouts() {
         assertThat(httpClient.getConnectTimeout()).isEqualTo(2000);
-        assertThat(httpClient.getResponseTimeout()).isEqualTo(Duration.ofSeconds(15));
+        assertThat(httpClient.getResponseTimeout()).isEqualTo(Duration.ofSeconds(30));
     }
 }

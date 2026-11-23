@@ -135,6 +135,11 @@ public class FlightController {
         return ApiResponse.success("Flight cancelled successfully", null);
     }
 
+    /**
+     * Takes a seat without a claim, so it can't be given back safely.
+     * @deprecated only for reservation services deployed before seat claims; remove once none are left.
+     */
+    @Deprecated(forRemoval = true)
     @PutMapping("/{id}/inventory/decrement")
     @PreAuthorize("hasRole('SERVICE')")
     public void decrementSeat(@PathVariable UUID id) {

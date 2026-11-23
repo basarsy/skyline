@@ -49,29 +49,39 @@ class SeatClaimRepositoryTest {
 
         assertThat(claims.insert(claim, flightId)).isTrue();
         assertThat(claims.insert(claim, flightId)).as("repeated").isFalse();
-        assertThat(claims.flightOf(claim)).contains(flightId);
+        assertThat(claims.find(claim)).contains(new SeatClaimRepository.Claim(flightId, false));
     }
 
     @Test
-    void releasingGivesBackOnlyAClaimThatExistsOnThatFlight() {
+    void releasingGivesBackOnlyAHeldClaimOnThatFlightAndOnlyOnce() {
         UUID claim = UUID.randomUUID();
         UUID otherFlight = flight("SK2").getId();
         claims.insert(claim, flightId);
 
-        assertThat(claims.delete(UUID.randomUUID(), flightId)).as("never landed").isFalse();
-        assertThat(claims.delete(claim, otherFlight)).as("other flight").isFalse();
-        assertThat(claims.delete(claim, flightId)).isTrue();
-        assertThat(claims.delete(claim, flightId)).as("already released").isFalse();
+        assertThat(claims.release(claim, otherFlight)).as("other flight").isFalse();
+        assertThat(claims.release(claim, flightId)).isTrue();
+        assertThat(claims.release(claim, flightId)).as("already released").isFalse();
+        assertThat(claims.find(claim)).contains(new SeatClaimRepository.Claim(flightId, true));
     }
 
     @Test
-    void cancellingAFlightVoidsItsClaims() {
+    void aReleaseThatOvertakesItsClaimLeavesAMarkerSoTheClaimIsRefused() {
+        UUID claim = UUID.randomUUID();
+
+        assertThat(claims.release(claim, flightId)).as("nothing held").isFalse();
+
+        assertThat(claims.insert(claim, flightId)).as("arrives late").isFalse();
+        assertThat(claims.find(claim)).contains(new SeatClaimRepository.Claim(flightId, true));
+    }
+
+    @Test
+    void cancellingAFlightReleasesItsClaims() {
         UUID claim = UUID.randomUUID();
         claims.insert(claim, flightId);
 
-        claims.deleteForFlight(flightId);
+        claims.releaseAllOnFlight(flightId);
 
-        assertThat(claims.flightOf(claim)).isEmpty();
+        assertThat(claims.release(claim, flightId)).as("gives nothing back").isFalse();
     }
 
     private Flight flight(String number) {

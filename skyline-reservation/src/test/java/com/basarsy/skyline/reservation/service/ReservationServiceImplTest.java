@@ -121,6 +121,18 @@ class ReservationServiceImplTest {
     }
 
     @Test
+    void aClaimTheScheduleRefusedIsNotReleased() {
+        org.mockito.Mockito.doThrow(new com.basarsy.skyline.common.exception.SkylineException(
+                "Flight is fully booked", org.springframework.http.HttpStatus.CONFLICT))
+                .when(scheduleClient).claimSeat(any(), any());
+
+        assertThatThrownBy(() -> service.bookFlight(request())).hasMessage("Flight is fully booked");
+        completeTransaction(TransactionSynchronization.STATUS_ROLLED_BACK);
+
+        verify(scheduleClient, never()).releaseSeat(any(), any());
+    }
+
+    @Test
     void anUnknownCommitOutcomeKeepsTheSeat() {
         when(reservationRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
         when(reservationMapper.toResponse(any())).thenReturn(new com.basarsy.skyline.reservation.dto.ReservationResponse());

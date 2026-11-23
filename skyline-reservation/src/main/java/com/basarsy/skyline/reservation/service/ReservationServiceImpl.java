@@ -44,6 +44,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -233,8 +234,17 @@ public class ReservationServiceImpl implements ReservationService {
      */
     private UUID takeInventory(FlightResponse flight) {
         UUID claimId = UUID.randomUUID();
-        releaseSeatUnlessCommitted(flight.getId(), claimId);
-        scheduleClient.claimSeat(flight.getId(), claimId);
+        AtomicBoolean mayHoldSeat = new AtomicBoolean(true);
+        releaseSeatUnlessCommitted(flight.getId(), claimId, mayHoldSeat);
+        try {
+            scheduleClient.claimSeat(flight.getId(), claimId);
+        } catch (SkylineException refused) {
+            // A definite answer (full, sales closed, not bookable): no seat was taken, so nothing to release.
+            if (refused.getStatus().is4xxClientError()) {
+                mayHoldSeat.set(false);
+            }
+            throw refused;
+        }
         return claimId;
     }
 
@@ -427,10 +437,13 @@ public class ReservationServiceImpl implements ReservationService {
                 .setScale(2, RoundingMode.HALF_UP);
     }
 
-    private void releaseSeatUnlessCommitted(UUID flightId, UUID claimId) {
+    private void releaseSeatUnlessCommitted(UUID flightId, UUID claimId, AtomicBoolean mayHoldSeat) {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCompletion(int status) {
+                if (!mayHoldSeat.get()) {
+                    return;
+                }
                 if (status == STATUS_ROLLED_BACK) {
                     releaseSeat(flightId, claimId, "booking transaction did not commit");
                 } else if (status == STATUS_UNKNOWN) {

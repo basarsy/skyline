@@ -14,10 +14,11 @@ spring:
     gateway:
       server:
         webflux:
-          # A hung service answers 504 instead of holding the connection forever (there was no limit).
+          # A hung service answers 504 instead of holding the connection forever (there was no limit). Above the
+          # longest booking: a group booking makes several 5s-bounded calls to other services in sequence.
           httpclient:
             connect-timeout: ${SKYLINE_GATEWAY_CONNECT_TIMEOUT_MS:2000}
-            response-timeout: ${SKYLINE_GATEWAY_RESPONSE_TIMEOUT:15s}
+            response-timeout: ${SKYLINE_GATEWAY_RESPONSE_TIMEOUT:30s}
           # Browser clients on another origin (e.g. the web front-end's dev server) need CORS. It is
           # handled here once, so no downstream service sets CORS headers itself.
           globalcors:

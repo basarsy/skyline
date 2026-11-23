@@ -50,6 +50,11 @@ class ConsumerRetryPropertiesTest {
         assertThat(parked).isTrue();
         verify(deadLetter).accept(any(), any());
 
+        boolean constraintParked = defaults.errorHandler(mock(ConsumerRecordRecoverer.class)).handleOne(
+                failure(new org.springframework.dao.DataIntegrityViolationException("duplicate key")), record,
+                mock(Consumer.class), mock(MessageListenerContainer.class));
+        assertThat(constraintParked).isTrue();
+
         ConsumerRecordRecoverer untouched = mock(ConsumerRecordRecoverer.class);
         boolean parkedTransient = defaults.errorHandler(untouched).handleOne(
                 failure(new IllegalStateException("db down")), record, mock(Consumer.class),

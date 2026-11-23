@@ -316,7 +316,7 @@ public class FlightServiceImpl implements FlightService {
         flight.setAvailableSeats(aircraft.aircraftType().totalSeats());
 
         flightRepository.save(flight);
-        seatClaims.deleteForFlight(id);
+        seatClaims.releaseAllOnFlight(id);
 
         // Same transaction as the status change: the reservation service hears of it only if the cancellation
         // commits, and then at least once (the outbox publisher sends it after commit, off the request thread).
@@ -411,9 +411,14 @@ public class FlightServiceImpl implements FlightService {
     @Transactional
     public void claimSeat(UUID flightId, UUID claimId) {
         if (!seatClaims.insert(claimId, flightId)) {
-            UUID claimed = seatClaims.flightOf(claimId).orElse(flightId);
-            if (!claimed.equals(flightId)) {
+            // Rows are never deleted, so a conflicting id is always found.
+            SeatClaimRepository.Claim claim = seatClaims.find(claimId).orElseThrow();
+            if (!claim.flightId().equals(flightId)) {
                 throw new SkylineException("Seat claim " + claimId + " is for another flight", HttpStatus.CONFLICT);
+            }
+            if (claim.released()) {
+                // Its booking gave up (the release overtook this call): taking a seat now would leak it.
+                throw new SkylineException("Seat claim " + claimId + " was released", HttpStatus.CONFLICT);
             }
             return; // Already holds its seat: a repeated call.
         }
@@ -423,7 +428,7 @@ public class FlightServiceImpl implements FlightService {
     @Override
     @Transactional
     public void releaseSeat(UUID flightId, UUID claimId) {
-        if (seatClaims.delete(claimId, flightId)) {
+        if (seatClaims.release(claimId, flightId)) {
             incrementSeat(flightId);
         }
     }

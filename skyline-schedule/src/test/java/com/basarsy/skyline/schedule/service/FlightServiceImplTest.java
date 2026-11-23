@@ -522,7 +522,7 @@ class FlightServiceImplTest {
         UUID flightId = UUID.randomUUID();
         UUID claim = UUID.randomUUID();
         when(seatClaims.insert(claim, flightId)).thenReturn(true, false);
-        when(seatClaims.flightOf(claim)).thenReturn(Optional.of(flightId));
+        when(seatClaims.find(claim)).thenReturn(Optional.of(new SeatClaimRepository.Claim(flightId, false)));
         when(repository.decrementSeat(eq(flightId), any(), any(), any())).thenReturn(1);
 
         service.claimSeat(flightId, claim);
@@ -535,11 +535,23 @@ class FlightServiceImplTest {
     void aClaimIdAlreadyUsedOnAnotherFlightIsRefused() {
         UUID claim = UUID.randomUUID();
         when(seatClaims.insert(eq(claim), any())).thenReturn(false);
-        when(seatClaims.flightOf(claim)).thenReturn(Optional.of(UUID.randomUUID()));
+        when(seatClaims.find(claim)).thenReturn(Optional.of(new SeatClaimRepository.Claim(UUID.randomUUID(), false)));
 
         assertThatThrownBy(() -> service.claimSeat(UUID.randomUUID(), claim))
                 .isInstanceOf(SkylineException.class)
                 .extracting(e -> ((SkylineException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT);
+        verify(repository, org.mockito.Mockito.never()).decrementSeat(any(), any(), any(), any());
+    }
+
+    @Test
+    void aClaimArrivingAfterItsReleaseTakesNoSeat() {
+        UUID flightId = UUID.randomUUID();
+        UUID claim = UUID.randomUUID();
+        when(seatClaims.insert(claim, flightId)).thenReturn(false);
+        when(seatClaims.find(claim)).thenReturn(Optional.of(new SeatClaimRepository.Claim(flightId, true)));
+
+        assertThatThrownBy(() -> service.claimSeat(flightId, claim))
+                .hasMessage("Seat claim " + claim + " was released");
         verify(repository, org.mockito.Mockito.never()).decrementSeat(any(), any(), any(), any());
     }
 
@@ -557,7 +569,7 @@ class FlightServiceImplTest {
     void releasingGivesASeatBackOnlyForAClaimThatHeldOne() {
         UUID flightId = UUID.randomUUID();
         UUID claim = UUID.randomUUID();
-        when(seatClaims.delete(claim, flightId)).thenReturn(true, false);
+        when(seatClaims.release(claim, flightId)).thenReturn(true, false);
 
         service.releaseSeat(flightId, claim);
         service.releaseSeat(flightId, claim);
