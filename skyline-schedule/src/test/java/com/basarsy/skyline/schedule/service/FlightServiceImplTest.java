@@ -32,6 +32,7 @@ import com.basarsy.skyline.schedule.mapper.FlightMapper;
 import com.basarsy.skyline.schedule.mapper.FlightMapperImpl;
 import com.basarsy.skyline.common.outbox.Outbox;
 import com.basarsy.skyline.schedule.repository.FlightRepository;
+import com.basarsy.skyline.schedule.repository.SeatClaimRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -57,6 +58,7 @@ class FlightServiceImplTest {
     static final UUID AIRCRAFT_ID = UUID.randomUUID();
 
     final FlightRepository repository = mock(FlightRepository.class);
+    final SeatClaimRepository seatClaims = mock(SeatClaimRepository.class);
     final FleetClient fleetClient = mock(FleetClient.class);
     final RouteClient routeClient = mock(RouteClient.class);
     final CrewClient crewClient = mock(CrewClient.class);
@@ -67,7 +69,7 @@ class FlightServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new FlightServiceImpl(repository, fleetClient, routeClient, crewClient, mapper, outbox,
+        service = new FlightServiceImpl(repository, seatClaims, fleetClient, routeClient, crewClient, mapper, outbox,
                 new PricingProperties("EUR"));
         when(routeClient.getRoute(ROUTE_ID)).thenReturn(route());
         when(fleetClient.getAircraft(AIRCRAFT_ID)).thenReturn(aircraft(AIRCRAFT_ID, AircraftStatus.ACTIVE));
@@ -513,6 +515,54 @@ class FlightServiceImplTest {
         assertThatThrownBy(() -> service.decrementSeat(leaving.getId()))
                 .isInstanceOf(SkylineException.class)
                 .hasMessage("Sales for this flight have closed");
+    }
+
+    @Test
+    void aClaimHoldsOneSeatHoweverOftenItIsSent() {
+        UUID flightId = UUID.randomUUID();
+        UUID claim = UUID.randomUUID();
+        when(seatClaims.insert(claim, flightId)).thenReturn(true, false);
+        when(seatClaims.flightOf(claim)).thenReturn(Optional.of(flightId));
+        when(repository.decrementSeat(eq(flightId), any(), any(), any())).thenReturn(1);
+
+        service.claimSeat(flightId, claim);
+        service.claimSeat(flightId, claim);
+
+        verify(repository, times(1)).decrementSeat(eq(flightId), any(), any(), any());
+    }
+
+    @Test
+    void aClaimIdAlreadyUsedOnAnotherFlightIsRefused() {
+        UUID claim = UUID.randomUUID();
+        when(seatClaims.insert(eq(claim), any())).thenReturn(false);
+        when(seatClaims.flightOf(claim)).thenReturn(Optional.of(UUID.randomUUID()));
+
+        assertThatThrownBy(() -> service.claimSeat(UUID.randomUUID(), claim))
+                .isInstanceOf(SkylineException.class)
+                .extracting(e -> ((SkylineException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT);
+        verify(repository, org.mockito.Mockito.never()).decrementSeat(any(), any(), any(), any());
+    }
+
+    @Test
+    void aClaimOnAFullFlightIsRefusedSoItsRowRollsBack() {
+        Flight full = flight(FlightStatus.SCHEDULED);
+        UUID claim = UUID.randomUUID();
+        when(seatClaims.insert(claim, full.getId())).thenReturn(true);
+        when(repository.findById(full.getId())).thenReturn(Optional.of(full));
+
+        assertThatThrownBy(() -> service.claimSeat(full.getId(), claim)).hasMessage("Flight is fully booked");
+    }
+
+    @Test
+    void releasingGivesASeatBackOnlyForAClaimThatHeldOne() {
+        UUID flightId = UUID.randomUUID();
+        UUID claim = UUID.randomUUID();
+        when(seatClaims.delete(claim, flightId)).thenReturn(true, false);
+
+        service.releaseSeat(flightId, claim);
+        service.releaseSeat(flightId, claim);
+
+        verify(repository, times(1)).incrementSeat(eq(flightId), eq(FlightStatus.CANCELLED), any());
     }
 
     @Test

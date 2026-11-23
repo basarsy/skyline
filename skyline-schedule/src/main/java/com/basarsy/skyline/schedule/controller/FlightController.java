@@ -141,9 +141,24 @@ public class FlightController {
         flightService.decrementSeat(id);
     }
 
+    /** Gives a seat back without a claim: for bookings made before seat claims existed. */
     @PutMapping("/{id}/inventory/increment")
     @PreAuthorize("hasRole('SERVICE')")
     public void incrementSeat(@PathVariable UUID id) {
         flightService.incrementSeat(id);
+    }
+
+    /** Holds a seat for a booking, idempotently: the same claim id holds one seat however often it is sent. */
+    @PutMapping("/{id}/inventory/claims/{claimId}")
+    @PreAuthorize("hasRole('SERVICE')")
+    public void claimSeat(@PathVariable UUID id, @PathVariable UUID claimId) {
+        flightService.claimSeat(id, claimId);
+    }
+
+    /** Gives back the seat a claim holds; a claim that never landed (or was released) gives nothing back. */
+    @DeleteMapping("/{id}/inventory/claims/{claimId}")
+    @PreAuthorize("hasRole('SERVICE')")
+    public void releaseSeat(@PathVariable UUID id, @PathVariable UUID claimId) {
+        flightService.releaseSeat(id, claimId);
     }
 }
