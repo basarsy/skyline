@@ -54,10 +54,18 @@ public class RecipientRepository {
                 flightId);
     }
 
-    /** The flight's scheduled departure moved (check-in reminders follow it). */
-    public void rescheduleFlight(UUID flightId, LocalDateTime departureTime) {
-        jdbc.update("UPDATE booking_recipients SET departure_time = ?, updated_at = now() WHERE flight_id = ?",
-                timestamp(departureTime), flightId);
+    /**
+     * The flight's scheduled departure moved (check-in reminders follow it). With {@code rearmReminder} (the new
+     * check-in window opens after the move, so check-in is closed again), a reminder already sent goes out again.
+     */
+    public void rescheduleFlight(UUID flightId, LocalDateTime departureTime, boolean rearmReminder) {
+        jdbc.update("""
+                UPDATE booking_recipients
+                SET departure_time = ?,
+                    check_in_reminded_at = CASE WHEN ? THEN NULL ELSE check_in_reminded_at END,
+                    updated_at = now()
+                WHERE flight_id = ?""",
+                timestamp(departureTime), rearmReminder, flightId);
     }
 
     /**

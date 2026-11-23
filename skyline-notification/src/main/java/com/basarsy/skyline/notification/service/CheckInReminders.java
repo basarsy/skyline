@@ -47,7 +47,8 @@ public class CheckInReminders {
             for (List<Recipient> booking : FlightChangeHandler.groupBy(due, r -> r.bookingId() + ":" + r.flightId())) {
                 Recipient first = booking.get(0);
                 Message message = Messages.checkInOpen(booking, "/checkin/" + first.pnr());
-                String key = "check-in:" + first.bookingId() + ":" + first.flightId();
+                // The departure is part of the key: a reminder re-armed by a reschedule is a new message.
+                String key = "check-in:" + first.bookingId() + ":" + first.flightId() + ":" + first.departureTime();
                 inbox.toUser(first.userId(), message, key);
                 inbox.toEmail(first.contactEmail(), message, key);
             }

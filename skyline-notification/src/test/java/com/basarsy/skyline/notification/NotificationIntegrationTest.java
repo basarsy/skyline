@@ -199,6 +199,50 @@ class NotificationIntegrationTest {
                 .satisfies(r -> assertThat(r.departureTime()).isEqualTo(later));
     }
 
+    @Test
+    void aFlightMovedOutOfTheOpenWindowIsRemindedAgainWhenTheNewWindowOpens() {
+        bookingEvents.handle(booked(UUID.randomUUID(), "ada@example.com", item("Ada")));
+        assertThat(remind(DEPARTURE.minusHours(47))).isEqualTo(1);
+        LocalDateTime later = DEPARTURE.plusDays(3);
+
+        flightChanges.handle(reschedule(later, DEPARTURE.minusHours(46)));
+
+        assertThat(remind(DEPARTURE.minusHours(46))).as("the new window is not open yet").isZero();
+        assertThat(remind(later.minusHours(47))).isEqualTo(1);
+        assertThat(remind(later.minusHours(46))).as("only once").isZero();
+        assertThat(jdbc.queryForList("SELECT kind FROM notifications WHERE kind = 'CHECK_IN_OPEN'", String.class))
+                .hasSize(2);
+    }
+
+    @Test
+    void aFlightMovedWhileCheckInForTheNewTimeIsOpenIsNotRemindedTwice() {
+        bookingEvents.handle(booked(UUID.randomUUID(), "ada@example.com", item("Ada")));
+        assertThat(remind(DEPARTURE.minusHours(48).plusMinutes(2))).as("just after the window opened").isEqualTo(1);
+
+        // Moved 30 minutes later at T-47h: check-in for the new time opened at T-47h30, so it is open already.
+        flightChanges.handle(reschedule(DEPARTURE.plusMinutes(30), DEPARTURE.minusHours(47)));
+
+        assertThat(remind(DEPARTURE.minusHours(46))).isZero();
+        assertThat(jdbc.queryForList("SELECT kind FROM notifications WHERE kind = 'CHECK_IN_OPEN'", String.class))
+                .hasSize(1);
+    }
+
+    @Test
+    void theLongestValidAddressGetsEveryMessage() {
+        // 254 characters, the most an address may have: spelled out in a dedupe key it overflowed the column.
+        String address = "a".repeat(64) + "@" + "b".repeat(63) + "." + "c".repeat(63) + "." + "d".repeat(57) + ".com";
+        assertThat(address).hasSize(254);
+        bookingEvents.handle(booked(UUID.randomUUID(), address, item("Ada")));
+
+        flightChanges.handle(change(FlightChange.DELAYED, DEPARTURE.plusMinutes(30), null));
+        assertThat(remind(DEPARTURE.minusHours(47))).isEqualTo(1);
+
+        assertThat(jdbc.queryForList("SELECT recipient FROM email_outbox", String.class))
+                .hasSize(3).containsOnly(address);
+        assertThat(jdbc.queryForList("SELECT length(dedupe_key) FROM email_outbox", Integer.class))
+                .allSatisfy(length -> assertThat(length).isLessThanOrEqualTo(255));
+    }
+
     // ------------------------------------------------------------------ check-in reminders
 
     @Test
@@ -314,6 +358,12 @@ class NotificationIntegrationTest {
         return new FlightChange(type, flightId, "SK100", "IST", "LHR", "Europe/Istanbul", "Europe/London",
                 estimate != null ? "DELAYED" : "SCHEDULED", "SCHEDULED", DEPARTURE, DEPARTURE, DEPARTURE.plusHours(4),
                 estimate, null, "B12", previousGate, DEPARTURE.minusHours(3));
+    }
+
+    FlightChange reschedule(LocalDateTime departure, LocalDateTime occurredAt) {
+        return new FlightChange(FlightChange.RESCHEDULED, flightId, "SK100", "IST", "LHR", "Europe/Istanbul",
+                "Europe/London", "SCHEDULED", "SCHEDULED", departure, DEPARTURE, departure.plusHours(4), null, null,
+                null, null, occurredAt);
     }
 
     FlightChange statusChange(String status) {

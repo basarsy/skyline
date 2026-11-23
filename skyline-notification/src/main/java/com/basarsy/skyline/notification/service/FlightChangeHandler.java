@@ -33,7 +33,11 @@ public class FlightChangeHandler {
         }
         List<Recipient> booked = recipients.activeOnFlight(change.flightId());
         if (FlightChange.RESCHEDULED.equals(change.type()) && change.departureTime() != null) {
-            recipients.rescheduleFlight(change.flightId(), change.departureTime());
+            // A reminder sent for the old time stays valid while check-in for the new time was already open at the
+            // move; if the new window opens later, check-in is closed again and the passenger is reminded again.
+            boolean rearm = change.occurredAt() == null
+                    || change.occurredAt().isBefore(change.departureTime().minus(CheckInReminders.OPENS_BEFORE));
+            recipients.rescheduleFlight(change.flightId(), change.departureTime(), rearm);
         }
         if (FlightChange.CANCELLED.equals(change.type())) {
             recipients.deactivateFlight(change.flightId());
@@ -48,7 +52,7 @@ public class FlightChangeHandler {
             inbox.toUser(group.get(0).userId(), message(change, group), key);
         }
         for (List<Recipient> group : groupBy(booked,
-                r -> r.contactEmail() == null ? null : r.contactEmail().trim().toLowerCase())) {
+                r -> r.contactEmail() == null ? null : Inbox.normalised(r.contactEmail()))) {
             inbox.toEmail(group.get(0).contactEmail(), message(change, group), key);
         }
         log.info("Flight {} {}: told {} account(s) about {} booking(s)", change.flightNumber(), change.type(),
