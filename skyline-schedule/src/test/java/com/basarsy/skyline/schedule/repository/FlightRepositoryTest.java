@@ -134,7 +134,7 @@ class FlightRepositoryTest {
         Flight flight = save("SK1", ROUTE, DAY, FlightStatus.SCHEDULED);
         long version = flight.getVersion();
 
-        assertThat(repository.decrementSeat(flight.getId(), BOOKABLE, DAY)).isEqualTo(1);
+        assertThat(repository.decrementSeat(flight.getId(), BOOKABLE, DAY.minusHours(1), DAY)).isEqualTo(1);
         Flight reloaded = repository.findById(flight.getId()).orElseThrow();
         assertThat(reloaded.getAvailableSeats()).isEqualTo(179);
         assertThat(reloaded.getVersion()).isEqualTo(version + 1);
@@ -153,11 +153,21 @@ class FlightRepositoryTest {
         Flight boarding = save("SK2", ROUTE, DAY, FlightStatus.BOARDING);
         Flight delayed = save("SK3", ROUTE, DAY, FlightStatus.DELAYED);
 
-        assertThat(repository.decrementSeat(cancelled.getId(), BOOKABLE, DAY)).isZero();
-        assertThat(repository.decrementSeat(boarding.getId(), BOOKABLE, DAY)).isZero();
-        assertThat(repository.decrementSeat(delayed.getId(), BOOKABLE, DAY)).isEqualTo(1);
+        assertThat(repository.decrementSeat(cancelled.getId(), BOOKABLE, DAY.minusHours(1), DAY)).isZero();
+        assertThat(repository.decrementSeat(boarding.getId(), BOOKABLE, DAY.minusHours(1), DAY)).isZero();
+        assertThat(repository.decrementSeat(delayed.getId(), BOOKABLE, DAY.minusHours(1), DAY)).isEqualTo(1);
         assertThat(repository.incrementSeat(cancelled.getId(), FlightStatus.CANCELLED, DAY)).isZero();
         assertThat(repository.findById(cancelled.getId()).orElseThrow().getAvailableSeats()).isEqualTo(180);
+    }
+
+    @Test
+    void noSeatIsHeldOnceSalesHaveClosed() {
+        Flight flight = save("SK1", ROUTE, DAY, FlightStatus.SCHEDULED);
+
+        assertThat(repository.decrementSeat(flight.getId(), BOOKABLE, DAY.plusMinutes(1), DAY)).isZero();
+        assertThat(repository.findById(flight.getId()).orElseThrow().getAvailableSeats()).isEqualTo(180);
+        // Inclusive, like search's window: a flight listed at the cut-off can still be booked.
+        assertThat(repository.decrementSeat(flight.getId(), BOOKABLE, DAY, DAY)).isEqualTo(1);
     }
 
     private static final Set<FlightStatus> BOOKABLE = EnumSet.of(FlightStatus.SCHEDULED, FlightStatus.DELAYED);
