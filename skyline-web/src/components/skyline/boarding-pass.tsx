@@ -80,8 +80,10 @@ export function BoardingPass({ pass, originZone, className, showActions = true }
   const [barcode, setBarcode] = React.useState<BarcodeState>('loading')
   const boarding = formatTimeInZone(pass.boardingTime, originZone)
   // A delayed flight's pass shows when it now leaves (boarding time follows it on the server).
-  const departs = formatTimeInZone(pass.estimatedDepartureTime ?? pass.departureTime, originZone)
-  const date = formatDateInZone(pass.departureTime, originZone, 'EEE d MMM yyyy')
+  // The date follows the delayed departure too: a delay past midnight leaves the next day.
+  const departure = pass.estimatedDepartureTime ?? pass.departureTime
+  const departs = formatTimeInZone(departure, originZone)
+  const date = formatDateInZone(departure, originZone, 'EEE d MMM yyyy')
 
   function download() {
     try {

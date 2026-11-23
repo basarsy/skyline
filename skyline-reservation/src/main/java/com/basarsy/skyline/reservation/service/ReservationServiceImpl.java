@@ -40,6 +40,8 @@ import com.basarsy.skyline.common.security.SkylineUserDetails;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.security.SecureRandom;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -65,6 +67,8 @@ public class ReservationServiceImpl implements ReservationService {
     private static final int PNR_MAX_ATTEMPTS = 5;
     private static final SecureRandom PNR_RANDOM = new SecureRandom();
     private static final java.util.Set<String> PRIVILEGED_ROLES = java.util.Set.of("ROLE_STAFF", "ROLE_ADMIN", "ROLE_SERVICE");
+    /** The schedule service's rule (it refuses the seat too): sales close an hour before the scheduled departure. */
+    static final Duration SALES_CLOSE_BEFORE = Duration.ofHours(1);
 
     private final ReservationRepository reservationRepository;
     private final PassengerRepository passengerRepository;
@@ -79,6 +83,7 @@ public class ReservationServiceImpl implements ReservationService {
     private final ReservationAncillaryRepository ancillaryRepository;
     private final AncillaryService ancillaryService;
     private final BookingEvents bookingEvents;
+    private final Clock clock;
 
     @Override
     @Transactional
@@ -208,6 +213,10 @@ public class ReservationServiceImpl implements ReservationService {
         FlightResponse flight = scheduleClient.getFlight(flightId);
         if (flight.getStatus() != FlightStatus.SCHEDULED && flight.getStatus() != FlightStatus.DELAYED) {
             throw new SkylineException("Cannot book a flight that is not scheduled", HttpStatus.BAD_REQUEST);
+        }
+        // Checked here too, before any leg takes a seat remotely.
+        if (flight.getDepartureTime().isBefore(LocalDateTime.now(clock).plus(SALES_CLOSE_BEFORE))) {
+            throw new SkylineException("Sales for this flight have closed", HttpStatus.BAD_REQUEST);
         }
         if (flight.getAvailableSeats() < passengers) {
             throw new SkylineException(flight.getAvailableSeats() <= 0 ? "Flight is fully booked"

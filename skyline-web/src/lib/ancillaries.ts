@@ -98,6 +98,20 @@ export function estimateOffers(
     })
 }
 
+/**
+ * Why one more of `code` can't be taken off the passenger's basket (`chosen`, on top of what the fare includes and
+ * what is already bought), or null when it can. The server's rule: every extra-weight top-up needs a checked bag,
+ * so a bag carrying a top-up stays until the top-up goes.
+ */
+export function removalBlockedReason(offers: AncillaryOffer[], chosen: Record<string, number>, code: string) {
+  if (offers.find((o) => o.code === code)?.type !== 'CHECKED_BAG') return null
+  const count = (type: AncillaryType) =>
+    offers
+      .filter((o) => o.type === type)
+      .reduce((sum, o) => sum + o.includedQuantity + o.purchasedQuantity + (chosen[o.code] ?? 0), 0)
+  return count('CHECKED_BAG') - 1 < count('EXTRA_WEIGHT') ? 'Remove the extra weight on this bag first' : null
+}
+
 export const FARE_TYPES: readonly FareType[] = ['BASIC', 'STANDARD', 'FLEX']
 
 export const fareLabel: Record<FareType, string> = { BASIC: 'Basic', STANDARD: 'Standard', FLEX: 'Flex' }

@@ -694,6 +694,8 @@ export const handlers = [
       // Like the server: `date` is a calendar day at the origin airport.
       .filter((f) => formatDateInZone(f.departureTime, f.route?.origin.timezone, 'yyyy-MM-dd') === date)
       .filter((f) => f.status === 'SCHEDULED' || f.status === 'DELAYED')
+      // Like the server: sales close an hour before the scheduled departure.
+      .filter((f) => hoursUntil(f.departureTime) >= 1)
       .sort((a, b) => (sort.endsWith('desc') ? -1 : 1) * a.departureTime.localeCompare(b.departureTime))
     return ok(page(flights, url))
   }),
@@ -939,6 +941,18 @@ export const handlers = [
       const flight = findFlight(leg.flightId)
       if (!flight) return fail(404, 'Flight not found')
       if (flight.availableSeats < body.passengers.length) return fail(400, 'Flight is fully booked')
+      if (hoursUntil(flight.departureTime) < 1) return fail(409, 'Sales for this flight have closed')
+      // Like the server: every extra-weight top-up needs a checked bag (included or in the basket), in any order.
+      for (let index = 0; index < body.passengers.length; index++) {
+        const chosen: Record<string, number> = {}
+        for (const extra of body.extras ?? []) {
+          if (extra.passengerIndex === index && extra.flightId === flight.id) chosen[extra.productCode] = extra.quantity
+        }
+        const offers = estimateOffers(CATALOG, leg.cabinClass, leg.fareType, scopeOf(flight), chosen)
+        const count = (type: string) =>
+          offers.filter((o) => o.type === type).reduce((sum, o) => sum + o.includedQuantity + (chosen[o.code] ?? 0), 0)
+        if (count('EXTRA_WEIGHT') > count('CHECKED_BAG')) return fail(422, 'Extra weight: Add a checked bag first')
+      }
       const layout = layoutOf(flight)
       if (layout && !layout.seats.some((s) => s.cabin === leg.cabinClass)) {
         return fail(

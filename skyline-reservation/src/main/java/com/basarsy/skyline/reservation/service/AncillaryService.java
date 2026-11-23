@@ -28,6 +28,7 @@ import com.basarsy.skyline.reservation.repository.ReservationRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
@@ -122,8 +123,8 @@ public class AncillaryService {
     }
 
     /**
-     * Prices and adds the items (each validated against what is included and already bought, in order), then
-     * updates the total. Runs inside the caller's transaction (booking, or {@link #purchase}).
+     * Prices and adds the items (each validated against what is included and already bought, top-ups after bags),
+     * then updates the total. Runs inside the caller's transaction (booking, or {@link #purchase}).
      */
     @Transactional(propagation = Propagation.MANDATORY)
     void purchaseFor(Reservation reservation, FlightResponse flight, List<AncillaryPurchaseRequest.Item> items,
@@ -140,7 +141,12 @@ public class AncillaryService {
         Map<String, AncillaryPrice> priceList = priceList(scopeOf(flight));
         boolean refundableFare = reservation.getFareType() == FareType.FLEX;
 
-        for (AncillaryPurchaseRequest.Item item : items) {
+        // Top-ups go last, so the basket is valid in any order: a top-up is checked against every bag it carries.
+        List<AncillaryPurchaseRequest.Item> ordered = items.stream()
+                .sorted(Comparator.comparing((AncillaryPurchaseRequest.Item i) -> byCode.get(i.productCode()) != null
+                        && byCode.get(i.productCode()).getType() == AncillaryType.EXTRA_WEIGHT))
+                .toList();
+        for (AncillaryPurchaseRequest.Item item : ordered) {
             AncillaryProduct product = byCode.get(item.productCode());
             if (product == null || !product.isActive()) {
                 throw new SkylineException("Unknown add-on: " + item.productCode(), HttpStatus.UNPROCESSABLE_ENTITY);

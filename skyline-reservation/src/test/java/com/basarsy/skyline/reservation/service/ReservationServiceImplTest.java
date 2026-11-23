@@ -26,7 +26,10 @@ import com.basarsy.skyline.reservation.mapper.ReservationMapper;
 import com.basarsy.skyline.reservation.repository.PassengerRepository;
 import com.basarsy.skyline.reservation.repository.ReservationRepository;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -48,6 +51,8 @@ class ReservationServiceImplTest {
 
     private static final UUID USER_ID = UUID.randomUUID();
     private static final UUID FLIGHT_ID = UUID.randomUUID();
+    private static final LocalDateTime NOW = LocalDateTime.of(2030, 6, 1, 9, 0);
+    private static final Clock CLOCK = Clock.fixed(NOW.toInstant(ZoneOffset.UTC), ZoneOffset.UTC);
 
     private final ReservationRepository reservationRepository = mock(ReservationRepository.class);
     private final PassengerRepository passengerRepository = mock(PassengerRepository.class);
@@ -61,7 +66,7 @@ class ReservationServiceImplTest {
             reservationRepository, passengerRepository, scheduleClient, reservationMapper, passengerMapper, new PricingProperties("EUR"), mock(CabinInventory.class),
             mock(SeatLayoutProvider.class), mock(SeatPricing.class), mock(SeatSelectionService.class),
             mock(com.basarsy.skyline.reservation.repository.ReservationAncillaryRepository.class),
-            mock(AncillaryService.class), bookingEvents);
+            mock(AncillaryService.class), bookingEvents, CLOCK);
 
     @BeforeEach
     void setUp() {
@@ -72,7 +77,8 @@ class ReservationServiceImplTest {
                 new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities()));
 
         FlightResponse flight = FlightResponse.builder()
-                .id(FLIGHT_ID).status(FlightStatus.SCHEDULED).availableSeats(100).basePrice(BigDecimal.TEN).build();
+                .id(FLIGHT_ID).status(FlightStatus.SCHEDULED).availableSeats(100).basePrice(BigDecimal.TEN)
+                .departureTime(NOW.plusDays(2)).build();
         when(scheduleClient.getFlight(FLIGHT_ID)).thenReturn(flight);
         when(passengerMapper.toEntity(any())).thenAnswer(inv -> new Passenger());
         when(passengerRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -96,6 +102,17 @@ class ReservationServiceImplTest {
         completeTransaction(TransactionSynchronization.STATUS_ROLLED_BACK);
 
         verify(scheduleClient).incrementSeat(FLIGHT_ID);
+    }
+
+    @Test
+    void aFlightWhoseSalesHaveClosedIsRefusedBeforeAnySeatIsTaken() {
+        when(scheduleClient.getFlight(FLIGHT_ID)).thenReturn(FlightResponse.builder().id(FLIGHT_ID)
+                .status(FlightStatus.SCHEDULED).availableSeats(100).basePrice(BigDecimal.TEN)
+                .departureTime(NOW.plusMinutes(59)).build());
+
+        assertThatThrownBy(() -> service.bookFlight(request()))
+                .hasMessage("Sales for this flight have closed");
+        verify(scheduleClient, never()).decrementSeat(any());
     }
 
     @Test
@@ -262,6 +279,7 @@ class ReservationServiceImplTest {
     void priceIsRoundedToCents() {
         // 99.99 x 2.5 (business) x 1.15 (over 80% full) = 287.47125
         FlightResponse busyFlight = FlightResponse.builder().id(FLIGHT_ID).status(FlightStatus.SCHEDULED)
+                .departureTime(NOW.plusDays(2))
                 .availableSeats(30).basePrice(new BigDecimal("99.99")) // 150 of 180 booked
                 .aircraft(new com.basarsy.skyline.reservation.client.dto.AircraftResponse(UUID.randomUUID(), "TC-TEST",
                         new com.basarsy.skyline.reservation.client.dto.AircraftTypeSummary(

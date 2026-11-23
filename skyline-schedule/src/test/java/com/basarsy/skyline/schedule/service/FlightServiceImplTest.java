@@ -485,11 +485,11 @@ class FlightServiceImplTest {
     @Test
     void decrementOnlyHoldsSeatsOnBookableFlights() {
         UUID id = UUID.randomUUID();
-        when(repository.decrementSeat(eq(id), eq(FlightServiceImpl.BOOKABLE_STATUSES), any())).thenReturn(1);
+        when(repository.decrementSeat(eq(id), eq(FlightServiceImpl.BOOKABLE_STATUSES), any(), any())).thenReturn(1);
 
         service.decrementSeat(id);
 
-        verify(repository).decrementSeat(eq(id), eq(FlightServiceImpl.BOOKABLE_STATUSES), any());
+        verify(repository).decrementSeat(eq(id), eq(FlightServiceImpl.BOOKABLE_STATUSES), any(), any());
     }
 
     @Test
@@ -506,6 +506,37 @@ class FlightServiceImplTest {
                 .isInstanceOf(SkylineException.class)
                 .hasMessage("Flight is fully booked")
                 .extracting(e -> ((SkylineException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT);
+
+        Flight leaving = flight(FlightStatus.SCHEDULED);
+        leaving.setDepartureTime(LocalDateTime.now().plusMinutes(30));
+        when(repository.findById(leaving.getId())).thenReturn(Optional.of(leaving));
+        assertThatThrownBy(() -> service.decrementSeat(leaving.getId()))
+                .isInstanceOf(SkylineException.class)
+                .hasMessage("Sales for this flight have closed");
+    }
+
+    @Test
+    void decrementOnlyHoldsSeatsOnFlightsWhoseSalesAreOpen() {
+        UUID id = UUID.randomUUID();
+        when(repository.decrementSeat(any(), any(), any(), any())).thenReturn(1);
+        LocalDateTime before = LocalDateTime.now();
+
+        service.decrementSeat(id);
+
+        ArgumentCaptor<LocalDateTime> earliestDeparture = ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(repository).decrementSeat(eq(id), any(), earliestDeparture.capture(), any());
+        assertThat(earliestDeparture.getValue())
+                .isBetween(before.plusHours(1), LocalDateTime.now().plusHours(1));
+    }
+
+    @Test
+    void searchingAPastDayFindsNothing() {
+        when(routeClient.searchRoutes("IST", "LHR")).thenReturn(List.of(route("UTC")));
+
+        var page = service.searchFlights("IST", "LHR", LocalDate.now().minusDays(2), PageRequest.of(0, 20));
+
+        assertThat(page.getContent()).isEmpty();
+        verify(repository, org.mockito.Mockito.never()).searchFlights(any(), any(), any(), any(), any());
     }
 
     static FlightRequest request(UUID aircraftId) {

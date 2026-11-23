@@ -60,6 +60,12 @@ public class FlightServiceImpl implements FlightService {
     /** A longer delay is a reschedule: move the flight's times instead. */
     static final Duration MAX_DELAY = Duration.ofHours(24);
 
+    /**
+     * Sales close this long before the scheduled departure, when check-in and online add-ons close too (all three
+     * go by the scheduled time), so every seat sold can still be checked in. Search stops listing the flight then.
+     */
+    static final Duration SALES_CLOSE_BEFORE = Duration.ofHours(1);
+
     private final FlightRepository flightRepository;
     private final FleetClient fleetClient;
     private final RouteClient routeClient;
@@ -229,8 +235,14 @@ public class FlightServiceImpl implements FlightService {
         AirportSummary originAirport = routes.get(0).origin();
         DepartureDay day = DepartureDay.of(date, originAirport == null ? null : originAirport.timezone());
         List<UUID> routeIds = routes.stream().map(RouteResponse::id).toList();
+        // Today's flights whose sales have closed are not offered (the day's window starts no earlier than that).
+        LocalDateTime salesOpen = LocalDateTime.now().plus(SALES_CLOSE_BEFORE);
+        LocalDateTime from = day.start().isBefore(salesOpen) ? salesOpen : day.start();
+        if (!from.isBefore(day.end())) {
+            return Page.empty(pageable);
+        }
 
-        return enrichPage(flightRepository.searchFlights(routeIds, day.start(), day.end(), BOOKABLE_STATUSES, pageable));
+        return enrichPage(flightRepository.searchFlights(routeIds, from, day.end(), BOOKABLE_STATUSES, pageable));
     }
 
     @Override
@@ -370,12 +382,17 @@ public class FlightServiceImpl implements FlightService {
     @Override
     @Transactional
     public void decrementSeat(UUID id) {
-        int updated = flightRepository.decrementSeat(id, BOOKABLE_STATUSES, LocalDateTime.now());
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime earliestDeparture = now.plus(SALES_CLOSE_BEFORE);
+        int updated = flightRepository.decrementSeat(id, BOOKABLE_STATUSES, earliestDeparture, now);
         if (updated == 0) {
-            // Nothing matched: say why (unknown flight, not bookable any more, or simply full).
+            // Nothing matched: say why (unknown flight, not bookable any more, sales closed, or simply full).
             Flight flight = getFlightEntity(id);
             if (!BOOKABLE_STATUSES.contains(flight.getStatus())) {
                 throw new SkylineException("Cannot book a flight in status: " + flight.getStatus(), HttpStatus.CONFLICT);
+            }
+            if (flight.getDepartureTime().isBefore(earliestDeparture)) {
+                throw new SkylineException("Sales for this flight have closed", HttpStatus.CONFLICT);
             }
             throw new SkylineException("Flight is fully booked", HttpStatus.CONFLICT);
         }

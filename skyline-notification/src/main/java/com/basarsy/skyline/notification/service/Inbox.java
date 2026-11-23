@@ -3,6 +3,11 @@ package com.basarsy.skyline.notification.service;
 import com.basarsy.skyline.notification.config.NotificationProperties;
 import com.basarsy.skyline.notification.repository.EmailOutboxRepository;
 import com.basarsy.skyline.notification.repository.NotificationRepository;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
+import java.util.Locale;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -35,7 +40,26 @@ public class Inbox {
             String body = message.emailBody()
                     + (message.path() == null ? "" : "\n\n" + properties.link(message.path()))
                     + "\n\nSkyline";
-            emails.enqueue(address.trim(), message.title(), body, dedupeKey + ":email:" + address.trim().toLowerCase());
+            emails.enqueue(address.trim(), message.title(), body, emailKey(dedupeKey, address));
         }
+    }
+
+    /**
+     * The address goes into the key as a SHA-256 digest, not as text: an address can be up to 254 characters, and
+     * spelled out it would push the key past the column's 255, failing the whole transaction it is written in.
+     */
+    static String emailKey(String dedupeKey, String address) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(normalised(address).getBytes(StandardCharsets.UTF_8));
+            return dedupeKey + ":email:" + HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is required of every JVM", e);
+        }
+    }
+
+    /** One address however it was typed: what emails are grouped and deduplicated by. */
+    static String normalised(String address) {
+        return address.trim().toLowerCase(Locale.ROOT);
     }
 }

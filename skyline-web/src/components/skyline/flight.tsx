@@ -162,7 +162,12 @@ export function FlightUpdates({
           <Clock className="mt-0.5 size-4 shrink-0 text-warning" strokeWidth={1.75} aria-hidden />
           <span>
             <span className="font-semibold">Delayed by {formatDelay(delay)}.</span> Now departs{' '}
-            <span className="font-semibold tabular">{formatTimeInZone(flight.estimatedDepartureTime, originZone)}</span>{' '}
+            <span className="font-semibold tabular">
+              {formatTimeInZone(flight.estimatedDepartureTime, originZone)}
+              {/* A delay past local midnight leaves on another day: say which. */}
+              {arrivalDayOffset(flight.departureTime, originZone, flight.estimatedDepartureTime, originZone) !== 0 &&
+                ` ${formatDateInZone(flight.estimatedDepartureTime, originZone)}`}
+            </span>{' '}
             <s className="text-muted-foreground tabular">{formatTimeInZone(flight.departureTime, originZone)}</s>
             {flight.estimatedArrivalTime && (
               <>

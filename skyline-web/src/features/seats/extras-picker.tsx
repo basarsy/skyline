@@ -2,6 +2,7 @@ import { BadgeCheck, Minus, Plus } from 'lucide-react'
 
 import type { AncillaryOffer, AncillaryType } from '@/api/types'
 import { Button } from '@/components/ui/button'
+import { removalBlockedReason } from '@/lib/ancillaries'
 import { formatMoney } from '@/lib/format'
 
 const GROUPS: { title: string; types: AncillaryType[] }[] = [
@@ -65,6 +66,8 @@ export function ExtrasPicker({
               {items.map((offer) => {
                 const quantity = quantities[offer.code] ?? 0
                 const max = offer.maxAdditional
+                // A bag carrying an extra-weight top-up can't go first (the server refuses that basket).
+                const blocked = quantity > 0 ? removalBlockedReason(offers, quantities, offer.code) : null
                 return (
                   <li key={offer.code} className="flex flex-wrap items-center gap-4 p-4">
                     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -81,6 +84,7 @@ export function ExtrasPicker({
                       {!offer.available && offer.reason && quantity === 0 && (
                         <span className="text-caption font-medium">{offer.reason}</span>
                       )}
+                      {blocked && <span className="text-caption font-medium">{blocked}</span>}
                       {offer.price !== null && offer.airportPrice !== null && offer.airportPrice > offer.price && (
                         <span className="text-caption text-muted-foreground">
                           {formatMoney(offer.airportPrice, currency)} at the airport
@@ -96,7 +100,7 @@ export function ExtrasPicker({
                         variant="outline"
                         size="icon"
                         aria-label={`Remove one ${offer.name}`}
-                        disabled={disabled || quantity === 0}
+                        disabled={disabled || quantity === 0 || blocked !== null}
                         onClick={() => onChange(offer.code, quantity - 1)}
                       >
                         <Minus strokeWidth={1.75} aria-hidden />
