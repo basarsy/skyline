@@ -92,16 +92,44 @@ class ReservationServiceImplTest {
     }
 
     @Test
-    void bookingThatFailsToPersistReleasesTheHeldSeat() {
+    void bookingThatFailsToPersistReleasesTheClaimedSeat() {
         when(reservationRepository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("dup"));
 
         assertThatThrownBy(() -> service.bookFlight(request())).isInstanceOf(DataIntegrityViolationException.class);
-        verify(scheduleClient).decrementSeat(FLIGHT_ID);
-        verify(scheduleClient, never()).incrementSeat(any());
+        var claim = org.mockito.ArgumentCaptor.forClass(UUID.class);
+        verify(scheduleClient).claimSeat(org.mockito.ArgumentMatchers.eq(FLIGHT_ID), claim.capture());
+        verify(scheduleClient, never()).releaseSeat(any(), any());
 
         completeTransaction(TransactionSynchronization.STATUS_ROLLED_BACK);
 
-        verify(scheduleClient).incrementSeat(FLIGHT_ID);
+        verify(scheduleClient).releaseSeat(FLIGHT_ID, claim.getValue());
+    }
+
+    @Test
+    void aClaimWhoseResponseWasLostIsStillReleasedOnRollback() {
+        // The schedule service may have taken the seat before the connection dropped.
+        org.mockito.Mockito.doThrow(new RuntimeException("Read timed out"))
+                .when(scheduleClient).claimSeat(any(), any());
+
+        assertThatThrownBy(() -> service.bookFlight(request())).hasMessage("Read timed out");
+        var claim = org.mockito.ArgumentCaptor.forClass(UUID.class);
+        verify(scheduleClient).claimSeat(org.mockito.ArgumentMatchers.eq(FLIGHT_ID), claim.capture());
+
+        completeTransaction(TransactionSynchronization.STATUS_ROLLED_BACK);
+
+        verify(scheduleClient).releaseSeat(FLIGHT_ID, claim.getValue());
+    }
+
+    @Test
+    void anUnknownCommitOutcomeKeepsTheSeat() {
+        when(reservationRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(reservationMapper.toResponse(any())).thenReturn(new com.basarsy.skyline.reservation.dto.ReservationResponse());
+
+        service.bookFlight(request());
+        completeTransaction(TransactionSynchronization.STATUS_UNKNOWN);
+
+        verify(scheduleClient, never()).releaseSeat(any(), any());
+        verify(scheduleClient, never()).incrementSeat(any());
     }
 
     @Test
@@ -112,19 +140,23 @@ class ReservationServiceImplTest {
 
         assertThatThrownBy(() -> service.bookFlight(request()))
                 .hasMessage("Sales for this flight have closed");
-        verify(scheduleClient, never()).decrementSeat(any());
+        verify(scheduleClient, never()).claimSeat(any(), any());
     }
 
     @Test
-    void bookingThatCommitsKeepsTheSeat() {
+    void bookingThatCommitsKeepsTheSeatAndRecordsItsClaim() {
         when(reservationRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
         when(reservationMapper.toResponse(any())).thenReturn(new com.basarsy.skyline.reservation.dto.ReservationResponse());
+        var saved = org.mockito.ArgumentCaptor.forClass(Reservation.class);
 
         service.bookFlight(request());
         completeTransaction(TransactionSynchronization.STATUS_COMMITTED);
 
-        verify(scheduleClient).decrementSeat(FLIGHT_ID);
-        verify(scheduleClient, never()).incrementSeat(any());
+        var claim = org.mockito.ArgumentCaptor.forClass(UUID.class);
+        verify(scheduleClient).claimSeat(org.mockito.ArgumentMatchers.eq(FLIGHT_ID), claim.capture());
+        verify(scheduleClient, never()).releaseSeat(any(), any());
+        verify(reservationRepository).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getSeatClaimId()).isEqualTo(claim.getValue());
     }
 
     @Test
@@ -197,27 +229,44 @@ class ReservationServiceImplTest {
     }
 
     @Test
-    void cancellationReleasesTheSeatOnlyAfterCommit() {
+    void cancellationReleasesTheClaimOnlyAfterCommit() {
         Reservation reservation = existingReservation();
+        UUID claim = UUID.randomUUID();
+        reservation.setSeatClaimId(claim);
         when(reservationRepository.findById(reservation.getId())).thenReturn(Optional.of(reservation));
 
         service.cancelReservation(reservation.getId());
-        verify(scheduleClient, never()).incrementSeat(any());
+        verify(scheduleClient, never()).releaseSeat(any(), any());
 
         completeTransaction(TransactionSynchronization.STATUS_COMMITTED);
 
         assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.CANCELLED);
+        verify(scheduleClient).releaseSeat(FLIGHT_ID, claim);
+        verify(scheduleClient, never()).incrementSeat(any());
+    }
+
+    @Test
+    void aBookingFromBeforeClaimsGivesItsSeatBackWithAnIncrement() {
+        Reservation reservation = existingReservation(); // no claim id
+        when(reservationRepository.findById(reservation.getId())).thenReturn(Optional.of(reservation));
+
+        service.cancelReservation(reservation.getId());
+        completeTransaction(TransactionSynchronization.STATUS_COMMITTED);
+
         verify(scheduleClient).incrementSeat(FLIGHT_ID);
+        verify(scheduleClient, never()).releaseSeat(any(), any());
     }
 
     @Test
     void cancellationThatRollsBackDoesNotReleaseTheSeat() {
         Reservation reservation = existingReservation();
+        reservation.setSeatClaimId(UUID.randomUUID());
         when(reservationRepository.findById(reservation.getId())).thenReturn(Optional.of(reservation));
 
         service.cancelReservation(reservation.getId());
         completeTransaction(TransactionSynchronization.STATUS_ROLLED_BACK);
 
+        verify(scheduleClient, never()).releaseSeat(any(), any());
         verify(scheduleClient, never()).incrementSeat(any());
     }
 
