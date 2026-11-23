@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { CATALOG } from '@/test/catalog'
 import { makeFlight, routes } from '@/test/fixtures'
-import { estimateOffers, includedFor, routeScope } from './ancillaries'
+import { estimateOffers, includedFor, removalBlockedReason, routeScope } from './ancillaries'
 import { estimatePrice } from './pricing'
 
 const offer = (chosen: Record<string, number>, code: string, fare: 'BASIC' | 'STANDARD' | 'FLEX' = 'BASIC') =>
@@ -64,5 +64,27 @@ describe('online sales cut-off', () => {
     expect(at(20, 'MEAL_HOT').reason).toBe('Online sales closed 24h before departure')
     expect(at(20, 'CHECKED_BAG_20').available).toBe(true)
     expect(at(0.5, 'CHECKED_BAG_20').available).toBe(false)
+  })
+})
+
+describe('the basket the server will accept', () => {
+  const blocked = (chosen: Record<string, number>, code: string, fare: 'BASIC' | 'FLEX' = 'BASIC') =>
+    removalBlockedReason(estimateOffers(CATALOG, 'ECONOMY', fare, 'INTERNATIONAL', chosen), chosen, code)
+
+  it('keeps a bag that carries an extra-weight top-up until the top-up goes', () => {
+    expect(blocked({ CHECKED_BAG_15: 1, EXTRA_WEIGHT_10: 1 }, 'CHECKED_BAG_15')).toBe(
+      'Remove the extra weight on this bag first',
+    )
+    expect(blocked({ CHECKED_BAG_15: 1 }, 'CHECKED_BAG_15')).toBeNull()
+    expect(blocked({ CHECKED_BAG_15: 2, EXTRA_WEIGHT_10: 1 }, 'CHECKED_BAG_15')).toBeNull()
+    expect(blocked({ CHECKED_BAG_15: 1, EXTRA_WEIGHT_10: 1 }, 'EXTRA_WEIGHT_10')).toBeNull()
+  })
+
+  it('counts the bag the fare includes and the ones already bought', () => {
+    expect(blocked({ CHECKED_BAG_15: 1, EXTRA_WEIGHT_10: 1 }, 'CHECKED_BAG_15', 'FLEX')).toBeNull()
+    const offers = estimateOffers(CATALOG, 'ECONOMY', 'BASIC', 'INTERNATIONAL', {}).map((o) =>
+      o.code === 'CHECKED_BAG_20' ? { ...o, purchasedQuantity: 1 } : o,
+    )
+    expect(removalBlockedReason(offers, { CHECKED_BAG_15: 1, EXTRA_WEIGHT_10: 1 }, 'CHECKED_BAG_15')).toBeNull()
   })
 })
