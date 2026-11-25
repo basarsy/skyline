@@ -3,12 +3,13 @@ import { minutesBetween } from './format'
 
 /**
  * The flight status machine, mirrored for guidance (the server decides). CANCELLED is deliberately absent:
- * it goes through DELETE /flights/{id}, offered to ADMIN only.
+ * it goes through DELETE /flights/{id}, offered to ADMIN only. DELAYED too: a delay is set with its expected
+ * time in the operations card (a boarding flight stays BOARDING when delayed).
  */
 const NEXT: Record<FlightStatus, readonly FlightStatus[]> = {
-  SCHEDULED: ['BOARDING', 'DELAYED'],
+  SCHEDULED: ['BOARDING'],
   DELAYED: ['SCHEDULED', 'BOARDING'],
-  BOARDING: ['DEPARTED', 'DELAYED'],
+  BOARDING: ['DEPARTED'],
   DEPARTED: ['ARRIVED'],
   ARRIVED: [],
   CANCELLED: [],

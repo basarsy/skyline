@@ -148,7 +148,11 @@ public class FlightServiceImpl implements FlightService {
 
         Snapshot before = Snapshot.of(flight);
         flight.setEstimatedDepartureTime(estimatedDepartureTime);
-        flight.setStatus(FlightStatus.DELAYED);
+        // A boarding flight stays BOARDING with its new expected time: back to DELAYED would reopen sales and
+        // lose the boarding state when the delay is lifted. Passengers are told of the delay either way.
+        if (flight.getStatus() != FlightStatus.BOARDING) {
+            flight.setStatus(FlightStatus.DELAYED);
+        }
         return saveAndAnnounce(flight, before);
     }
 
@@ -201,6 +205,11 @@ public class FlightServiceImpl implements FlightService {
 
         Flight flight = getFlightEntity(id);
 
+        if (status == FlightStatus.DELAYED && flight.getStatus() != FlightStatus.DELAYED) {
+            // A delay without an expected time tells passengers nothing: it goes through PUT /flights/{id}/delay.
+            throw new SkylineException("Delay a flight with its expected departure time (PUT /flights/" + id
+                    + "/delay)", HttpStatus.BAD_REQUEST);
+        }
         // Basic state machine validation
         if (!isValidStatusTransition(flight.getStatus(), status)) {
             throw new SkylineException("Invalid status transition from " + flight.getStatus() + " to " + status, HttpStatus.BAD_REQUEST);
@@ -470,9 +479,11 @@ public class FlightServiceImpl implements FlightService {
         if (current == next) return true;
         
         return switch (current) {
-            case SCHEDULED -> next == FlightStatus.BOARDING || next == FlightStatus.DELAYED || next == FlightStatus.CANCELLED;
+            // DELAYED is entered only through delayFlight (it needs an expected time), and BOARDING is one-way:
+            // a delay while boarding keeps BOARDING (see delayFlight), so sales never reopen.
+            case SCHEDULED -> next == FlightStatus.BOARDING || next == FlightStatus.CANCELLED;
             case DELAYED -> next == FlightStatus.BOARDING || next == FlightStatus.CANCELLED || next == FlightStatus.SCHEDULED;
-            case BOARDING -> next == FlightStatus.DEPARTED || next == FlightStatus.DELAYED || next == FlightStatus.CANCELLED;
+            case BOARDING -> next == FlightStatus.DEPARTED || next == FlightStatus.CANCELLED;
             case DEPARTED -> next == FlightStatus.ARRIVED;
             case ARRIVED, CANCELLED -> false; // Terminal states
         };

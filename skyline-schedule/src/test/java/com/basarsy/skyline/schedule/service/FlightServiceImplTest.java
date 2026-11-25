@@ -169,12 +169,29 @@ class FlightServiceImplTest {
         Flight flight = flight(FlightStatus.SCHEDULED);
         when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
 
-        assertThat(service.updateFlightStatus(flight.getId(), FlightStatus.DELAYED).getStatus())
-                .isEqualTo(FlightStatus.DELAYED);
+        assertThat(service.updateFlightStatus(flight.getId(), FlightStatus.BOARDING).getStatus())
+                .isEqualTo(FlightStatus.BOARDING);
         FlightChangedEvent event = singleChange();
         assertThat(event.type()).isEqualTo(FlightChangeType.STATUS_CHANGED);
         assertThat(event.previousStatus()).isEqualTo(FlightStatus.SCHEDULED);
-        assertThat(event.status()).isEqualTo(FlightStatus.DELAYED);
+        assertThat(event.status()).isEqualTo(FlightStatus.BOARDING);
+    }
+
+    @Test
+    void aFlightIsDelayedOnlyWithAnExpectedTime() {
+        Flight scheduled = flight(FlightStatus.SCHEDULED);
+        Flight boarding = flight(FlightStatus.BOARDING);
+        when(repository.findById(scheduled.getId())).thenReturn(Optional.of(scheduled));
+        when(repository.findById(boarding.getId())).thenReturn(Optional.of(boarding));
+
+        assertThatThrownBy(() -> service.updateFlightStatus(scheduled.getId(), FlightStatus.DELAYED))
+                .isInstanceOf(SkylineException.class)
+                .hasMessageContaining("with its expected departure time");
+        assertThatThrownBy(() -> service.updateFlightStatus(boarding.getId(), FlightStatus.DELAYED))
+                .isInstanceOf(SkylineException.class);
+        assertThat(scheduled.getStatus()).isEqualTo(FlightStatus.SCHEDULED);
+        assertThat(boarding.getStatus()).isEqualTo(FlightStatus.BOARDING);
+        verifyNoInteractions(outbox);
     }
 
     @Test
@@ -252,14 +269,18 @@ class FlightServiceImplTest {
     }
 
     @Test
-    void delayingABoardingFlightMovesItBackToDelayed() {
+    void delayingABoardingFlightKeepsItBoardingSoSalesStayClosed() {
         Flight flight = flight(FlightStatus.BOARDING);
         when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
 
         service.delayFlight(flight.getId(), flight.getDepartureTime().plusMinutes(40));
 
-        assertThat(flight.getStatus()).isEqualTo(FlightStatus.DELAYED);
-        assertThat(singleChange().type()).isEqualTo(FlightChangeType.DELAYED);
+        assertThat(flight.getStatus()).isEqualTo(FlightStatus.BOARDING);
+        assertThat(flight.getEstimatedDepartureTime()).isEqualTo(flight.getDepartureTime().plusMinutes(40));
+        assertThat(singleChange().type()).as("passengers are told").isEqualTo(FlightChangeType.DELAYED);
+
+        service.clearDelay(flight.getId());
+        assertThat(flight.getStatus()).as("lifting the delay keeps boarding").isEqualTo(FlightStatus.BOARDING);
     }
 
     @Test

@@ -768,10 +768,12 @@ export const handlers = [
       cancelFlight(flight)
       return ok(flight, 'Flight status updated successfully')
     }
+    if (status === 'DELAYED' && flight.status !== 'DELAYED')
+      return fail(400, `Delay a flight with its expected departure time (PUT /flights/${flight.id}/delay)`)
     const allowed: Record<string, string[]> = {
-      SCHEDULED: ['BOARDING', 'DELAYED'],
+      SCHEDULED: ['BOARDING'],
       DELAYED: ['SCHEDULED', 'BOARDING'],
-      BOARDING: ['DEPARTED', 'DELAYED'],
+      BOARDING: ['DEPARTED'],
       DEPARTED: ['ARRIVED'],
     }
     if (!allowed[flight.status]?.includes(status))
@@ -835,7 +837,8 @@ export const handlers = [
     if (delay > 24 * 3_600_000)
       return fail(400, "A delay of more than 24 hours is a reschedule: change the flight's times instead")
     Object.assign(flight, {
-      status: 'DELAYED',
+      // Like the server: a boarding flight stays BOARDING, so sales don't reopen.
+      status: flight.status === 'BOARDING' ? 'BOARDING' : 'DELAYED',
       estimatedDepartureTime,
       estimatedArrivalTime: toApiDateTime(new Date(Date.parse(`${flight.arrivalTime}Z`) + delay)),
       updatedAt: now(),
