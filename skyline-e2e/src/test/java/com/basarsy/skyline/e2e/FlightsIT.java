@@ -16,8 +16,7 @@ class FlightsIT extends E2eTest {
     @Test
     void delayedFlightsAreFoundBySearch() {
         String flightId = createFlight();
-        api(adminToken).body(Map.of("status", "DELAYED")).patch("/flights/" + flightId + "/status")
-                .then().statusCode(200);
+        delay(flightId);
 
         assertThat(searchIstLhr(istanbulDepartureDate(flightId))).contains(flightId);
     }
@@ -55,7 +54,7 @@ class FlightsIT extends E2eTest {
     void boardFiltersCombine() {
         String delayed = createFlight();
         String scheduled = createFlight();
-        api(adminToken).body(Map.of("status", "DELAYED")).patch("/flights/" + delayed + "/status").then().statusCode(200);
+        delay(delayed);
         String number = api(null).get("/flights/" + delayed).then().extract().path("data.flightNumber");
 
         List<String> ids = api(adminToken)
@@ -105,6 +104,15 @@ class FlightsIT extends E2eTest {
     static List<String> board(String token, String date) {
         return api(token).queryParam("date", date).queryParam("size", 500)
                 .get("/flights/board").then().statusCode(200).extract().path("data.content.id");
+    }
+
+    /** Delays the flight by 45 minutes (a delay always comes with its expected time). */
+    static void delay(String flightId) {
+        String estimate = departureUtc(flightId).plusMinutes(45).toString();
+        api(adminToken).body(Map.of("estimatedDepartureTime", estimate)).put("/flights/" + flightId + "/delay")
+                .then().statusCode(200);
+        assertThat(api(null).get("/flights/" + flightId).then().extract().<String>path("data.status"))
+                .isEqualTo("DELAYED");
     }
 
     static LocalDateTime departureUtc(String flightId) {

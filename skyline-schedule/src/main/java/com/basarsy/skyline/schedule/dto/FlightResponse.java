@@ -35,4 +35,6 @@ public class FlightResponse {
     private String currency;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    /** Edits of the flight's plan so far: send it back with an edit (FlightRequest.editVersion). */
+    private int editVersion;
 }

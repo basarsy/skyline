@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.basarsy.skyline.common.exception.ResourceNotFoundException;
 import com.basarsy.skyline.common.exception.SkylineException;
+import com.basarsy.skyline.fleet.client.ScheduleClient;
 import com.basarsy.skyline.fleet.dto.AircraftRequest;
 import com.basarsy.skyline.fleet.dto.AircraftResponse;
 import com.basarsy.skyline.fleet.entity.Aircraft;
@@ -31,7 +32,8 @@ class AircraftServiceImplTest {
 
     private final AircraftRepository aircraft = mock(AircraftRepository.class);
     private final AircraftTypeRepository types = mock(AircraftTypeRepository.class);
-    private final AircraftServiceImpl service = new AircraftServiceImpl(aircraft, types, mapper());
+    private final AircraftServiceImpl service = new AircraftServiceImpl(aircraft, types, mapper(),
+            mock(ScheduleClient.class));
 
     private final AircraftType a320 = type();
 

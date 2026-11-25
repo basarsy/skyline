@@ -4,6 +4,7 @@ import com.basarsy.skyline.schedule.entity.Flight;
 import com.basarsy.skyline.schedule.entity.FlightStatus;
 import java.time.LocalDateTime;
 import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -44,6 +45,32 @@ public interface FlightRepository extends JpaRepository<Flight, UUID>, JpaSpecif
             """)
     int decrementSeat(@Param("id") UUID id, @Param("statuses") Collection<FlightStatus> statuses,
             @Param("earliestDeparture") LocalDateTime earliestDeparture, @Param("now") LocalDateTime now);
+
+    /**
+     * The flight number of the aircraft's first other flight (not {@code excludeId}, not cancelled or arrived)
+     * that occupies it within {@code busyFrom → busyUntil} (the caller widens its own block by the turnaround).
+     * A delayed flight occupies the aircraft from its expected departure, and lands as much later.
+     */
+    @Query(nativeQuery = true, value = """
+            SELECT f.flight_number FROM flights f
+            WHERE f.aircraft_id = :aircraftId AND f.id <> :excludeId AND f.status NOT IN ('CANCELLED', 'ARRIVED')
+              AND COALESCE(f.estimated_departure_time, f.departure_time) < :busyUntil
+              AND f.arrival_time + (COALESCE(f.estimated_departure_time, f.departure_time) - f.departure_time)
+                  > :busyFrom
+            ORDER BY f.departure_time
+            LIMIT 1
+            """)
+    List<String> aircraftConflicts(@Param("aircraftId") UUID aircraftId, @Param("excludeId") UUID excludeId,
+            @Param("busyFrom") LocalDateTime busyFrom, @Param("busyUntil") LocalDateTime busyUntil);
+
+    /** Flight numbers of the aircraft's flights not in {@code ended}, earliest first. */
+    @Query("""
+            SELECT f.flightNumber FROM Flight f
+            WHERE f.aircraftId = :aircraftId AND f.status NOT IN :ended
+            ORDER BY f.departureTime
+            """)
+    List<String> flightsOnAircraft(@Param("aircraftId") UUID aircraftId,
+            @Param("ended") Collection<FlightStatus> ended, Pageable pageable);
 
     /** Gives a seat back. A cancelled flight already had its seats reset to capacity, so it is left alone. */
     @Modifying(clearAutomatically = true, flushAutomatically = true)

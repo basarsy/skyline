@@ -239,7 +239,8 @@ FlightCrew (join) ──── Flight
 
 **`Flight`** — route + aircraft + departure time + seat count + base price
 - Status machine: `SCHEDULED → BOARDING → DEPARTED → ARRIVED`
-- Side paths: `→ DELAYED`, `→ CANCELLED`
+- Side paths: `→ CANCELLED`, and `SCHEDULED → DELAYED → SCHEDULED/BOARDING` through the delay endpoint (a delay always has an expected time). Boarding is one-way: a boarding flight that is delayed stays `BOARDING`, so sales never reopen
+- An aircraft flies one flight at a time, with 30 minutes on the ground in between (a delayed flight counts at its expected times); creating or editing a flight that breaks this is refused with `409`
 
 **`Reservation`** — passenger + flight + cabin class + seat + PNR
 - Status: `PENDING → CONFIRMED → CHECKED_IN`
@@ -285,12 +286,14 @@ GET    /flights/board              Operations flight board, every status [STAFF,
                                     (contains, case-insensitive), routeId; paged, default size 50,
                                     sort departureTime,asc)
 GET    /flights/{id}               Flight detail
-POST   /flights                    Create flight (aircraft must be ACTIVE) [STAFF, ADMIN]
-PUT    /flights/{id}               Update flight (aircraft must be ACTIVE) [STAFF, ADMIN]
-PATCH  /flights/{id}/status        Update flight status        [STAFF, ADMIN; CANCELLED: ADMIN only,
+POST   /flights                    Create flight (aircraft must be ACTIVE and free then) [STAFF, ADMIN]
+PUT    /flights/{id}               Update flight (aircraft must be ACTIVE) [STAFF, ADMIN]; send the
+                                   editVersion it was opened at: 409 if someone edited it since
+PATCH  /flights/{id}/status        Update flight status (not DELAYED: use /delay) [STAFF, ADMIN; CANCELLED: ADMIN only,
                                    same full cancellation as DELETE]
 PUT    /flights/{id}/delay         Delay: set estimatedDepartureTime (after the scheduled departure,
-                                   by at most 24h); status becomes DELAYED  [STAFF, ADMIN]
+                                   by at most 24h); status becomes DELAYED (a BOARDING flight stays
+                                   BOARDING)  [STAFF, ADMIN]
 DELETE /flights/{id}/delay         Lift the delay; a DELAYED flight is SCHEDULED again  [STAFF, ADMIN]
 PUT    /flights/{id}/gate          Assign or change the gate ("B12", "G5", "214A")  [STAFF, ADMIN]
 DELETE /flights/{id}               Cancel flight               [ADMIN]
@@ -301,7 +304,8 @@ DELETE /flights/{id}               Cancel flight               [ADMIN]
 GET    /aircraft                   List fleet                  [STAFF, ADMIN]
 GET    /aircraft/{id}              Aircraft detail             [STAFF, ADMIN]
 POST   /aircraft                   Add aircraft                [ADMIN]
-PATCH  /aircraft/{id}/status       Update status               [STAFF, ADMIN]
+PATCH  /aircraft/{id}/status       Update status               [STAFF, ADMIN; RETIRED: ADMIN only, and 409
+                                   while the aircraft still has flights not cancelled or arrived]
 GET    /aircraft-types             List aircraft types         [STAFF, ADMIN]
 GET    /aircraft-types/{id}        Aircraft type detail        [STAFF, ADMIN]
 POST   /aircraft-types             Add aircraft type           [ADMIN]

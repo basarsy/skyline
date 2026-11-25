@@ -13,6 +13,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -133,6 +134,16 @@ public class FlightController {
     public ApiResponse<Void> cancelFlight(@PathVariable UUID id) {
         flightService.cancelFlight(id);
         return ApiResponse.success("Flight cancelled successfully", null);
+    }
+
+    /**
+     * Flight numbers of the aircraft's flights that are not cancelled or arrived yet (at most 5, earliest first):
+     * the fleet service refuses to retire an aircraft that still has some.
+     */
+    @GetMapping("/aircraft/{aircraftId}/active")
+    @PreAuthorize("hasRole('SERVICE')")
+    public ApiResponse<List<String>> flightsOnAircraft(@PathVariable UUID aircraftId) {
+        return ApiResponse.success("Flights on the aircraft", flightService.flightsOnAircraft(aircraftId, 5));
     }
 
     /**

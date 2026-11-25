@@ -142,7 +142,8 @@ describe('check-in window', () => {
 
 describe('flight status machine', () => {
   it('offers only allowed transitions, never CANCELLED', () => {
-    expect(nextStatuses('SCHEDULED')).toEqual(['BOARDING', 'DELAYED'])
+    expect(nextStatuses('SCHEDULED')).toEqual(['BOARDING'])
+    expect(nextStatuses('BOARDING')).toEqual(['DEPARTED'])
     expect(nextStatuses('DEPARTED')).toEqual(['ARRIVED'])
     expect(nextStatuses('ARRIVED')).toEqual([])
   })

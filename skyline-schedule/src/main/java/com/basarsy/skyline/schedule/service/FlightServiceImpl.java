@@ -18,12 +18,14 @@ import com.basarsy.skyline.schedule.entity.Flight;
 import com.basarsy.skyline.schedule.entity.FlightStatus;
 import com.basarsy.skyline.schedule.mapper.FlightMapper;
 import com.basarsy.skyline.common.outbox.Outbox;
+import com.basarsy.skyline.schedule.repository.AircraftLock;
 import com.basarsy.skyline.schedule.repository.FlightRepository;
 import com.basarsy.skyline.schedule.repository.SeatClaimRepository;
 import com.basarsy.skyline.schedule.repository.FlightSpecifications;
 import com.basarsy.skyline.schedule.event.FlightCancelledEvent;
 import com.basarsy.skyline.schedule.event.FlightChangeType;
 import com.basarsy.skyline.schedule.event.FlightChangedEvent;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -39,6 +41,7 @@ import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
@@ -67,8 +70,18 @@ public class FlightServiceImpl implements FlightService {
      */
     static final Duration SALES_CLOSE_BEFORE = Duration.ofHours(1);
 
+    /** Least time an aircraft spends on the ground between two flights (deplane, clean, refuel, board). */
+    static final Duration MIN_TURNAROUND = Duration.ofMinutes(30);
+
+    /** Flights that no longer occupy their aircraft. */
+    static final Set<FlightStatus> ENDED_STATUSES = EnumSet.of(FlightStatus.CANCELLED, FlightStatus.ARRIVED);
+
+    /** Stands in for "no flight" when a new flight is checked against the others. */
+    private static final UUID NO_FLIGHT = new UUID(0, 0);
+
     private final FlightRepository flightRepository;
     private final SeatClaimRepository seatClaims;
+    private final AircraftLock aircraftLock;
     private final FleetClient fleetClient;
     private final RouteClient routeClient;
     private final CrewClient crewClient;
@@ -86,6 +99,7 @@ public class FlightServiceImpl implements FlightService {
         if (request.departureTime().isAfter(request.arrivalTime()) || request.departureTime().isEqual(request.arrivalTime())) {
             throw new SkylineException("Departure time must be before arrival time", HttpStatus.BAD_REQUEST);
         }
+        requireAircraftFree(aircraft, NO_FLIGHT, request.departureTime(), request.arrivalTime());
 
         Flight flight = flightMapper.toEntity(request);
         flight.setRouteId(route.id());
@@ -105,6 +119,10 @@ public class FlightServiceImpl implements FlightService {
         if (flight.getStatus() != FlightStatus.SCHEDULED && flight.getStatus() != FlightStatus.DELAYED) {
             throw new SkylineException("Cannot update flight in status: " + flight.getStatus(), HttpStatus.BAD_REQUEST);
         }
+        if (request.editVersion() != null && request.editVersion() != flight.getEditVersion()) {
+            throw new SkylineException("Someone else changed this flight since you opened it: reload it and make "
+                    + "your change again", HttpStatus.CONFLICT);
+        }
 
         RouteResponse route = routeClient.getRoute(request.routeId());
         
@@ -113,12 +131,12 @@ public class FlightServiceImpl implements FlightService {
         if (request.departureTime().isAfter(request.arrivalTime()) || request.departureTime().isEqual(request.arrivalTime())) {
             throw new SkylineException("Departure time must be before arrival time", HttpStatus.BAD_REQUEST);
         }
-
         if (!aircraft.id().equals(flight.getAircraftId())) {
             flight.setAvailableSeats(seatsOnNewAircraft(flight, aircraft));
         }
 
         Snapshot before = Snapshot.of(flight);
+        Plan planBefore = Plan.of(flight);
         flightMapper.updateEntity(flight, request);
         flight.setRouteId(route.id());
         flight.setAircraftId(aircraft.id());
@@ -126,6 +144,13 @@ public class FlightServiceImpl implements FlightService {
             // The new times are the plan now: a delay against the old ones no longer applies.
             liftDelay(flight);
         }
+        if (!Plan.of(flight).equals(planBefore)) {
+            // Only a real change makes other open edit forms stale (saving an unchanged form does not).
+            flight.setEditVersion(flight.getEditVersion() + 1);
+        }
+        // Last before saving: the aircraft's lock is held from here to commit, with no remote call in between
+        // other than the response's enrichment.
+        requireAircraftFree(aircraft, id, effectiveDeparture(flight), effectiveArrival(flight));
 
         return saveAndAnnounce(flight, before);
     }
@@ -148,7 +173,11 @@ public class FlightServiceImpl implements FlightService {
 
         Snapshot before = Snapshot.of(flight);
         flight.setEstimatedDepartureTime(estimatedDepartureTime);
-        flight.setStatus(FlightStatus.DELAYED);
+        // A boarding flight stays BOARDING with its new expected time: back to DELAYED would reopen sales and
+        // lose the boarding state when the delay is lifted. Passengers are told of the delay either way.
+        if (flight.getStatus() != FlightStatus.BOARDING) {
+            flight.setStatus(FlightStatus.DELAYED);
+        }
         return saveAndAnnounce(flight, before);
     }
 
@@ -179,6 +208,45 @@ public class FlightServiceImpl implements FlightService {
         return saveAndAnnounce(flight, before);
     }
 
+    /**
+     * An aircraft flies one flight at a time, with {@link #MIN_TURNAROUND} on the ground between two: refused when
+     * another of its flights (other than {@code flightId}, not cancelled or arrived) overlaps. Takes the
+     * aircraft's lock first, so a concurrent booking of the same aircraft waits for this transaction.
+     */
+    private void requireAircraftFree(AircraftResponse aircraft, UUID flightId, LocalDateTime departure,
+            LocalDateTime arrival) {
+        aircraftLock.lock(aircraft.id());
+        List<String> conflicts = flightRepository.aircraftConflicts(aircraft.id(), flightId,
+                departure.minus(MIN_TURNAROUND), arrival.plus(MIN_TURNAROUND));
+        if (!conflicts.isEmpty()) {
+            throw new SkylineException("Aircraft " + aircraft.tailNumber() + " already flies " + conflicts.get(0)
+                    + " then (it needs " + MIN_TURNAROUND.toMinutes() + " minutes on the ground between flights)",
+                    HttpStatus.CONFLICT);
+        }
+    }
+
+    /** When the flight now expects to leave: the delay's estimate, else the scheduled time. */
+    private static LocalDateTime effectiveDeparture(Flight flight) {
+        return flight.getEstimatedDepartureTime() != null ? flight.getEstimatedDepartureTime()
+                : flight.getDepartureTime();
+    }
+
+    /** The scheduled arrival moved by the delay (the same shift the response's estimatedArrivalTime shows). */
+    private static LocalDateTime effectiveArrival(Flight flight) {
+        return flight.getArrivalTime().plus(Duration.between(flight.getDepartureTime(), effectiveDeparture(flight)));
+    }
+
+    /** What an edit (PUT) can change: an edit that changes none of it is not counted in editVersion. */
+    private record Plan(String flightNumber, UUID routeId, UUID aircraftId, LocalDateTime departureTime,
+            LocalDateTime arrivalTime, BigDecimal basePrice) {
+
+        static Plan of(Flight flight) {
+            return new Plan(flight.getFlightNumber(), flight.getRouteId(), flight.getAircraftId(),
+                    flight.getDepartureTime(), flight.getArrivalTime(),
+                    flight.getBasePrice() == null ? null : flight.getBasePrice().stripTrailingZeros());
+        }
+    }
+
     /** Back on schedule: no expected time, and a DELAYED flight is SCHEDULED again (BOARDING stays). */
     private static void liftDelay(Flight flight) {
         flight.setEstimatedDepartureTime(null);
@@ -201,6 +269,11 @@ public class FlightServiceImpl implements FlightService {
 
         Flight flight = getFlightEntity(id);
 
+        if (status == FlightStatus.DELAYED && flight.getStatus() != FlightStatus.DELAYED) {
+            // A delay without an expected time tells passengers nothing: it goes through PUT /flights/{id}/delay.
+            throw new SkylineException("Delay a flight with its expected departure time (PUT /flights/" + id
+                    + "/delay)", HttpStatus.BAD_REQUEST);
+        }
         // Basic state machine validation
         if (!isValidStatusTransition(flight.getStatus(), status)) {
             throw new SkylineException("Invalid status transition from " + flight.getStatus() + " to " + status, HttpStatus.BAD_REQUEST);
@@ -408,6 +481,12 @@ public class FlightServiceImpl implements FlightService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<String> flightsOnAircraft(UUID aircraftId, int limit) {
+        return flightRepository.flightsOnAircraft(aircraftId, ENDED_STATUSES, PageRequest.of(0, limit));
+    }
+
+    @Override
     @Transactional
     public void claimSeat(UUID flightId, UUID claimId) {
         if (!seatClaims.insert(claimId, flightId)) {
@@ -470,9 +549,11 @@ public class FlightServiceImpl implements FlightService {
         if (current == next) return true;
         
         return switch (current) {
-            case SCHEDULED -> next == FlightStatus.BOARDING || next == FlightStatus.DELAYED || next == FlightStatus.CANCELLED;
+            // DELAYED is entered only through delayFlight (it needs an expected time), and BOARDING is one-way:
+            // a delay while boarding keeps BOARDING (see delayFlight), so sales never reopen.
+            case SCHEDULED -> next == FlightStatus.BOARDING || next == FlightStatus.CANCELLED;
             case DELAYED -> next == FlightStatus.BOARDING || next == FlightStatus.CANCELLED || next == FlightStatus.SCHEDULED;
-            case BOARDING -> next == FlightStatus.DEPARTED || next == FlightStatus.DELAYED || next == FlightStatus.CANCELLED;
+            case BOARDING -> next == FlightStatus.DEPARTED || next == FlightStatus.CANCELLED;
             case DEPARTED -> next == FlightStatus.ARRIVED;
             case ARRIVED, CANCELLED -> false; // Terminal states
         };

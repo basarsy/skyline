@@ -18,6 +18,7 @@ public interface FlightMapper {
     @Mapping(target = "estimatedDepartureTime", ignore = true)
     @Mapping(target = "gate", ignore = true)
     @Mapping(target = "version", ignore = true)
+    @Mapping(target = "editVersion", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
     Flight toEntity(FlightRequest request);
@@ -36,6 +37,7 @@ public interface FlightMapper {
     @Mapping(target = "estimatedDepartureTime", ignore = true)
     @Mapping(target = "gate", ignore = true)
     @Mapping(target = "version", ignore = true)
+    @Mapping(target = "editVersion", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
     void updateEntity(@MappingTarget Flight flight, FlightRequest request);

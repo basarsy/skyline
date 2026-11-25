@@ -147,9 +147,12 @@ function AddAircraftSheet({ open, onOpenChange }: { open: boolean; onOpenChange:
   )
 }
 
-function StatusMenu({ aircraft }: { aircraft: AircraftResponse }) {
+/** Retired is final, and an admin's call (refused while the aircraft still has flights). */
+function StatusMenu({ aircraft, isAdmin }: { aircraft: AircraftResponse; isAdmin: boolean }) {
   const setStatus = useSetAircraftStatus()
   const [target, setTarget] = React.useState<AircraftStatus | null>(null)
+  if (aircraft.status === 'RETIRED') return null
+  const choices = AIRCRAFT_STATUSES.filter((status) => status !== aircraft.status && (isAdmin || status !== 'RETIRED'))
   return (
     <>
       <DropdownMenu>
@@ -165,7 +168,7 @@ function StatusMenu({ aircraft }: { aircraft: AircraftResponse }) {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
           <DropdownMenuLabel className="micro-label">Set status</DropdownMenuLabel>
-          {AIRCRAFT_STATUSES.filter((status) => status !== aircraft.status).map((status) => (
+          {choices.map((status) => (
             <DropdownMenuItem key={status} className="min-h-10 rounded-xl" onSelect={() => setTarget(status)}>
               {aircraftStatusLabel[status]}
             </DropdownMenuItem>
@@ -179,7 +182,9 @@ function StatusMenu({ aircraft }: { aircraft: AircraftResponse }) {
         description={
           target === 'ACTIVE'
             ? 'It can be scheduled on new flights again.'
-            : 'It can’t be put on new flights while it isn’t active. Existing flights keep it.'
+            : target === 'RETIRED'
+              ? 'This is final. An aircraft that still has flights can’t be retired: move them to another aircraft or cancel them first.'
+              : 'It can’t be put on new flights while it isn’t active. Existing flights keep it.'
         }
         confirmLabel={target ? `Set to ${aircraftStatusLabel[target].toLowerCase()}` : 'Confirm'}
         cancelLabel="Cancel"
@@ -229,10 +234,10 @@ export function Component() {
         id: 'actions',
         header: () => <span className="sr-only">Actions</span>,
         enableSorting: false,
-        cell: ({ row }) => <StatusMenu aircraft={row.original} />,
+        cell: ({ row }) => <StatusMenu aircraft={row.original} isAdmin={isAdmin} />,
       },
     ],
-    [],
+    [isAdmin],
   )
 
   return (

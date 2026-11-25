@@ -28,5 +28,17 @@ public record FlightRequest(
         
         @NotNull(message = "Base price is required")
         @Positive(message = "Base price must be positive")
-        BigDecimal basePrice
-) {}
+        BigDecimal basePrice,
+
+        /**
+         * On an edit: the flight's editVersion this edit was made from. Refused (409) when someone has edited the
+         * flight since. Optional (null skips the check), ignored on create.
+         */
+        Integer editVersion
+) {
+
+    public FlightRequest(String flightNumber, UUID routeId, UUID aircraftId, LocalDateTime departureTime,
+            LocalDateTime arrivalTime, BigDecimal basePrice) {
+        this(flightNumber, routeId, aircraftId, departureTime, arrivalTime, basePrice, null);
+    }
+}

@@ -161,6 +161,7 @@ export function makeFlight(overrides: Partial<FlightResponse> = {}): FlightRespo
     currency: 'EUR',
     createdAt: hoursFromNow(-48),
     updatedAt: hoursFromNow(-48),
+    editVersion: 0,
     ...overrides,
   }
 }

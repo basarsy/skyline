@@ -182,9 +182,6 @@ function StatusCard({ flight, manifest }: { flight: FlightResponse; manifest: Fl
               )}
             </div>
           )}
-          {target === 'DELAYED' && (
-            <p className="text-sm text-muted-foreground">Passengers can still book and check in on a delayed flight.</p>
-          )}
           {setStatus.isError && (
             <p role="alert" className="text-sm text-destructive">
               {errorText(setStatus.error)}

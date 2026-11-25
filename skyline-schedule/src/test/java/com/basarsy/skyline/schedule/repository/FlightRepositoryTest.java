@@ -161,6 +161,37 @@ class FlightRepositoryTest {
     }
 
     @Test
+    void anAircraftConflictsWithItsOverlappingFlightsOnly() {
+        Flight flight = save("SK1", ROUTE, DAY.plusHours(10), FlightStatus.SCHEDULED); // 10:00 → 14:00
+        UUID aircraft = flight.getAircraftId();
+        Flight cancelled = save("SK2", ROUTE, DAY.plusHours(11), FlightStatus.CANCELLED);
+        cancelled.setAircraftId(aircraft);
+        repository.saveAndFlush(cancelled);
+        var none = new UUID(0, 0);
+
+        assertThat(repository.aircraftConflicts(aircraft, none, DAY.plusHours(13), DAY.plusHours(17)))
+                .as("overlaps the end").containsExactly("SK1");
+        assertThat(repository.aircraftConflicts(aircraft, none, DAY.plusHours(14), DAY.plusHours(18)))
+                .as("starts as it lands").isEmpty();
+        assertThat(repository.aircraftConflicts(aircraft, flight.getId(), DAY.plusHours(9), DAY.plusHours(15)))
+                .as("itself, and the cancelled one").isEmpty();
+        assertThat(repository.aircraftConflicts(UUID.randomUUID(), none, DAY.plusHours(9), DAY.plusHours(15)))
+                .as("another aircraft").isEmpty();
+    }
+
+    @Test
+    void aDelayedFlightOccupiesItsAircraftUntilItsLaterLanding() {
+        Flight flight = save("SK1", ROUTE, DAY.plusHours(10), FlightStatus.DELAYED); // 10:00 → 14:00
+        flight.setEstimatedDepartureTime(DAY.plusHours(13)); // now expected to land at 17:00
+        repository.saveAndFlush(flight);
+
+        assertThat(repository.aircraftConflicts(flight.getAircraftId(), new UUID(0, 0), DAY.plusHours(15),
+                DAY.plusHours(19))).containsExactly("SK1");
+        assertThat(repository.aircraftConflicts(flight.getAircraftId(), new UUID(0, 0), DAY.plusHours(9),
+                DAY.plusHours(12))).as("no longer there before 13:00").isEmpty();
+    }
+
+    @Test
     void noSeatIsHeldOnceSalesHaveClosed() {
         Flight flight = save("SK1", ROUTE, DAY, FlightStatus.SCHEDULED);
 

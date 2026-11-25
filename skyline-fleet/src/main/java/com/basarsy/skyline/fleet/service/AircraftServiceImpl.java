@@ -2,6 +2,7 @@ package com.basarsy.skyline.fleet.service;
 
 import com.basarsy.skyline.common.exception.ResourceNotFoundException;
 import com.basarsy.skyline.common.exception.SkylineException;
+import com.basarsy.skyline.fleet.client.ScheduleClient;
 import com.basarsy.skyline.fleet.dto.AircraftRequest;
 import com.basarsy.skyline.fleet.dto.AircraftResponse;
 import com.basarsy.skyline.fleet.dto.UpdateAircraftStatusRequest;
@@ -26,6 +27,7 @@ public class AircraftServiceImpl implements AircraftService {
     private final AircraftRepository aircraftRepository;
     private final AircraftTypeRepository aircraftTypeRepository;
     private final AircraftMapper aircraftMapper;
+    private final ScheduleClient scheduleClient;
 
     @Override
     @Transactional(readOnly = true)
@@ -79,7 +81,27 @@ public class AircraftServiceImpl implements AircraftService {
         if (aircraft.getStatus() == AircraftStatus.RETIRED && request.status() != AircraftStatus.RETIRED) {
             throw new SkylineException("A retired aircraft cannot return to service", HttpStatus.CONFLICT);
         }
+        if (request.status() == AircraftStatus.RETIRED && aircraft.getStatus() != AircraftStatus.RETIRED) {
+            requireRetirable(aircraft);
+        }
         aircraft.setStatus(request.status());
         return aircraftMapper.toResponse(aircraft);
+    }
+
+    /**
+     * Retiring is final, so it is an admin's call (like adding an aircraft), and only once the aircraft flies
+     * nothing more: its flights would otherwise stay on sale and on the board with an aircraft that is gone.
+     * Asks the schedule service; if it can't answer, the aircraft is not retired.
+     */
+    private void requireRetirable(Aircraft aircraft) {
+        if (!CallerRoles.isAdmin()) {
+            throw new SkylineException("Only an admin can retire an aircraft", HttpStatus.FORBIDDEN);
+        }
+        List<String> flights = scheduleClient.flightsOnAircraft(aircraft.getId());
+        if (!flights.isEmpty()) {
+            throw new SkylineException("Aircraft " + aircraft.getTailNumber() + " still flies "
+                    + String.join(", ", flights) + ": move them to another aircraft or cancel them first",
+                    HttpStatus.CONFLICT);
+        }
     }
 }

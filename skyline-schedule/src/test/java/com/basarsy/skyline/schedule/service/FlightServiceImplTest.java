@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -31,6 +33,7 @@ import com.basarsy.skyline.schedule.entity.FlightStatus;
 import com.basarsy.skyline.schedule.mapper.FlightMapper;
 import com.basarsy.skyline.schedule.mapper.FlightMapperImpl;
 import com.basarsy.skyline.common.outbox.Outbox;
+import com.basarsy.skyline.schedule.repository.AircraftLock;
 import com.basarsy.skyline.schedule.repository.FlightRepository;
 import com.basarsy.skyline.schedule.repository.SeatClaimRepository;
 import java.math.BigDecimal;
@@ -59,6 +62,7 @@ class FlightServiceImplTest {
 
     final FlightRepository repository = mock(FlightRepository.class);
     final SeatClaimRepository seatClaims = mock(SeatClaimRepository.class);
+    final AircraftLock aircraftLock = mock(AircraftLock.class);
     final FleetClient fleetClient = mock(FleetClient.class);
     final RouteClient routeClient = mock(RouteClient.class);
     final CrewClient crewClient = mock(CrewClient.class);
@@ -69,7 +73,7 @@ class FlightServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new FlightServiceImpl(repository, seatClaims, fleetClient, routeClient, crewClient, mapper, outbox,
+        service = new FlightServiceImpl(repository, seatClaims, aircraftLock, fleetClient, routeClient, crewClient, mapper, outbox,
                 new PricingProperties("EUR"));
         when(routeClient.getRoute(ROUTE_ID)).thenReturn(route());
         when(fleetClient.getAircraft(AIRCRAFT_ID)).thenReturn(aircraft(AIRCRAFT_ID, AircraftStatus.ACTIVE));
@@ -169,12 +173,29 @@ class FlightServiceImplTest {
         Flight flight = flight(FlightStatus.SCHEDULED);
         when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
 
-        assertThat(service.updateFlightStatus(flight.getId(), FlightStatus.DELAYED).getStatus())
-                .isEqualTo(FlightStatus.DELAYED);
+        assertThat(service.updateFlightStatus(flight.getId(), FlightStatus.BOARDING).getStatus())
+                .isEqualTo(FlightStatus.BOARDING);
         FlightChangedEvent event = singleChange();
         assertThat(event.type()).isEqualTo(FlightChangeType.STATUS_CHANGED);
         assertThat(event.previousStatus()).isEqualTo(FlightStatus.SCHEDULED);
-        assertThat(event.status()).isEqualTo(FlightStatus.DELAYED);
+        assertThat(event.status()).isEqualTo(FlightStatus.BOARDING);
+    }
+
+    @Test
+    void aFlightIsDelayedOnlyWithAnExpectedTime() {
+        Flight scheduled = flight(FlightStatus.SCHEDULED);
+        Flight boarding = flight(FlightStatus.BOARDING);
+        when(repository.findById(scheduled.getId())).thenReturn(Optional.of(scheduled));
+        when(repository.findById(boarding.getId())).thenReturn(Optional.of(boarding));
+
+        assertThatThrownBy(() -> service.updateFlightStatus(scheduled.getId(), FlightStatus.DELAYED))
+                .isInstanceOf(SkylineException.class)
+                .hasMessageContaining("with its expected departure time");
+        assertThatThrownBy(() -> service.updateFlightStatus(boarding.getId(), FlightStatus.DELAYED))
+                .isInstanceOf(SkylineException.class);
+        assertThat(scheduled.getStatus()).isEqualTo(FlightStatus.SCHEDULED);
+        assertThat(boarding.getStatus()).isEqualTo(FlightStatus.BOARDING);
+        verifyNoInteractions(outbox);
     }
 
     @Test
@@ -252,14 +273,18 @@ class FlightServiceImplTest {
     }
 
     @Test
-    void delayingABoardingFlightMovesItBackToDelayed() {
+    void delayingABoardingFlightKeepsItBoardingSoSalesStayClosed() {
         Flight flight = flight(FlightStatus.BOARDING);
         when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
 
         service.delayFlight(flight.getId(), flight.getDepartureTime().plusMinutes(40));
 
-        assertThat(flight.getStatus()).isEqualTo(FlightStatus.DELAYED);
-        assertThat(singleChange().type()).isEqualTo(FlightChangeType.DELAYED);
+        assertThat(flight.getStatus()).isEqualTo(FlightStatus.BOARDING);
+        assertThat(flight.getEstimatedDepartureTime()).isEqualTo(flight.getDepartureTime().plusMinutes(40));
+        assertThat(singleChange().type()).as("passengers are told").isEqualTo(FlightChangeType.DELAYED);
+
+        service.clearDelay(flight.getId());
+        assertThat(flight.getStatus()).as("lifting the delay keeps boarding").isEqualTo(FlightStatus.BOARDING);
     }
 
     @Test
@@ -410,7 +435,7 @@ class FlightServiceImplTest {
                     .hasMessage("Aircraft TC-JFA is not active")
                     .extracting(e -> ((SkylineException) e).getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
         }
-        verify(repository, org.mockito.Mockito.never()).save(any());
+        verify(repository, never()).save(any());
     }
 
     @Test
@@ -420,6 +445,89 @@ class FlightServiceImplTest {
         assertThat(response.getStatus()).isEqualTo(FlightStatus.SCHEDULED);
         assertThat(response.getAvailableSeats()).isEqualTo(180);
         assertThat(response.getCurrency()).isEqualTo("EUR");
+    }
+
+    @Test
+    void anAircraftAlreadyFlyingThenIsRefusedUnderItsLock() {
+        FlightRequest request = request(AIRCRAFT_ID);
+        when(repository.aircraftConflicts(eq(AIRCRAFT_ID), any(),
+                eq(request.departureTime().minusMinutes(30)), eq(request.arrivalTime().plusMinutes(30))))
+                .thenReturn(List.of("SK777"));
+
+        assertThatThrownBy(() -> service.createFlight(request))
+                .isInstanceOf(SkylineException.class)
+                .hasMessageStartingWith("Aircraft TC-JFA already flies SK777")
+                .extracting(e -> ((SkylineException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT);
+        var order = inOrder(aircraftLock, repository);
+        order.verify(aircraftLock).lock(AIRCRAFT_ID);
+        order.verify(repository).aircraftConflicts(any(), any(), any(), any());
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void anUpdateIsCheckedAgainstTheAircraftsOtherFlightsOnly() {
+        Flight flight = flight(FlightStatus.SCHEDULED);
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+
+        service.updateFlight(flight.getId(), request(AIRCRAFT_ID));
+
+        verify(repository).aircraftConflicts(eq(AIRCRAFT_ID), eq(flight.getId()), any(), any());
+    }
+
+    @Test
+    void aDelayedFlightKeptDelayedIsCheckedAtItsExpectedTimes() {
+        Flight flight = flight(FlightStatus.SCHEDULED);
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+        FlightRequest same = new FlightRequest(flight.getFlightNumber(), ROUTE_ID, AIRCRAFT_ID,
+                flight.getDepartureTime(), flight.getArrivalTime(), new BigDecimal("150.00"));
+        flight.setStatus(FlightStatus.DELAYED);
+        flight.setEstimatedDepartureTime(flight.getDepartureTime().plusHours(2));
+
+        service.updateFlight(flight.getId(), same); // only the price changes: the delay stays
+
+        verify(repository).aircraftConflicts(eq(AIRCRAFT_ID), eq(flight.getId()),
+                eq(flight.getDepartureTime().plusHours(2).minusMinutes(30)),
+                eq(flight.getArrivalTime().plusHours(2).plusMinutes(30)));
+    }
+
+    @Test
+    void savingAnUnchangedFlightDoesNotMakeOtherEditsStale() {
+        Flight flight = flight(FlightStatus.SCHEDULED);
+        flight.setEditVersion(3);
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+
+        var response = service.updateFlight(flight.getId(), new FlightRequest(flight.getFlightNumber(), ROUTE_ID,
+                AIRCRAFT_ID, flight.getDepartureTime(), flight.getArrivalTime(), flight.getBasePrice(), 3));
+
+        assertThat(response.getEditVersion()).isEqualTo(3);
+    }
+
+    @Test
+    void anEditMadeFromAStaleCopyIsRefused() {
+        Flight flight = flight(FlightStatus.SCHEDULED);
+        flight.setEditVersion(3); // someone else saved since the form was opened at 2
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+        FlightRequest base = request(AIRCRAFT_ID);
+
+        assertThatThrownBy(() -> service.updateFlight(flight.getId(), new FlightRequest(base.flightNumber(),
+                base.routeId(), base.aircraftId(), base.departureTime(), base.arrivalTime(), base.basePrice(), 2)))
+                .isInstanceOf(SkylineException.class)
+                .hasMessageStartingWith("Someone else changed this flight")
+                .extracting(e -> ((SkylineException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT);
+        verifyNoInteractions(outbox);
+    }
+
+    @Test
+    void anEditFromTheCurrentCopyIsSavedAndCounted() {
+        Flight flight = flight(FlightStatus.SCHEDULED);
+        flight.setEditVersion(3);
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+        FlightRequest base = request(AIRCRAFT_ID);
+
+        var response = service.updateFlight(flight.getId(), new FlightRequest(base.flightNumber(), base.routeId(),
+                base.aircraftId(), base.departureTime(), base.arrivalTime(), base.basePrice(), 3));
+
+        assertThat(response.getEditVersion()).isEqualTo(4);
     }
 
     @Test
@@ -481,7 +589,7 @@ class FlightServiceImplTest {
                 .extracting(e -> ((SkylineException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(flight.getAircraftId()).isEqualTo(AIRCRAFT_ID);
         assertThat(flight.getAvailableSeats()).isEqualTo(150);
-        verify(repository, org.mockito.Mockito.never()).save(any());
+        verify(repository, never()).save(any());
     }
 
     @Test
@@ -540,7 +648,7 @@ class FlightServiceImplTest {
         assertThatThrownBy(() -> service.claimSeat(UUID.randomUUID(), claim))
                 .isInstanceOf(SkylineException.class)
                 .extracting(e -> ((SkylineException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT);
-        verify(repository, org.mockito.Mockito.never()).decrementSeat(any(), any(), any(), any());
+        verify(repository, never()).decrementSeat(any(), any(), any(), any());
     }
 
     @Test
@@ -552,7 +660,7 @@ class FlightServiceImplTest {
 
         assertThatThrownBy(() -> service.claimSeat(flightId, claim))
                 .hasMessage("Seat claim " + claim + " was released");
-        verify(repository, org.mockito.Mockito.never()).decrementSeat(any(), any(), any(), any());
+        verify(repository, never()).decrementSeat(any(), any(), any(), any());
     }
 
     @Test
@@ -598,7 +706,7 @@ class FlightServiceImplTest {
         var page = service.searchFlights("IST", "LHR", LocalDate.now().minusDays(2), PageRequest.of(0, 20));
 
         assertThat(page.getContent()).isEmpty();
-        verify(repository, org.mockito.Mockito.never()).searchFlights(any(), any(), any(), any(), any());
+        verify(repository, never()).searchFlights(any(), any(), any(), any(), any());
     }
 
     static FlightRequest request(UUID aircraftId) {
