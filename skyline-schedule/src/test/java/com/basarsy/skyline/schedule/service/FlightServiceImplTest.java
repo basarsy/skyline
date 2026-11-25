@@ -31,6 +31,7 @@ import com.basarsy.skyline.schedule.entity.FlightStatus;
 import com.basarsy.skyline.schedule.mapper.FlightMapper;
 import com.basarsy.skyline.schedule.mapper.FlightMapperImpl;
 import com.basarsy.skyline.common.outbox.Outbox;
+import com.basarsy.skyline.schedule.repository.AircraftLock;
 import com.basarsy.skyline.schedule.repository.FlightRepository;
 import com.basarsy.skyline.schedule.repository.SeatClaimRepository;
 import java.math.BigDecimal;
@@ -59,6 +60,7 @@ class FlightServiceImplTest {
 
     final FlightRepository repository = mock(FlightRepository.class);
     final SeatClaimRepository seatClaims = mock(SeatClaimRepository.class);
+    final AircraftLock aircraftLock = mock(AircraftLock.class);
     final FleetClient fleetClient = mock(FleetClient.class);
     final RouteClient routeClient = mock(RouteClient.class);
     final CrewClient crewClient = mock(CrewClient.class);
@@ -69,7 +71,7 @@ class FlightServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new FlightServiceImpl(repository, seatClaims, fleetClient, routeClient, crewClient, mapper, outbox,
+        service = new FlightServiceImpl(repository, seatClaims, aircraftLock, fleetClient, routeClient, crewClient, mapper, outbox,
                 new PricingProperties("EUR"));
         when(routeClient.getRoute(ROUTE_ID)).thenReturn(route());
         when(fleetClient.getAircraft(AIRCRAFT_ID)).thenReturn(aircraft(AIRCRAFT_ID, AircraftStatus.ACTIVE));
@@ -441,6 +443,33 @@ class FlightServiceImplTest {
         assertThat(response.getStatus()).isEqualTo(FlightStatus.SCHEDULED);
         assertThat(response.getAvailableSeats()).isEqualTo(180);
         assertThat(response.getCurrency()).isEqualTo("EUR");
+    }
+
+    @Test
+    void anAircraftAlreadyFlyingThenIsRefusedUnderItsLock() {
+        FlightRequest request = request(AIRCRAFT_ID);
+        when(repository.aircraftConflicts(eq(AIRCRAFT_ID), any(), eq(FlightServiceImpl.ENDED_STATUSES),
+                eq(request.departureTime().minusMinutes(30)), eq(request.arrivalTime().plusMinutes(30)), any()))
+                .thenReturn(List.of("SK777"));
+
+        assertThatThrownBy(() -> service.createFlight(request))
+                .isInstanceOf(SkylineException.class)
+                .hasMessageStartingWith("Aircraft TC-JFA already flies SK777")
+                .extracting(e -> ((SkylineException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT);
+        var order = org.mockito.Mockito.inOrder(aircraftLock, repository);
+        order.verify(aircraftLock).lock(AIRCRAFT_ID);
+        order.verify(repository).aircraftConflicts(any(), any(), any(), any(), any(), any());
+        verify(repository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void anUpdateIsCheckedAgainstTheAircraftsOtherFlightsOnly() {
+        Flight flight = flight(FlightStatus.SCHEDULED);
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+
+        service.updateFlight(flight.getId(), request(AIRCRAFT_ID));
+
+        verify(repository).aircraftConflicts(eq(AIRCRAFT_ID), eq(flight.getId()), any(), any(), any(), any());
     }
 
     @Test

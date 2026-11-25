@@ -373,6 +373,29 @@ function endSeatLine(reservation: ReservationResponse) {
   }
 }
 
+/** Like the schedule service: one flight at a time per aircraft, with 30 minutes on the ground in between. */
+function aircraftConflict(
+  plane: { id: string; tailNumber: string },
+  excludeId: string | null,
+  departure: string,
+  arrival: string,
+) {
+  const turnaround = 30 * 60_000
+  const from = Date.parse(`${departure}Z`) - turnaround
+  const until = Date.parse(`${arrival}Z`) + turnaround
+  const other = db.flights
+    .filter((f) => f.aircraft?.id === plane.id && f.id !== excludeId)
+    .filter((f) => f.status !== 'CANCELLED' && f.status !== 'ARRIVED')
+    .filter((f) => Date.parse(`${f.departureTime}Z`) < until && Date.parse(`${f.arrivalTime}Z`) > from)
+    .sort((a, b) => a.departureTime.localeCompare(b.departureTime))[0]
+  return other
+    ? fail(
+        409,
+        `Aircraft ${plane.tailNumber} already flies ${other.flightNumber} then (it needs 30 minutes on the ground between flights)`,
+      )
+    : null
+}
+
 function scopeOf(flight: FlightResponse): RouteScope {
   const route = flight.route
   return route && route.origin.country === route.destination.country ? 'DOMESTIC' : 'INTERNATIONAL'
@@ -605,11 +628,27 @@ export const handlers = [
     return ok(created, 'Aircraft created successfully', 201)
   }),
   http.patch(`${API}/aircraft/:id/status`, async ({ request, params }) => {
-    const { denied } = guard(request, ['STAFF', 'ADMIN'])
+    const { denied, user } = guard(request, ['STAFF', 'ADMIN'])
     if (denied) return denied
     const body = (await request.json()) as { status: AircraftResponse['status'] }
     const target = db.aircraft.find((a) => a.id === params.id)
     if (!target) return fail(404, 'Aircraft not found')
+    // Like the fleet service: RETIRED is final, an admin's call, and refused while the aircraft still flies.
+    if (target.status === 'RETIRED' && body.status !== 'RETIRED')
+      return fail(409, 'A retired aircraft cannot return to service')
+    if (body.status === 'RETIRED' && target.status !== 'RETIRED') {
+      if (user!.role !== 'ADMIN') return fail(403, 'Only an admin can retire an aircraft')
+      const flying = db.flights
+        .filter((f) => f.aircraft?.id === target.id && f.status !== 'CANCELLED' && f.status !== 'ARRIVED')
+        .sort((a, b) => a.departureTime.localeCompare(b.departureTime))
+        .slice(0, 5)
+        .map((f) => f.flightNumber)
+      if (flying.length)
+        return fail(
+          409,
+          `Aircraft ${target.tailNumber} still flies ${flying.join(', ')}: move them to another aircraft or cancel them first`,
+        )
+    }
     target.status = body.status
     return ok(target, 'Aircraft status updated')
   }),
@@ -715,6 +754,8 @@ export const handlers = [
     const plane = db.aircraft.find((a) => a.id === body.aircraftId)
     if (!plane) return fail(404, 'Aircraft not found')
     if (plane.status !== 'ACTIVE') return fail(400, `Aircraft ${plane.tailNumber} is not active`)
+    const busy = aircraftConflict(plane, null, String(body.departureTime), String(body.arrivalTime))
+    if (busy) return busy
     const flight = makeFlight({
       id: uuid(),
       flightNumber: String(body.flightNumber).toUpperCase(),
@@ -739,6 +780,13 @@ export const handlers = [
     const body = (await request.json()) as Record<string, unknown>
     const plane = db.aircraft.find((a) => a.id === body.aircraftId)
     if (plane && plane.status !== 'ACTIVE') return fail(400, `Aircraft ${plane.tailNumber} is not active`)
+    const busy = aircraftConflict(
+      plane ?? flight.aircraft!,
+      flight.id,
+      String(body.departureTime),
+      String(body.arrivalTime),
+    )
+    if (busy) return busy
     // New times are the plan now: like the server, a reschedule lifts the delay.
     const rescheduled = body.departureTime !== flight.departureTime || body.arrivalTime !== flight.arrivalTime
     Object.assign(flight, {

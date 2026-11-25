@@ -31,7 +31,8 @@ class AircraftServiceImplTest {
 
     private final AircraftRepository aircraft = mock(AircraftRepository.class);
     private final AircraftTypeRepository types = mock(AircraftTypeRepository.class);
-    private final AircraftServiceImpl service = new AircraftServiceImpl(aircraft, types, mapper());
+    private final AircraftServiceImpl service = new AircraftServiceImpl(aircraft, types, mapper(),
+            org.mockito.Mockito.mock(com.basarsy.skyline.fleet.client.ScheduleClient.class));
 
     private final AircraftType a320 = type();
 

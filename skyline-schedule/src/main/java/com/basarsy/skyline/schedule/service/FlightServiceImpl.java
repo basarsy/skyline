@@ -18,6 +18,7 @@ import com.basarsy.skyline.schedule.entity.Flight;
 import com.basarsy.skyline.schedule.entity.FlightStatus;
 import com.basarsy.skyline.schedule.mapper.FlightMapper;
 import com.basarsy.skyline.common.outbox.Outbox;
+import com.basarsy.skyline.schedule.repository.AircraftLock;
 import com.basarsy.skyline.schedule.repository.FlightRepository;
 import com.basarsy.skyline.schedule.repository.SeatClaimRepository;
 import com.basarsy.skyline.schedule.repository.FlightSpecifications;
@@ -39,6 +40,7 @@ import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
@@ -67,8 +69,18 @@ public class FlightServiceImpl implements FlightService {
      */
     static final Duration SALES_CLOSE_BEFORE = Duration.ofHours(1);
 
+    /** Least time an aircraft spends on the ground between two flights (deplane, clean, refuel, board). */
+    static final Duration MIN_TURNAROUND = Duration.ofMinutes(30);
+
+    /** Flights that no longer occupy their aircraft. */
+    static final Set<FlightStatus> ENDED_STATUSES = EnumSet.of(FlightStatus.CANCELLED, FlightStatus.ARRIVED);
+
+    /** Stands in for "no flight" when a new flight is checked against the others. */
+    private static final UUID NO_FLIGHT = new UUID(0, 0);
+
     private final FlightRepository flightRepository;
     private final SeatClaimRepository seatClaims;
+    private final AircraftLock aircraftLock;
     private final FleetClient fleetClient;
     private final RouteClient routeClient;
     private final CrewClient crewClient;
@@ -86,6 +98,7 @@ public class FlightServiceImpl implements FlightService {
         if (request.departureTime().isAfter(request.arrivalTime()) || request.departureTime().isEqual(request.arrivalTime())) {
             throw new SkylineException("Departure time must be before arrival time", HttpStatus.BAD_REQUEST);
         }
+        requireAircraftFree(aircraft, NO_FLIGHT, request.departureTime(), request.arrivalTime());
 
         Flight flight = flightMapper.toEntity(request);
         flight.setRouteId(route.id());
@@ -113,6 +126,7 @@ public class FlightServiceImpl implements FlightService {
         if (request.departureTime().isAfter(request.arrivalTime()) || request.departureTime().isEqual(request.arrivalTime())) {
             throw new SkylineException("Departure time must be before arrival time", HttpStatus.BAD_REQUEST);
         }
+        requireAircraftFree(aircraft, id, request.departureTime(), request.arrivalTime());
 
         if (!aircraft.id().equals(flight.getAircraftId())) {
             flight.setAvailableSeats(seatsOnNewAircraft(flight, aircraft));
@@ -181,6 +195,23 @@ public class FlightServiceImpl implements FlightService {
         Snapshot before = Snapshot.of(flight);
         flight.setGate(gate.trim().toUpperCase(Locale.ROOT));
         return saveAndAnnounce(flight, before);
+    }
+
+    /**
+     * An aircraft flies one flight at a time, with {@link #MIN_TURNAROUND} on the ground between two: refused when
+     * another of its flights (other than {@code flightId}, not cancelled or arrived) overlaps. Takes the
+     * aircraft's lock first, so a concurrent booking of the same aircraft waits for this transaction.
+     */
+    private void requireAircraftFree(AircraftResponse aircraft, UUID flightId, LocalDateTime departure,
+            LocalDateTime arrival) {
+        aircraftLock.lock(aircraft.id());
+        List<String> conflicts = flightRepository.aircraftConflicts(aircraft.id(), flightId, ENDED_STATUSES,
+                departure.minus(MIN_TURNAROUND), arrival.plus(MIN_TURNAROUND), PageRequest.of(0, 1));
+        if (!conflicts.isEmpty()) {
+            throw new SkylineException("Aircraft " + aircraft.tailNumber() + " already flies " + conflicts.get(0)
+                    + " then (it needs " + MIN_TURNAROUND.toMinutes() + " minutes on the ground between flights)",
+                    HttpStatus.CONFLICT);
+        }
     }
 
     /** Back on schedule: no expected time, and a DELAYED flight is SCHEDULED again (BOARDING stays). */
@@ -414,6 +445,12 @@ public class FlightServiceImpl implements FlightService {
     @Transactional
     public void incrementSeat(UUID id) {
         flightRepository.incrementSeat(id, FlightStatus.CANCELLED, LocalDateTime.now());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<String> flightsOnAircraft(UUID aircraftId, int limit) {
+        return flightRepository.flightsOnAircraft(aircraftId, ENDED_STATUSES, PageRequest.of(0, limit));
     }
 
     @Override

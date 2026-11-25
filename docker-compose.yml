@@ -207,6 +207,8 @@ services:
     environment:
       <<: [*service-env, *redis-env]
       DATABASE_URL: jdbc:postgresql://fleet-db:5432/skyline_fleet
+      # Asked before an aircraft is retired (no depends_on: schedule depends on fleet, and the call is rare).
+      SCHEDULE_SERVICE_URL: http://schedule-service:8080
     depends_on:
       fleet-db:
         condition: service_healthy

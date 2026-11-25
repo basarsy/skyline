@@ -6,6 +6,7 @@ import com.basarsy.skyline.schedule.dto.FlightResponse;
 import com.basarsy.skyline.schedule.entity.FlightStatus;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -28,6 +29,9 @@ public interface FlightService {
     /** Operations listing: flights of every status, filtered by {@code filter}. */
     Page<FlightResponse> getFlightBoard(FlightBoardFilter filter, Pageable pageable);
     void cancelFlight(UUID id);
+
+    /** Up to {@code limit} flight numbers of the aircraft's flights that are not cancelled or arrived yet. */
+    List<String> flightsOnAircraft(UUID aircraftId, int limit);
 
     void decrementSeat(UUID id);
 

@@ -4,6 +4,7 @@ import com.basarsy.skyline.schedule.entity.Flight;
 import com.basarsy.skyline.schedule.entity.FlightStatus;
 import java.time.LocalDateTime;
 import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -44,6 +45,30 @@ public interface FlightRepository extends JpaRepository<Flight, UUID>, JpaSpecif
             """)
     int decrementSeat(@Param("id") UUID id, @Param("statuses") Collection<FlightStatus> statuses,
             @Param("earliestDeparture") LocalDateTime earliestDeparture, @Param("now") LocalDateTime now);
+
+    /**
+     * Flight numbers of the aircraft's other flights (not {@code excludeId}, not in {@code ended}) whose block
+     * overlaps {@code departure → arrival}, each block widened by {@code turnaround} so the aircraft has time on
+     * the ground in between.
+     */
+    @Query("""
+            SELECT f.flightNumber FROM Flight f
+            WHERE f.aircraftId = :aircraftId AND f.id <> :excludeId AND f.status NOT IN :ended
+              AND f.departureTime < :busyUntil AND f.arrivalTime > :busyFrom
+            ORDER BY f.departureTime
+            """)
+    List<String> aircraftConflicts(@Param("aircraftId") UUID aircraftId, @Param("excludeId") UUID excludeId,
+            @Param("ended") Collection<FlightStatus> ended, @Param("busyFrom") LocalDateTime busyFrom,
+            @Param("busyUntil") LocalDateTime busyUntil, Pageable pageable);
+
+    /** Flight numbers of the aircraft's flights not in {@code ended}, earliest first. */
+    @Query("""
+            SELECT f.flightNumber FROM Flight f
+            WHERE f.aircraftId = :aircraftId AND f.status NOT IN :ended
+            ORDER BY f.departureTime
+            """)
+    List<String> flightsOnAircraft(@Param("aircraftId") UUID aircraftId,
+            @Param("ended") Collection<FlightStatus> ended, Pageable pageable);
 
     /** Gives a seat back. A cancelled flight already had its seats reset to capacity, so it is left alone. */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
