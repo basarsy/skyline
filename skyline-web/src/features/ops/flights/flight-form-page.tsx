@@ -90,6 +90,9 @@ function FlightForm({ flight, routes }: { flight?: FlightResponse; routes: Route
   const save = useSaveFlight(flight?.id)
   const [serverError, setServerError] = React.useState<string | null>(null)
   const arrivalTouched = React.useRef(!!flight)
+  // The version the form's values were taken from, kept from mount: a background refetch must not move it on
+  // while the inputs still hold the old values (that would hide someone else's edit from the server's check).
+  const [openedAtVersion] = React.useState(flight?.editVersion)
   const schema = React.useMemo(() => buildSchema(routes), [routes])
 
   const form = useForm<Values>({
@@ -134,7 +137,7 @@ function FlightForm({ flight, routes }: { flight?: FlightResponse; routes: Route
         arrivalTime: airportLocalToApi(values.arrivalLocal, destinationZone),
         basePrice: values.basePrice,
         // The version this form was opened at: the server refuses the edit if someone saved one since.
-        ...(flight && { editVersion: flight.editVersion }),
+        ...(openedAtVersion !== undefined && { editVersion: openedAtVersion }),
       })
       navigate(`/ops/flights/${result.data.id}`)
     } catch (error) {

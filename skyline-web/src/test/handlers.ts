@@ -386,7 +386,12 @@ function aircraftConflict(
   const other = db.flights
     .filter((f) => f.aircraft?.id === plane.id && f.id !== excludeId)
     .filter((f) => f.status !== 'CANCELLED' && f.status !== 'ARRIVED')
-    .filter((f) => Date.parse(`${f.departureTime}Z`) < until && Date.parse(`${f.arrivalTime}Z`) > from)
+    // A delayed flight holds the aircraft from its expected departure and lands as much later.
+    .filter(
+      (f) =>
+        Date.parse(`${f.estimatedDepartureTime ?? f.departureTime}Z`) < until &&
+        Date.parse(`${f.estimatedArrivalTime ?? f.arrivalTime}Z`) > from,
+    )
     .sort((a, b) => a.departureTime.localeCompare(b.departureTime))[0]
   return other
     ? fail(
@@ -781,20 +786,16 @@ export const handlers = [
     if (typeof body.editVersion === 'number' && body.editVersion !== flight.editVersion)
       return fail(409, 'Someone else changed this flight since you opened it: reload it and make your change again')
     const plane = db.aircraft.find((a) => a.id === body.aircraftId)
-    if (plane && plane.status !== 'ACTIVE') return fail(400, `Aircraft ${plane.tailNumber} is not active`)
-    const busy = aircraftConflict(
-      plane ?? flight.aircraft!,
-      flight.id,
-      String(body.departureTime),
-      String(body.arrivalTime),
-    )
+    if (!plane) return fail(404, 'Aircraft not found')
+    if (plane.status !== 'ACTIVE') return fail(400, `Aircraft ${plane.tailNumber} is not active`)
+    const busy = aircraftConflict(plane, flight.id, String(body.departureTime), String(body.arrivalTime))
     if (busy) return busy
     // New times are the plan now: like the server, a reschedule lifts the delay.
     const rescheduled = body.departureTime !== flight.departureTime || body.arrivalTime !== flight.arrivalTime
     Object.assign(flight, {
       flightNumber: String(body.flightNumber),
       route: db.routes.find((r) => r.id === body.routeId) ?? flight.route,
-      aircraft: plane ?? flight.aircraft,
+      aircraft: plane,
       departureTime: String(body.departureTime),
       arrivalTime: String(body.arrivalTime),
       basePrice: Number(body.basePrice),

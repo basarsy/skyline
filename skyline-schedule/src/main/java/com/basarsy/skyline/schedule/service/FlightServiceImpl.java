@@ -25,6 +25,7 @@ import com.basarsy.skyline.schedule.repository.FlightSpecifications;
 import com.basarsy.skyline.schedule.event.FlightCancelledEvent;
 import com.basarsy.skyline.schedule.event.FlightChangeType;
 import com.basarsy.skyline.schedule.event.FlightChangedEvent;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -130,21 +131,26 @@ public class FlightServiceImpl implements FlightService {
         if (request.departureTime().isAfter(request.arrivalTime()) || request.departureTime().isEqual(request.arrivalTime())) {
             throw new SkylineException("Departure time must be before arrival time", HttpStatus.BAD_REQUEST);
         }
-        requireAircraftFree(aircraft, id, request.departureTime(), request.arrivalTime());
-
         if (!aircraft.id().equals(flight.getAircraftId())) {
             flight.setAvailableSeats(seatsOnNewAircraft(flight, aircraft));
         }
 
         Snapshot before = Snapshot.of(flight);
+        Plan planBefore = Plan.of(flight);
         flightMapper.updateEntity(flight, request);
         flight.setRouteId(route.id());
         flight.setAircraftId(aircraft.id());
-        flight.setEditVersion(flight.getEditVersion() + 1);
         if (before.timesDifferFrom(flight)) {
             // The new times are the plan now: a delay against the old ones no longer applies.
             liftDelay(flight);
         }
+        if (!Plan.of(flight).equals(planBefore)) {
+            // Only a real change makes other open edit forms stale (saving an unchanged form does not).
+            flight.setEditVersion(flight.getEditVersion() + 1);
+        }
+        // Last before saving: the aircraft's lock is held from here to commit, with no remote call in between
+        // other than the response's enrichment.
+        requireAircraftFree(aircraft, id, effectiveDeparture(flight), effectiveArrival(flight));
 
         return saveAndAnnounce(flight, before);
     }
@@ -210,12 +216,34 @@ public class FlightServiceImpl implements FlightService {
     private void requireAircraftFree(AircraftResponse aircraft, UUID flightId, LocalDateTime departure,
             LocalDateTime arrival) {
         aircraftLock.lock(aircraft.id());
-        List<String> conflicts = flightRepository.aircraftConflicts(aircraft.id(), flightId, ENDED_STATUSES,
-                departure.minus(MIN_TURNAROUND), arrival.plus(MIN_TURNAROUND), PageRequest.of(0, 1));
+        List<String> conflicts = flightRepository.aircraftConflicts(aircraft.id(), flightId,
+                departure.minus(MIN_TURNAROUND), arrival.plus(MIN_TURNAROUND));
         if (!conflicts.isEmpty()) {
             throw new SkylineException("Aircraft " + aircraft.tailNumber() + " already flies " + conflicts.get(0)
                     + " then (it needs " + MIN_TURNAROUND.toMinutes() + " minutes on the ground between flights)",
                     HttpStatus.CONFLICT);
+        }
+    }
+
+    /** When the flight now expects to leave: the delay's estimate, else the scheduled time. */
+    private static LocalDateTime effectiveDeparture(Flight flight) {
+        return flight.getEstimatedDepartureTime() != null ? flight.getEstimatedDepartureTime()
+                : flight.getDepartureTime();
+    }
+
+    /** The scheduled arrival moved by the delay (the same shift the response's estimatedArrivalTime shows). */
+    private static LocalDateTime effectiveArrival(Flight flight) {
+        return flight.getArrivalTime().plus(Duration.between(flight.getDepartureTime(), effectiveDeparture(flight)));
+    }
+
+    /** What an edit (PUT) can change: an edit that changes none of it is not counted in editVersion. */
+    private record Plan(String flightNumber, UUID routeId, UUID aircraftId, LocalDateTime departureTime,
+            LocalDateTime arrivalTime, BigDecimal basePrice) {
+
+        static Plan of(Flight flight) {
+            return new Plan(flight.getFlightNumber(), flight.getRouteId(), flight.getAircraftId(),
+                    flight.getDepartureTime(), flight.getArrivalTime(),
+                    flight.getBasePrice() == null ? null : flight.getBasePrice().stripTrailingZeros());
         }
     }
 

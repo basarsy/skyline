@@ -47,19 +47,21 @@ public interface FlightRepository extends JpaRepository<Flight, UUID>, JpaSpecif
             @Param("earliestDeparture") LocalDateTime earliestDeparture, @Param("now") LocalDateTime now);
 
     /**
-     * Flight numbers of the aircraft's other flights (not {@code excludeId}, not in {@code ended}) whose block
-     * overlaps {@code departure → arrival}, each block widened by {@code turnaround} so the aircraft has time on
-     * the ground in between.
+     * The flight number of the aircraft's first other flight (not {@code excludeId}, not cancelled or arrived)
+     * that occupies it within {@code busyFrom → busyUntil} (the caller widens its own block by the turnaround).
+     * A delayed flight occupies the aircraft from its expected departure, and lands as much later.
      */
-    @Query("""
-            SELECT f.flightNumber FROM Flight f
-            WHERE f.aircraftId = :aircraftId AND f.id <> :excludeId AND f.status NOT IN :ended
-              AND f.departureTime < :busyUntil AND f.arrivalTime > :busyFrom
-            ORDER BY f.departureTime
+    @Query(nativeQuery = true, value = """
+            SELECT f.flight_number FROM flights f
+            WHERE f.aircraft_id = :aircraftId AND f.id <> :excludeId AND f.status NOT IN ('CANCELLED', 'ARRIVED')
+              AND COALESCE(f.estimated_departure_time, f.departure_time) < :busyUntil
+              AND f.arrival_time + (COALESCE(f.estimated_departure_time, f.departure_time) - f.departure_time)
+                  > :busyFrom
+            ORDER BY f.departure_time
+            LIMIT 1
             """)
     List<String> aircraftConflicts(@Param("aircraftId") UUID aircraftId, @Param("excludeId") UUID excludeId,
-            @Param("ended") Collection<FlightStatus> ended, @Param("busyFrom") LocalDateTime busyFrom,
-            @Param("busyUntil") LocalDateTime busyUntil, Pageable pageable);
+            @Param("busyFrom") LocalDateTime busyFrom, @Param("busyUntil") LocalDateTime busyUntil);
 
     /** Flight numbers of the aircraft's flights not in {@code ended}, earliest first. */
     @Query("""
