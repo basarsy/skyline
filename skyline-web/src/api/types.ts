@@ -115,6 +115,8 @@ export interface FlightResponse {
   currency: string
   createdAt: LocalDateTime
   updatedAt: LocalDateTime
+  /** Edits of the flight's plan so far: sent back with an edit (FlightRequest.editVersion). */
+  editVersion: number
 }
 
 export interface PassengerResponse {
@@ -392,6 +394,8 @@ export interface FlightRequest {
   departureTime: LocalDateTime
   arrivalTime: LocalDateTime
   basePrice: number
+  /** On an edit: the editVersion the edit was made from; refused (409) if someone has edited since. */
+  editVersion?: number
 }
 export interface UpdateFlightStatusRequest {
   status: FlightStatus

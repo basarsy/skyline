@@ -778,6 +778,8 @@ export const handlers = [
     if (flight.status !== 'SCHEDULED' && flight.status !== 'DELAYED')
       return fail(400, `Cannot update flight in status: ${flight.status}`)
     const body = (await request.json()) as Record<string, unknown>
+    if (typeof body.editVersion === 'number' && body.editVersion !== flight.editVersion)
+      return fail(409, 'Someone else changed this flight since you opened it: reload it and make your change again')
     const plane = db.aircraft.find((a) => a.id === body.aircraftId)
     if (plane && plane.status !== 'ACTIVE') return fail(400, `Aircraft ${plane.tailNumber} is not active`)
     const busy = aircraftConflict(
@@ -797,6 +799,7 @@ export const handlers = [
       arrivalTime: String(body.arrivalTime),
       basePrice: Number(body.basePrice),
       updatedAt: now(),
+      editVersion: flight.editVersion + 1,
       ...(rescheduled && {
         status: flight.status === 'DELAYED' ? 'SCHEDULED' : flight.status,
         estimatedDepartureTime: null,

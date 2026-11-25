@@ -118,6 +118,10 @@ public class FlightServiceImpl implements FlightService {
         if (flight.getStatus() != FlightStatus.SCHEDULED && flight.getStatus() != FlightStatus.DELAYED) {
             throw new SkylineException("Cannot update flight in status: " + flight.getStatus(), HttpStatus.BAD_REQUEST);
         }
+        if (request.editVersion() != null && request.editVersion() != flight.getEditVersion()) {
+            throw new SkylineException("Someone else changed this flight since you opened it: reload it and make "
+                    + "your change again", HttpStatus.CONFLICT);
+        }
 
         RouteResponse route = routeClient.getRoute(request.routeId());
         
@@ -136,6 +140,7 @@ public class FlightServiceImpl implements FlightService {
         flightMapper.updateEntity(flight, request);
         flight.setRouteId(route.id());
         flight.setAircraftId(aircraft.id());
+        flight.setEditVersion(flight.getEditVersion() + 1);
         if (before.timesDifferFrom(flight)) {
             // The new times are the plan now: a delay against the old ones no longer applies.
             liftDelay(flight);

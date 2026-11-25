@@ -133,6 +133,8 @@ function FlightForm({ flight, routes }: { flight?: FlightResponse; routes: Route
         departureTime: airportLocalToApi(values.departureLocal, originZone),
         arrivalTime: airportLocalToApi(values.arrivalLocal, destinationZone),
         basePrice: values.basePrice,
+        // The version this form was opened at: the server refuses the edit if someone saved one since.
+        ...(flight && { editVersion: flight.editVersion }),
       })
       navigate(`/ops/flights/${result.data.id}`)
     } catch (error) {

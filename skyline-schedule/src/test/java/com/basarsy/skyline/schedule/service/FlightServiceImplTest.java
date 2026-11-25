@@ -473,6 +473,34 @@ class FlightServiceImplTest {
     }
 
     @Test
+    void anEditMadeFromAStaleCopyIsRefused() {
+        Flight flight = flight(FlightStatus.SCHEDULED);
+        flight.setEditVersion(3); // someone else saved since the form was opened at 2
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+        FlightRequest base = request(AIRCRAFT_ID);
+
+        assertThatThrownBy(() -> service.updateFlight(flight.getId(), new FlightRequest(base.flightNumber(),
+                base.routeId(), base.aircraftId(), base.departureTime(), base.arrivalTime(), base.basePrice(), 2)))
+                .isInstanceOf(SkylineException.class)
+                .hasMessageStartingWith("Someone else changed this flight")
+                .extracting(e -> ((SkylineException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT);
+        verifyNoInteractions(outbox);
+    }
+
+    @Test
+    void anEditFromTheCurrentCopyIsSavedAndCounted() {
+        Flight flight = flight(FlightStatus.SCHEDULED);
+        flight.setEditVersion(3);
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+        FlightRequest base = request(AIRCRAFT_ID);
+
+        var response = service.updateFlight(flight.getId(), new FlightRequest(base.flightNumber(), base.routeId(),
+                base.aircraftId(), base.departureTime(), base.arrivalTime(), base.basePrice(), 3));
+
+        assertThat(response.getEditVersion()).isEqualTo(4);
+    }
+
+    @Test
     void updateRejectsAircraftThatIsNotActive() {
         Flight flight = flight(FlightStatus.SCHEDULED);
         when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));

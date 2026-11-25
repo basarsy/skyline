@@ -52,6 +52,10 @@ public class Flight extends BaseEntity {
     @Column(length = 8)
     private String gate;
 
+    /** Edits of the plan so far (PUT): what a stale edit is detected by. Bookings, delays and gates leave it. */
+    @Column(name = "edit_version", nullable = false)
+    private int editVersion;
+
     @Version
     private Long version;
 }
