@@ -11,12 +11,20 @@ export class ApiError extends Error {
   readonly status: number
   /** Field path (e.g. "passenger.lastName") → message, from the envelope's `errors[]`. */
   readonly fieldErrors: Record<string, string>
+  /** The request's trace id (the gateway's X-Trace-Id): what support looks the failure up by. */
+  readonly traceId: string | null
 
-  constructor(status: number, message: string, fieldErrors: Record<string, string> = {}) {
+  constructor(
+    status: number,
+    message: string,
+    fieldErrors: Record<string, string> = {},
+    traceId: string | null = null,
+  ) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.fieldErrors = fieldErrors
+    this.traceId = traceId
   }
 
   get hasFieldErrors() {
@@ -95,6 +103,7 @@ export async function readEnvelopeResult<T>(response: Response): Promise<ApiResu
     response.status,
     envelope?.message?.trim() || fallbackMessage(response.status),
     parseFieldErrors(envelope?.errors),
+    response.headers.get('X-Trace-Id'),
   )
 }
 

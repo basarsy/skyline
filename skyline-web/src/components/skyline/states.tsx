@@ -58,13 +58,26 @@ export function ErrorState({
   className?: string
 }) {
   const message = isApiError(error) || error instanceof Error ? error.message : 'Please try again.'
+  // A server fault: the trace id lets support find exactly this request in every service's logs.
+  const reference = isApiError(error) && error.status >= 500 ? error.traceId : null
   return (
     <div role="alert">
       <StateFrame
         className={className}
         icon={<CloudOff strokeWidth={1.75} aria-hidden />}
         title={title}
-        description={message}
+        description={
+          reference ? (
+            <>
+              {message}
+              <span className="mt-2 block text-caption">
+                Reference <span className="font-mono break-all select-all">{reference}</span>
+              </span>
+            </>
+          ) : (
+            message
+          )
+        }
         action={
           onRetry && (
             <Button variant="outline" onClick={onRetry}>
