@@ -5,6 +5,7 @@ import com.basarsy.skyline.schedule.dto.FlightBoardFilter;
 import com.basarsy.skyline.schedule.dto.FlightDelayRequest;
 import com.basarsy.skyline.schedule.dto.FlightGateRequest;
 import com.basarsy.skyline.schedule.dto.FlightRequest;
+import com.basarsy.skyline.schedule.dto.OverlapRequest;
 import com.basarsy.skyline.schedule.dto.FlightResponse;
 import com.basarsy.skyline.schedule.dto.UpdateFlightStatusRequest;
 import com.basarsy.skyline.schedule.entity.FlightStatus;
@@ -144,6 +145,17 @@ public class FlightController {
     @PreAuthorize("hasRole('SERVICE')")
     public ApiResponse<List<String>> flightsOnAircraft(@PathVariable UUID aircraftId) {
         return ApiResponse.success("Flights on the aircraft", flightService.flightsOnAircraft(aircraftId, 5));
+    }
+
+    /**
+     * Flight numbers of the given flights that are not cancelled or arrived and occupy their crew in the window
+     * (a delayed flight at its expected times): the crew service's overlap check, in one call.
+     */
+    @PostMapping("/overlapping")
+    @PreAuthorize("hasRole('SERVICE')")
+    public ApiResponse<List<String>> overlapping(@Valid @RequestBody OverlapRequest request) {
+        return ApiResponse.success("Overlapping flights",
+                flightService.overlapping(request.flightIds(), request.from(), request.until()));
     }
 
     /**

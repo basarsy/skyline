@@ -487,6 +487,12 @@ public class FlightServiceImpl implements FlightService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<String> overlapping(List<UUID> flightIds, LocalDateTime from, LocalDateTime until) {
+        return flightIds.isEmpty() ? List.of() : flightRepository.overlapping(flightIds, from, until);
+    }
+
+    @Override
     @Transactional
     public void claimSeat(UUID flightId, UUID claimId) {
         if (!seatClaims.insert(claimId, flightId)) {

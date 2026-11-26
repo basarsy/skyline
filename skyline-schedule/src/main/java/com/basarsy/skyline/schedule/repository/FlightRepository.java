@@ -63,6 +63,22 @@ public interface FlightRepository extends JpaRepository<Flight, UUID>, JpaSpecif
     List<String> aircraftConflicts(@Param("aircraftId") UUID aircraftId, @Param("excludeId") UUID excludeId,
             @Param("busyFrom") LocalDateTime busyFrom, @Param("busyUntil") LocalDateTime busyUntil);
 
+    /**
+     * Flight numbers of the flights among {@code ids} (not cancelled or arrived) that occupy their crew within
+     * {@code busyFrom → busyUntil}, earliest first; a delayed flight at its expected times, like
+     * {@link #aircraftConflicts}.
+     */
+    @Query(nativeQuery = true, value = """
+            SELECT f.flight_number FROM flights f
+            WHERE f.id IN (:ids) AND f.status NOT IN ('CANCELLED', 'ARRIVED')
+              AND COALESCE(f.estimated_departure_time, f.departure_time) < :busyUntil
+              AND f.arrival_time + (COALESCE(f.estimated_departure_time, f.departure_time) - f.departure_time)
+                  > :busyFrom
+            ORDER BY f.departure_time
+            """)
+    List<String> overlapping(@Param("ids") Collection<UUID> ids, @Param("busyFrom") LocalDateTime busyFrom,
+            @Param("busyUntil") LocalDateTime busyUntil);
+
     /** Flight numbers of the aircraft's flights not in {@code ended}, earliest first. */
     @Query("""
             SELECT f.flightNumber FROM Flight f

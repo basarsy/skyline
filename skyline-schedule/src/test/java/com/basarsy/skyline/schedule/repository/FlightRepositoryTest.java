@@ -180,6 +180,23 @@ class FlightRepositoryTest {
     }
 
     @Test
+    void overlappingFindsWhichOfTheGivenFlightsOccupyTheWindow() {
+        Flight morning = save("SK1", ROUTE, DAY.plusHours(6), FlightStatus.SCHEDULED);   // 06:00 → 10:00
+        Flight noon = save("SK2", ROUTE, DAY.plusHours(11), FlightStatus.DELAYED);       // 11:00 → 15:00
+        noon.setEstimatedDepartureTime(DAY.plusHours(13));                                 // now 13:00 → 17:00
+        repository.saveAndFlush(noon);
+        Flight cancelled = save("SK3", ROUTE, DAY.plusHours(16), FlightStatus.CANCELLED);
+        save("SK4", ROUTE, DAY.plusHours(16), FlightStatus.SCHEDULED); // overlaps, but not one of the ids
+        var ids = List.of(morning.getId(), noon.getId(), cancelled.getId());
+
+        assertThat(repository.overlapping(ids, DAY.plusHours(16), DAY.plusHours(20)))
+                .as("the delayed flight lands at 17:00").containsExactly("SK2");
+        assertThat(repository.overlapping(ids, DAY.plusHours(5), DAY.plusHours(12)))
+                .as("SK2 no longer leaves at 11:00").containsExactly("SK1");
+        assertThat(repository.overlapping(ids, DAY.plusHours(18), DAY.plusHours(22))).isEmpty();
+    }
+
+    @Test
     void aDelayedFlightOccupiesItsAircraftUntilItsLaterLanding() {
         Flight flight = save("SK1", ROUTE, DAY.plusHours(10), FlightStatus.DELAYED); // 10:00 → 14:00
         flight.setEstimatedDepartureTime(DAY.plusHours(13)); // now expected to land at 17:00
