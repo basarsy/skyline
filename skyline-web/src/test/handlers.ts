@@ -717,7 +717,7 @@ export const handlers = [
     const { denied } = guard(request, ['STAFF', 'ADMIN'])
     if (denied) return denied
     const flight = findFlight(String(params.flightId))
-    if (flight && !['SCHEDULED', 'DELAYED'].includes(flight.status))
+    if (flight && !['SCHEDULED', 'DELAYED', 'BOARDING'].includes(flight.status))
       return fail(409, `Crew can't be removed from a flight that is ${flight.status}`)
     const manifest = db.manifests.get(String(params.flightId)) ?? []
     db.manifests.set(

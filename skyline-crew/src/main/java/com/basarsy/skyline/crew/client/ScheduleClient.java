@@ -1,7 +1,6 @@
 package com.basarsy.skyline.crew.client;
 
 import com.basarsy.skyline.crew.client.dto.FlightResponse;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.cloud.openfeign.FeignClient;
@@ -17,11 +16,11 @@ public interface ScheduleClient {
     FlightResponse getFlight(@PathVariable("id") UUID id);
 
     /**
-     * Flight numbers of the given flights that are not cancelled or arrived and occupy their crew between
-     * {@code from} and {@code until} (a delayed flight at its expected times). One call for a whole roster.
+     * Flight numbers of the given flights (at most 1000) that are not cancelled or arrived and occupy their crew
+     * while {@code flightId} flies (delayed flights at their expected times, worked out by the schedule service).
      */
     @PostMapping("/api/v1/flights/overlapping")
     List<String> overlapping(@RequestBody Overlap request);
 
-    record Overlap(List<UUID> flightIds, LocalDateTime from, LocalDateTime until) {}
+    record Overlap(UUID flightId, List<UUID> flightIds) {}
 }

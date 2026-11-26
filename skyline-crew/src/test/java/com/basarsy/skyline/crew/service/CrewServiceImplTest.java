@@ -59,12 +59,9 @@ class CrewServiceImplTest {
     }
 
     @Test
-    void theWholeRosterIsCheckedInOneCallAtTheFlightsExpectedTimesUnderTheMembersLock() {
+    void theRosterIsCheckedAgainstTheFlightByIdUnderTheMembersLock() {
         CrewMember captain = crewMember(CrewRole.CAPTAIN);
-        UUID flightId = UUID.randomUUID();
-        when(scheduleClient.getFlight(flightId)).thenReturn(FlightResponse.builder().id(flightId)
-                .status(FlightStatus.DELAYED).departureTime(DEPARTURE).arrivalTime(DEPARTURE.plusHours(4))
-                .estimatedDepartureTime(DEPARTURE.plusHours(2)).estimatedArrivalTime(DEPARTURE.plusHours(6)).build());
+        UUID flightId = stubFlight(FlightStatus.DELAYED, DEPARTURE);
         UUID earlier = UUID.randomUUID();
         UUID later = UUID.randomUUID();
         when(assignments.findByCrewMemberId(captain.getId()))
@@ -75,10 +72,25 @@ class CrewServiceImplTest {
 
         var order = inOrder(crewLock, scheduleClient);
         order.verify(crewLock).lock(captain.getId());
-        order.verify(scheduleClient).overlapping(new ScheduleClient.Overlap(List.of(earlier, later),
-                DEPARTURE.plusHours(2), DEPARTURE.plusHours(6)));
+        order.verify(scheduleClient).overlapping(new ScheduleClient.Overlap(flightId, List.of(earlier, later)));
         verify(scheduleClient, never()).getFlight(earlier);
         verify(assignments).save(any());
+    }
+
+    @Test
+    void aLongRosterIsCheckedInBoundedBatches() {
+        CrewMember captain = crewMember(CrewRole.CAPTAIN);
+        UUID flightId = stubFlight(FlightStatus.SCHEDULED, DEPARTURE);
+        List<FlightCrew> history = java.util.stream.IntStream.range(0, 2500)
+                .mapToObj(i -> assignment(UUID.randomUUID(), captain)).toList();
+        when(assignments.findByCrewMemberId(captain.getId())).thenReturn(history);
+        when(assignments.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.assignCrewToFlight(flightId, new FlightCrewAssignmentRequest(captain.getId(), CrewRole.CAPTAIN));
+
+        var requests = org.mockito.ArgumentCaptor.forClass(ScheduleClient.Overlap.class);
+        verify(scheduleClient, org.mockito.Mockito.times(3)).overlapping(requests.capture());
+        assertThat(requests.getAllValues()).extracting(r -> r.flightIds().size()).containsExactly(1000, 1000, 500);
     }
 
     @Test
@@ -125,18 +137,18 @@ class CrewServiceImplTest {
     }
 
     @Test
-    void theManifestIsFixedFromBoardingOn() {
+    void theManifestIsFixedOnceTheFlightHasLeft() {
+        UUID departed = stubFlight(FlightStatus.DEPARTED, DEPARTURE);
         UUID boarding = stubFlight(FlightStatus.BOARDING, DEPARTURE);
-        UUID scheduled = stubFlight(FlightStatus.SCHEDULED, DEPARTURE);
         UUID member = UUID.randomUUID();
 
-        assertThatThrownBy(() -> service.removeCrewFromFlight(boarding, member))
+        assertThatThrownBy(() -> service.removeCrewFromFlight(departed, member))
                 .isInstanceOfSatisfying(SkylineException.class,
                         ex -> assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT));
-        verify(assignments, never()).deleteByFlightIdAndCrewMemberId(boarding, member);
+        verify(assignments, never()).deleteByFlightIdAndCrewMemberId(departed, member);
 
-        service.removeCrewFromFlight(scheduled, member);
-        verify(assignments).deleteByFlightIdAndCrewMemberId(scheduled, member);
+        service.removeCrewFromFlight(boarding, member); // a mistake made while boarding can still be undone
+        verify(assignments).deleteByFlightIdAndCrewMemberId(boarding, member);
     }
 
     private CrewMember crewMember(CrewRole role) {

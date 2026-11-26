@@ -148,14 +148,14 @@ public class FlightController {
     }
 
     /**
-     * Flight numbers of the given flights that are not cancelled or arrived and occupy their crew in the window
-     * (a delayed flight at its expected times): the crew service's overlap check, in one call.
+     * Flight numbers of the given flights that are not cancelled or arrived and occupy their crew while the target
+     * flight flies (delayed flights at their expected times): the crew service's overlap check.
      */
     @PostMapping("/overlapping")
     @PreAuthorize("hasRole('SERVICE')")
     public ApiResponse<List<String>> overlapping(@Valid @RequestBody OverlapRequest request) {
         return ApiResponse.success("Overlapping flights",
-                flightService.overlapping(request.flightIds(), request.from(), request.until()));
+                flightService.overlapping(request.flightId(), request.flightIds()));
     }
 
     /**

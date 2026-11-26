@@ -16,6 +16,8 @@ public class CrewLock {
     private final JdbcTemplate jdbc;
 
     public void lock(UUID crewMemberId) {
-        jdbc.query("SELECT pg_advisory_xact_lock(hashtext(?))", rs -> null, "crew:" + crewMemberId);
+        // A 64-bit key from the UUID's own bits: a 32-bit hash would let unrelated crew members wait on each other.
+        jdbc.query("SELECT pg_advisory_xact_lock(?)", rs -> null,
+                crewMemberId.getMostSignificantBits() ^ crewMemberId.getLeastSignificantBits());
     }
 }

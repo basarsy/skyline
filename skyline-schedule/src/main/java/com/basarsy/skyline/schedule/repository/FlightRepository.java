@@ -47,35 +47,33 @@ public interface FlightRepository extends JpaRepository<Flight, UUID>, JpaSpecif
             @Param("earliestDeparture") LocalDateTime earliestDeparture, @Param("now") LocalDateTime now);
 
     /**
-     * The flight number of the aircraft's first other flight (not {@code excludeId}, not cancelled or arrived)
-     * that occupies it within {@code busyFrom → busyUntil} (the caller widens its own block by the turnaround).
-     * A delayed flight occupies the aircraft from its expected departure, and lands as much later.
+     * The one rule for when a flight occupies its aircraft and crew, shared by both checks below: from its expected
+     * departure (the delay's estimate, else the scheduled time) to its arrival moved as much, unless it is
+     * cancelled or arrived. Takes :busyFrom and :busyUntil.
      */
-    @Query(nativeQuery = true, value = """
-            SELECT f.flight_number FROM flights f
-            WHERE f.aircraft_id = :aircraftId AND f.id <> :excludeId AND f.status NOT IN ('CANCELLED', 'ARRIVED')
+    String OCCUPIES_WINDOW = """
+            f.status NOT IN ('CANCELLED', 'ARRIVED')
               AND COALESCE(f.estimated_departure_time, f.departure_time) < :busyUntil
               AND f.arrival_time + (COALESCE(f.estimated_departure_time, f.departure_time) - f.departure_time)
                   > :busyFrom
-            ORDER BY f.departure_time
-            LIMIT 1
-            """)
+            """;
+
+    /**
+     * The flight number of the aircraft's first other flight (not {@code excludeId}) that occupies it within
+     * {@code busyFrom → busyUntil} ({@link #OCCUPIES_WINDOW}; the caller widens its own block by the turnaround).
+     */
+    @Query(nativeQuery = true, value = "SELECT f.flight_number FROM flights f"
+            + " WHERE f.aircraft_id = :aircraftId AND f.id <> :excludeId AND " + OCCUPIES_WINDOW
+            + " ORDER BY f.departure_time LIMIT 1")
     List<String> aircraftConflicts(@Param("aircraftId") UUID aircraftId, @Param("excludeId") UUID excludeId,
             @Param("busyFrom") LocalDateTime busyFrom, @Param("busyUntil") LocalDateTime busyUntil);
 
     /**
-     * Flight numbers of the flights among {@code ids} (not cancelled or arrived) that occupy their crew within
-     * {@code busyFrom → busyUntil}, earliest first; a delayed flight at its expected times, like
-     * {@link #aircraftConflicts}.
+     * Flight numbers of the flights among {@code ids} that occupy their crew within {@code busyFrom → busyUntil}
+     * ({@link #OCCUPIES_WINDOW}), earliest first.
      */
-    @Query(nativeQuery = true, value = """
-            SELECT f.flight_number FROM flights f
-            WHERE f.id IN (:ids) AND f.status NOT IN ('CANCELLED', 'ARRIVED')
-              AND COALESCE(f.estimated_departure_time, f.departure_time) < :busyUntil
-              AND f.arrival_time + (COALESCE(f.estimated_departure_time, f.departure_time) - f.departure_time)
-                  > :busyFrom
-            ORDER BY f.departure_time
-            """)
+    @Query(nativeQuery = true, value = "SELECT f.flight_number FROM flights f WHERE f.id IN (:ids) AND "
+            + OCCUPIES_WINDOW + " ORDER BY f.departure_time")
     List<String> overlapping(@Param("ids") Collection<UUID> ids, @Param("busyFrom") LocalDateTime busyFrom,
             @Param("busyUntil") LocalDateTime busyUntil);
 

@@ -193,11 +193,8 @@ function StatusCard({ flight, manifest }: { flight: FlightResponse; manifest: Fl
   )
 }
 
-/** Statuses in which a delay can be set or lifted (the schedule service's rule). */
-const DELAYABLE: readonly FlightStatus[] = ['SCHEDULED', 'DELAYED', 'BOARDING']
-/** Statuses in which crew can be assigned, and removed (the crew service's rules). */
-const ROSTERABLE: readonly FlightStatus[] = ['SCHEDULED', 'DELAYED', 'BOARDING']
-const CREW_REMOVABLE: readonly FlightStatus[] = ['SCHEDULED', 'DELAYED']
+/** Until the flight departs: a delay can be set or lifted, and crew assigned or removed (the services' rules). */
+const BEFORE_DEPARTURE: readonly FlightStatus[] = ['SCHEDULED', 'DELAYED', 'BOARDING']
 const GATE_CLOSED: readonly FlightStatus[] = ['DEPARTED', 'ARRIVED', 'CANCELLED']
 const DELAY_PRESETS = [15, 30, 60, 120] as const
 const GATE = /^[A-Za-z]{0,2}[0-9]{1,3}[A-Za-z]?$/
@@ -211,7 +208,7 @@ function OperationsCard({ flight }: { flight: FlightResponse }) {
   const [estimateLocal, setEstimateLocal] = React.useState(currentEstimate)
   const [gate, setGate] = React.useState(flight.gate ?? '')
 
-  const canDelay = DELAYABLE.includes(flight.status)
+  const canDelay = BEFORE_DEPARTURE.includes(flight.status)
   const gateOpen = !GATE_CLOSED.includes(flight.status)
   const delayedBy = flight.estimatedDepartureTime
     ? minutesBetween(flight.departureTime, flight.estimatedDepartureTime)
@@ -490,7 +487,7 @@ function CrewCard({
         <h2 id="crew-title" className="text-h3 font-semibold">
           Crew manifest
         </h2>
-        <Button size="sm" onClick={() => setAssignOpen(true)} disabled={!ROSTERABLE.includes(flight.status)}>
+        <Button size="sm" onClick={() => setAssignOpen(true)} disabled={!BEFORE_DEPARTURE.includes(flight.status)}>
           <Plus strokeWidth={1.75} aria-hidden />
           Assign crew
         </Button>
@@ -514,8 +511,8 @@ function CrewCard({
                 <span className="ml-2 font-mono text-muted-foreground">{member.employeeNumber}</span>
               </span>
               <span className="text-muted-foreground">{crewRoleLabel[member.assignedRole]}</span>
-              {/* From boarding on, the manifest is the record of who flew (the crew service refuses changes). */}
-              {CREW_REMOVABLE.includes(flight.status) && (
+              {/* Once the flight has left, the manifest is the record of who flew (the crew service refuses changes). */}
+              {BEFORE_DEPARTURE.includes(flight.status) && (
                 <Button
                   variant="ghost"
                   size="icon-sm"

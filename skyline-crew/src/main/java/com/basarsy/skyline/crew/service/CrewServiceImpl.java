@@ -17,7 +17,6 @@ import com.basarsy.skyline.crew.repository.CrewMemberRepository;
 import com.basarsy.skyline.crew.repository.CrewMemberSpecifications;
 import com.basarsy.skyline.crew.repository.FlightCrewRepository;
 import com.basarsy.skyline.crew.client.dto.FlightStatus;
-import java.time.LocalDateTime;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
@@ -34,9 +33,12 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class CrewServiceImpl implements CrewService {
 
-    /** Flights crew can still be rostered on (removal stops at BOARDING). */
+    /** Flights whose crew can still change: assigned or removed until the flight departs. */
     private static final Set<FlightStatus> ROSTERABLE =
             EnumSet.of(FlightStatus.SCHEDULED, FlightStatus.DELAYED, FlightStatus.BOARDING);
+
+    /** Flight ids per overlap request (the schedule service's limit). */
+    static final int OVERLAP_BATCH = 1000;
 
     private final CrewMemberRepository crewMemberRepository;
     private final FlightCrewRepository flightCrewRepository;
@@ -113,9 +115,10 @@ public class CrewServiceImpl implements CrewService {
                 .map(FlightCrew::getFlightId)
                 .filter(other -> !other.equals(flightId))
                 .toList();
-        if (!otherFlights.isEmpty()) {
-            List<String> overlapping = scheduleClient.overlapping(
-                    new ScheduleClient.Overlap(otherFlights, expectedDeparture(flight), expectedArrival(flight)));
+        // In batches, so a long career doesn't make one request (and one IN list) grow without bound.
+        for (int from = 0; from < otherFlights.size(); from += OVERLAP_BATCH) {
+            List<UUID> batch = otherFlights.subList(from, Math.min(from + OVERLAP_BATCH, otherFlights.size()));
+            List<String> overlapping = scheduleClient.overlapping(new ScheduleClient.Overlap(flightId, batch));
             if (!overlapping.isEmpty()) {
                 throw new SkylineException("Crew member already flies " + String.join(", ", overlapping)
                         + " at that time", HttpStatus.CONFLICT);
@@ -147,22 +150,13 @@ public class CrewServiceImpl implements CrewService {
     @Transactional
     @CacheEvict(value = "flight-manifests", key = "#flightId")
     public void removeCrewFromFlight(UUID flightId, UUID crewMemberId) {
-        // From boarding on, the manifest is the record of who flew: it stays as it is.
+        // Once the flight has left, the manifest is the record of who flew: it stays as it is. Until then (boarding
+        // included) a mistake can be undone; the schedule service checks the crew again when the flight departs.
         FlightStatus status = scheduleClient.getFlight(flightId).getStatus();
-        if (!ROSTERABLE.contains(status) || status == FlightStatus.BOARDING) {
+        if (!ROSTERABLE.contains(status)) {
             throw new SkylineException("Crew can't be removed from a flight that is " + status, HttpStatus.CONFLICT);
         }
         flightCrewRepository.deleteByFlightIdAndCrewMemberId(flightId, crewMemberId);
-    }
-
-    /** When the flight now expects to leave: the delay's estimate, else the scheduled time. */
-    private static LocalDateTime expectedDeparture(FlightResponse flight) {
-        return flight.getEstimatedDepartureTime() != null ? flight.getEstimatedDepartureTime()
-                : flight.getDepartureTime();
-    }
-
-    private static LocalDateTime expectedArrival(FlightResponse flight) {
-        return flight.getEstimatedArrivalTime() != null ? flight.getEstimatedArrivalTime() : flight.getArrivalTime();
     }
 
     @Override
