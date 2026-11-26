@@ -21,6 +21,7 @@ import java.util.UUID;
  * @param previousEstimatedDepartureTime expected departure before this change, else null
  * @param previousStatus               status before this change
  * @param previousGate                 gate before this change, null if none was assigned
+ * @param previousFlightNumber         flight number before this change (differs on FLIGHT_NUMBER_CHANGED)
  */
 public record FlightChangedEvent(
         FlightChangeType type,
@@ -39,4 +40,5 @@ public record FlightChangedEvent(
         LocalDateTime previousEstimatedDepartureTime,
         String gate,
         String previousGate,
-        LocalDateTime occurredAt) {}
+        LocalDateTime occurredAt,
+        String previousFlightNumber) {}

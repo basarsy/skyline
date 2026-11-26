@@ -25,7 +25,19 @@ public record FlightChange(
         LocalDateTime previousEstimatedDepartureTime,
         String gate,
         String previousGate,
-        LocalDateTime occurredAt) {
+        LocalDateTime occurredAt,
+        String previousFlightNumber) {
+
+    /** Without the previous flight number: every change but FLIGHT_NUMBER_CHANGED (and events from before it). */
+    public FlightChange(String type, UUID flightId, String flightNumber, String origin, String destination,
+            String originTimezone, String destinationTimezone, String status, String previousStatus,
+            LocalDateTime departureTime, LocalDateTime previousDepartureTime, LocalDateTime arrivalTime,
+            LocalDateTime estimatedDepartureTime, LocalDateTime previousEstimatedDepartureTime, String gate,
+            String previousGate, LocalDateTime occurredAt) {
+        this(type, flightId, flightNumber, origin, destination, originTimezone, destinationTimezone, status,
+                previousStatus, departureTime, previousDepartureTime, arrivalTime, estimatedDepartureTime,
+                previousEstimatedDepartureTime, gate, previousGate, occurredAt, null);
+    }
 
     public static final String STATUS_CHANGED = "STATUS_CHANGED";
     public static final String DELAYED = "DELAYED";
@@ -33,6 +45,7 @@ public record FlightChange(
     public static final String RESCHEDULED = "RESCHEDULED";
     public static final String GATE_CHANGED = "GATE_CHANGED";
     public static final String CANCELLED = "CANCELLED";
+    public static final String FLIGHT_NUMBER_CHANGED = "FLIGHT_NUMBER_CHANGED";
 
     /** When the flight is now expected to leave: the delayed time, else the scheduled one. */
     public LocalDateTime expectedDeparture() {

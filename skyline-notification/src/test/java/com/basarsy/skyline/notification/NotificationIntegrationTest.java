@@ -176,6 +176,43 @@ class NotificationIntegrationTest {
     }
 
     @Test
+    void aNewFlightNumberIsAnnouncedAndUsedFromThenOn() {
+        bookingEvents.handle(booked(UUID.randomUUID(), "ada@example.com", item("Ada")));
+        clearMessages();
+
+        flightChanges.handle(new FlightChange(FlightChange.FLIGHT_NUMBER_CHANGED, flightId, "SK900", "IST", "LHR",
+                "Europe/Istanbul", "Europe/London", "SCHEDULED", "SCHEDULED", DEPARTURE, DEPARTURE,
+                DEPARTURE.plusHours(4), null, null, null, null, DEPARTURE.minusDays(3), "SK100"));
+
+        assertThat(jdbc.queryForObject("SELECT subject FROM email_outbox", String.class))
+                .isEqualTo("SK100 is now SK900");
+        assertThat(jdbc.queryForObject("SELECT kind FROM notifications", String.class))
+                .isEqualTo("FLIGHT_NUMBER_CHANGED");
+        clearMessages();
+        remind(DEPARTURE.minusHours(47));
+        assertThat(jdbc.queryForObject("SELECT subject FROM email_outbox", String.class))
+                .as("the reminder uses the new number").isEqualTo("Check-in is open for SK900");
+    }
+
+    @Test
+    void aReplayedOlderRenumberLeavesTheCurrentNumber() {
+        bookingEvents.handle(booked(UUID.randomUUID(), "ada@example.com", item("Ada"))); // SK100
+        flightChanges.handle(renumber("SK100", "SK200", 3));
+        flightChanges.handle(renumber("SK200", "SK300", 2));
+
+        flightChanges.handle(renumber("SK100", "SK200", 3)); // redelivered, or replayed from the DLT
+
+        assertThat(recipients.activeOnFlight(flightId)).singleElement()
+                .satisfies(r -> assertThat(r.flightNumber()).isEqualTo("SK300"));
+    }
+
+    FlightChange renumber(String from, String to, int daysBefore) {
+        return new FlightChange(FlightChange.FLIGHT_NUMBER_CHANGED, flightId, to, "IST", "LHR", "Europe/Istanbul",
+                "Europe/London", "SCHEDULED", "SCHEDULED", DEPARTURE, DEPARTURE, DEPARTURE.plusHours(4), null, null,
+                null, null, DEPARTURE.minusDays(daysBefore), from);
+    }
+
+    @Test
     void anAirlineCancellationTellsPassengersAndEndsTheirBookings() {
         bookingEvents.handle(booked(UUID.randomUUID(), "ada@example.com", item("Ada")));
         clearMessages();

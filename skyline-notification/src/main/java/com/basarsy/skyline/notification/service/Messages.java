@@ -71,6 +71,18 @@ final class Messages {
                             + " has been cancelled. Your booking is cancelled and every add-on you bought is"
                             + " refunded.\n\n" + who,
                     path, true);
+            case FlightChange.FLIGHT_NUMBER_CHANGED -> {
+                if (change.flightNumber() == null) {
+                    yield null; // Nothing to tell without the new number.
+                }
+                String was = change.previousFlightNumber() == null ? "Your flight" : change.previousFlightNumber();
+                yield new Message("FLIGHT_NUMBER_CHANGED", was + " is now " + flight,
+                        "Same flight, new number: " + flight + ".",
+                        was + route + " on " + day(change.departureTime(), zone) + " now flies as " + flight
+                                + ". Nothing else changes: your booking, seat and times stay the same. Look for "
+                                + flight + " on the departure boards.\n\n" + who,
+                        path, true);
+            }
             case FlightChange.STATUS_CHANGED -> switch (String.valueOf(change.status())) {
                 case "DELAYED" -> new Message("FLIGHT_DELAYED", flight + " is delayed",
                         "A new departure time will follow.",

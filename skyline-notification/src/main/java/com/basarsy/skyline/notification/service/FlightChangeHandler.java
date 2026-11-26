@@ -42,6 +42,10 @@ public class FlightChangeHandler {
         if (FlightChange.CANCELLED.equals(change.type())) {
             recipients.deactivateFlight(change.flightId());
         }
+        if (FlightChange.FLIGHT_NUMBER_CHANGED.equals(change.type()) && change.flightNumber() != null) {
+            // Later reminders use it. Only from the number it replaced: a replayed older renumber changes nothing.
+            recipients.renumberFlight(change.flightId(), change.previousFlightNumber(), change.flightNumber());
+        }
         if (Messages.flightChange(change, List.of(), null) == null) {
             return; // Departed, arrived, or a change passengers aren't told about.
         }
