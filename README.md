@@ -263,7 +263,8 @@ Base path: `/api/v1`
 ### Auth (skyline-auth · :8083)
 ```
 POST   /auth/register              Register passenger
-POST   /auth/login                 Login → JWT
+POST   /auth/login                 Login → JWT (10 wrong passwords in a row lock the account for 15 min;
+                                   a locked account gets the same 401 as a wrong password)
 POST   /auth/refresh               Refresh token
 GET    /auth/me                    Current user                [any authenticated]
 ```
@@ -318,7 +319,7 @@ GET    /aircraft-types/{id}/seat-layout Every seat, expanded       [STAFF, ADMIN
 ```
 GET    /airports                   List airports               [PUBLIC]
 GET    /airports/{id}              Airport detail              [PUBLIC]
-POST   /airports                   Create airport              [ADMIN]
+POST   /airports                   Create airport (timezone: an IANA id, e.g. Europe/Istanbul) [ADMIN]
 GET    /routes                     List routes                 [PUBLIC]
 GET    /routes/{id}                Route detail                [PUBLIC]
 GET    /routes/search              Search routes (originIata, destinationIata) [PUBLIC]

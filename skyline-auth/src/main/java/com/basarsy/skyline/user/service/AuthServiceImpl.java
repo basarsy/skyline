@@ -16,7 +16,9 @@ import com.basarsy.skyline.user.repository.UserRepository;
 import com.basarsy.skyline.user.security.SkylineUserDetails;
 import com.basarsy.skyline.user.security.SkylineUserDetailsService;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Locale;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,6 +35,14 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
 
+    /**
+     * Wrong passwords in a row that lock an account, and for how long. The gateway limits attempts per client IP;
+     * this stops one account being guessed at from many addresses. Short enough that someone locking another
+     * person's account out on purpose only delays them.
+     */
+    static final int MAX_FAILED_LOGINS = 10;
+    static final Duration LOCKOUT = Duration.ofMinutes(15);
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
@@ -45,7 +55,7 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public UserResponse register(RegisterRequest request) {
-        var email = request.email().trim().toLowerCase();
+        var email = request.email().trim().toLowerCase(Locale.ROOT);
         if (userRepository.existsByEmail(email)) {
             throw new SkylineException("Email is already registered", HttpStatus.CONFLICT);
         }
@@ -61,20 +71,36 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
-    @Transactional
+    // Not rolled back on a 401: the failed attempt it counts must stick.
+    @Transactional(noRollbackFor = SkylineException.class)
     public AuthResponse login(LoginRequest request) {
-        var email = request.email().trim().toLowerCase();
+        var email = request.email().trim().toLowerCase(Locale.ROOT);
+        var now = LocalDateTime.now(clock);
+        var account = userRepository.findByEmail(email);
+        // A locked account gets the same answer as a wrong password (no enumeration of accounts or of locks),
+        // and its password isn't even checked, so guessing on goes nowhere until the lock ends.
+        if (account.map(User::getLockedUntil).filter(now::isBefore).isPresent()) {
+            throw invalidCredentials();
+        }
         try {
             authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(email, request.password()));
         } catch (AuthenticationException ex) {
             // Bad password, unknown user and disabled account all get the same answer (no account enumeration).
             // BadCredentialsException alone let DisabledException escape.
-            throw new SkylineException("Invalid email or password", HttpStatus.UNAUTHORIZED);
+            account.ifPresent(user -> userRepository.recordFailedLogin(user.getId(), MAX_FAILED_LOGINS,
+                    now.plus(LOCKOUT)));
+            throw invalidCredentials();
         }
+        account.filter(user -> user.getFailedLogins() > 0 || user.getLockedUntil() != null)
+                .ifPresent(user -> userRepository.clearFailedLogins(user.getId()));
 
         // A login starts a new token family.
-        return issueTokens(userDetailsService.loadUserByUsername(email), UUID.randomUUID(), LocalDateTime.now(clock));
+        return issueTokens(userDetailsService.loadUserByUsername(email), UUID.randomUUID(), now);
+    }
+
+    private static SkylineException invalidCredentials() {
+        return new SkylineException("Invalid email or password", HttpStatus.UNAUTHORIZED);
     }
 
     /**
