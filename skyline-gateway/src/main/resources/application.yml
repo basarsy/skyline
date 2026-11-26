@@ -2,6 +2,9 @@ server:
   port: 8000
 
 spring:
+  reactor:
+    # Trace and span ids in the gateway's own log lines too, also inside Reactor operators.
+    context-propagation: auto
   application:
     name: skyline-gateway
   data:
@@ -28,6 +31,8 @@ spring:
                 allowed-origins: ${SKYLINE_CORS_ALLOWED_ORIGINS:http://localhost:5173}
                 allowed-methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
                 allowed-headers: Authorization, Content-Type
+                # Lets the web app read the trace id of a failed request (to quote it to support).
+                exposed-headers: X-Trace-Id
                 allow-credentials: false
                 max-age: 3600
           default-filters:
@@ -102,10 +107,21 @@ management:
   endpoints:
     web:
       exposure:
-        # The gateway's own health and info only; no route forwards /actuator to a downstream service.
+        # The gateway's own health and info only (no metrics: it is the public entry point); no route forwards
+        # /actuator to a downstream service.
         include: health, info
   endpoint:
     health:
       show-details: never
       probes:
         enabled: true
+  # Every request's trace starts here and goes on downstream as a W3C traceparent; the response carries its id as
+  # X-Trace-Id. Spans are exported over OTLP only when MANAGEMENT_OTLP_TRACING_ENDPOINT is set.
+  tracing:
+    sampling:
+      probability: ${SKYLINE_TRACING_SAMPLING_PROBABILITY:0.1}
+    propagation:
+      # The public entry point: a trace always starts here. A traceparent sent by a client is ignored, so no one
+      # can choose their requests' trace id (or reuse someone else's) or force them to be sampled.
+      consume: []
+      produce: w3c

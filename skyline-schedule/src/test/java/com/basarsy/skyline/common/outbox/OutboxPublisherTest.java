@@ -31,7 +31,8 @@ class OutboxPublisherTest {
     @SuppressWarnings("unchecked")
     final KafkaTemplate<String, String> kafka = mock(KafkaTemplate.class);
     final OutboxPublisher publisher =
-            new OutboxPublisher(repository, kafka, TransactionOperations.withoutTransaction(), PROPERTIES);
+            new OutboxPublisher(repository, kafka, TransactionOperations.withoutTransaction(), PROPERTIES,
+                    OutboxTracing.NONE);
 
     @Test
     void sendsTheWholeBatchKeyedByAggregateAndMarksItPublished() {
@@ -166,7 +167,7 @@ class OutboxPublisherTest {
 
     private static OutboxEvent event(int attempts) {
         return new OutboxEvent(UUID.randomUUID(), UUID.randomUUID(), "skyline.flight.cancelled",
-                "{\"flightId\":\"" + UUID.randomUUID() + "\"}", attempts);
+                "{\"flightId\":\"" + UUID.randomUUID() + "\"}", attempts, null);
     }
 
     private static CompletableFuture<SendResult<String, String>> acked() {

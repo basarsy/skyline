@@ -51,6 +51,18 @@ describe('apiFetch envelope handling', () => {
     })
   })
 
+  it('keeps the trace id of a failed request, for support to look it up', async () => {
+    const traceId = '4bf92f3577b34da6a3ce929d0e0e4736'
+    server.use(
+      http.get(
+        '*/api/v1/things',
+        () => new HttpResponse('<html>Bad gateway</html>', { status: 502, headers: { 'X-Trace-Id': traceId } }),
+      ),
+    )
+
+    await expect(apiFetch('/things')).rejects.toMatchObject({ status: 502, traceId })
+  })
+
   it('falls back to a readable message when the body is not an envelope', async () => {
     server.use(http.get('*/api/v1/things', () => new HttpResponse('<html>Bad gateway</html>', { status: 502 })))
 

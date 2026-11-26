@@ -40,6 +40,7 @@ public class OutboxPublisher {
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final TransactionOperations transactions;
     private final OutboxProperties properties;
+    private final OutboxTracing tracing;
 
     /** Publishes one batch of due rows and returns how many were sent. */
     public int publishPending() {
@@ -94,7 +95,9 @@ public class OutboxPublisher {
         List<Future<?>> acks = new ArrayList<>(batch.size());
         for (OutboxEvent event : batch) {
             try {
-                acks.add(kafkaTemplate.send(event.topic(), event.aggregateId().toString(), event.payload()));
+                // In the trace of the request that recorded the event: the record carries it to the consumer.
+                acks.add(tracing.continuing(event.traceParent(),
+                        () -> kafkaTemplate.send(event.topic(), event.aggregateId().toString(), event.payload())));
             } catch (RuntimeException e) {
                 acks.add(CompletableFuture.failedFuture(e));
                 break;

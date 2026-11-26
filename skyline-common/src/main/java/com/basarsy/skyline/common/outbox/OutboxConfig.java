@@ -1,6 +1,10 @@
 package com.basarsy.skyline.common.outbox;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.observation.ObservationRegistry;
+import io.micrometer.tracing.Tracer;
+import io.micrometer.tracing.propagation.Propagator;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -27,15 +31,25 @@ public class OutboxConfig {
         return new OutboxRepository(jdbc);
     }
 
+    /** Trace context across the outbox when tracing is on (Micrometer Tracing), else nothing. */
     @Bean
-    public Outbox outbox(OutboxRepository repository, ObjectMapper objectMapper) {
-        return new Outbox(repository, objectMapper);
+    OutboxTracing outboxTracing(ObjectProvider<Tracer> tracer, ObjectProvider<Propagator> propagator,
+            ObjectProvider<ObservationRegistry> observations) {
+        Tracer t = tracer.getIfAvailable();
+        Propagator p = propagator.getIfAvailable();
+        ObservationRegistry o = observations.getIfAvailable();
+        return t == null || p == null || o == null ? OutboxTracing.NONE : new OutboxTracing(t, p, o);
+    }
+
+    @Bean
+    public Outbox outbox(OutboxRepository repository, ObjectMapper objectMapper, OutboxTracing tracing) {
+        return new Outbox(repository, objectMapper, tracing);
     }
 
     @Bean
     public OutboxPublisher outboxPublisher(OutboxRepository repository, KafkaTemplate<String, String> kafkaTemplate,
-            TransactionOperations transactions, OutboxProperties properties) {
-        return new OutboxPublisher(repository, kafkaTemplate, transactions, properties);
+            TransactionOperations transactions, OutboxProperties properties, OutboxTracing tracing) {
+        return new OutboxPublisher(repository, kafkaTemplate, transactions, properties, tracing);
     }
 
     /** Off with {@code skyline.outbox.scheduling-enabled=false} (tests drive the publisher by hand). */

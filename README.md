@@ -571,7 +571,7 @@ Swagger UI (checkin service): `http://localhost:8085/swagger-ui.html`
 
 ### Health Checks
 
-Every Java service (and the gateway) exposes Spring Boot Actuator health on its own port; nothing else from Actuator is reachable over HTTP, and responses carry only a status, never details:
+Every Java service (and the gateway) exposes Spring Boot Actuator health on its own port, plus `/actuator/prometheus` (metrics) on the services; responses carry only a status, never details:
 
 | Endpoint | Meaning |
 |---|---|
@@ -579,7 +579,25 @@ Every Java service (and the gateway) exposes Spring Boot Actuator health on its 
 | `GET /actuator/health/liveness` | The JVM is alive; restart it if this fails |
 | `GET /actuator/health/readiness` | Ready for traffic (services: including their database) |
 
-The Docker image's healthcheck polls `/actuator/health/readiness`, and compose starts each service only after the services it calls are healthy. The gateway does not route `/actuator/**`, so a service's endpoints are not reachable through port 8000 (`localhost:8000/actuator/health` is the gateway's own).
+The Docker image's healthcheck polls `/actuator/health/readiness`, and compose starts each service only after the services it calls are healthy. The gateway does not route `/actuator/**`, so a service's endpoints are not reachable through port 8000 (`localhost:8000/actuator/health` is the gateway's own; the gateway exposes no metrics).
+
+### Observability
+
+Every request is one trace, from the gateway through every service it reaches:
+
+- **Tracing** (Micrometer Tracing on OpenTelemetry): the gateway starts the trace (a `traceparent` sent by a client is ignored, so no one can pick their trace id or force sampling) and sends it on as a W3C `traceparent`; OpenFeign calls and Kafka records carry it on. Events sent through the outbox keep the trace of the request that recorded them (`outbox_events.trace_parent`), so a booking can be followed to the email its event causes
+- **Logs**: every line logged while handling a request carries its trace and span ids
+- **`X-Trace-Id`**: every response carries its trace id. The web app shows it as a reference on a server error, for support to find that exact request in every service's logs (always) and in Jaeger (when the request was sampled)
+- **Metrics**: each service exposes Prometheus metrics at `/actuator/prometheus`, unauthenticated like the rest of `/actuator`: it relies on service ports being private (the gateway routes nothing to `/actuator`, and compose binds them to localhost). In a deployment where they aren't, put them behind a network policy
+- **Not traced**: requests to `/actuator` (health probes, scrapes) and scheduled job runs (the outbox and email pollers), which would bury real requests
+
+Nothing is exported by default: spans go out over OTLP only when `MANAGEMENT_OTLP_TRACING_ENDPOINT` is set. To see traces and metrics locally, start the stack with the observability overlay, which adds Jaeger and Prometheus and traces every request:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.observability.yml up --build
+# Traces:  http://localhost:16686  (Jaeger; search by service, or paste an X-Trace-Id)
+# Metrics: http://localhost:9090   (Prometheus)
+```
 
 ### Environment Variables
 
@@ -618,6 +636,8 @@ Each service reads configuration from its own `application.yml`. Infrastructure 
 | `SKYLINE_SEAT_HOLD_TTL` | (reservation) How long a chosen seat stays held, ISO-8601 duration | `PT15M` |
 | `SKYLINE_FEIGN_CONNECT_TIMEOUT_MS` / `SKYLINE_FEIGN_READ_TIMEOUT_MS` | (every service) Timeouts of calls to other services | `2000` / `5000` |
 | `SKYLINE_GATEWAY_CONNECT_TIMEOUT_MS` / `SKYLINE_GATEWAY_RESPONSE_TIMEOUT` | (gateway) Timeouts of routed requests; past the response timeout the gateway answers `504` | `2000` / `30s` |
+| `MANAGEMENT_OTLP_TRACING_ENDPOINT` | (every service, gateway) Where spans are exported over OTLP/HTTP, e.g. `http://jaeger:4318/v1/traces`; unset, nothing is exported | — |
+| `SKYLINE_TRACING_SAMPLING_PROBABILITY` | (every service, gateway) Share of requests whose spans are recorded (trace ids are logged and propagated either way) | `0.1` (`1.0` with the observability overlay) |
 | `SKYLINE_KAFKA_CONSUMERRETRY_*` | (reservation, notification) `INITIALINTERVAL`, `MULTIPLIER`, `MAXINTERVAL`, `MAXELAPSEDTIME` (`skyline.kafka.consumer-retry.*`): how a failing record is retried before it is dead-lettered | `1s`, `2`, `60s`, `5m` |
 
 > Public registration always creates `PASSENGER` accounts. Set `SKYLINE_ADMIN_EMAIL` / `SKYLINE_ADMIN_PASSWORD` on the auth service to bootstrap the first `ADMIN`, who can then create further `STAFF` and `ADMIN` accounts with `POST /users`.
