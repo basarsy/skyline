@@ -465,6 +465,18 @@ class FlightServiceImplTest {
     }
 
     @Test
+    void crewOverlapIsCheckedAtTheTargetFlightsExpectedTimesWithoutItself() {
+        Flight flight = delayed(LocalDateTime.of(2030, 6, 1, 11, 0)); // 09:00 → 13:00, now 11:00 → 15:00
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+        UUID other = UUID.randomUUID();
+        when(repository.overlapping(List.of(other), LocalDateTime.of(2030, 6, 1, 11, 0),
+                LocalDateTime.of(2030, 6, 1, 15, 0))).thenReturn(List.of("SK777"));
+
+        assertThat(service.overlapping(flight.getId(), List.of(flight.getId(), other))).containsExactly("SK777");
+        assertThat(service.overlapping(flight.getId(), List.of(flight.getId()))).as("only itself").isEmpty();
+    }
+
+    @Test
     void anUpdateIsCheckedAgainstTheAircraftsOtherFlightsOnly() {
         Flight flight = flight(FlightStatus.SCHEDULED);
         when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));

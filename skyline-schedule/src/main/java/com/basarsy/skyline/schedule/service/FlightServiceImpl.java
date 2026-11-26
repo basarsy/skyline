@@ -487,6 +487,16 @@ public class FlightServiceImpl implements FlightService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<String> overlapping(UUID flightId, List<UUID> flightIds) {
+        // The target's window is read here, at check time, with the same rule as the query's (one source of truth).
+        Flight flight = getFlightEntity(flightId);
+        List<UUID> others = flightIds.stream().filter(id -> !id.equals(flightId)).toList();
+        return others.isEmpty() ? List.of()
+                : flightRepository.overlapping(others, effectiveDeparture(flight), effectiveArrival(flight));
+    }
+
+    @Override
     @Transactional
     public void claimSeat(UUID flightId, UUID claimId) {
         if (!seatClaims.insert(claimId, flightId)) {

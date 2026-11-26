@@ -17,6 +17,8 @@ public class AircraftLock {
     private final JdbcTemplate jdbc;
 
     public void lock(UUID aircraftId) {
-        jdbc.query("SELECT pg_advisory_xact_lock(hashtext(?))", rs -> null, "aircraft:" + aircraftId);
+        // A 64-bit key from the UUID's own bits: a 32-bit hash would let unrelated aircraft wait on each other.
+        jdbc.query("SELECT pg_advisory_xact_lock(?)", rs -> null,
+                aircraftId.getMostSignificantBits() ^ aircraftId.getLeastSignificantBits());
     }
 }

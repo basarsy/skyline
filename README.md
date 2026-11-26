@@ -458,7 +458,8 @@ All endpoints return a consistent `ApiResponse<T>`:
 
 **Crew Validation**
 - A flight cannot depart without at least 1 `CAPTAIN` + 1 `FIRST_OFFICER`
-- Crew members cannot be double-assigned to overlapping flights
+- Crew members cannot be double-assigned to overlapping flights (delayed flights count at their expected times; checked in one call to the schedule service, under a lock per crew member so two concurrent assignments can't both pass)
+- Crew is assigned or removed only until the flight departs (scheduled, delayed or boarding); from then on the manifest is fixed: it is the record of who flew
 - License expiry is validated at assignment time
 
 **Delays and gates**
