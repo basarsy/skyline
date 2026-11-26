@@ -22,6 +22,10 @@ public class FlightResponse {
     private AircraftResponse aircraft;
     private LocalDateTime departureTime;
     private LocalDateTime arrivalTime;
+    /** Expected departure while delayed, else null. */
+    private LocalDateTime estimatedDepartureTime;
+    /** arrivalTime moved by the delay, else null. */
+    private LocalDateTime estimatedArrivalTime;
     private FlightStatus status;
     private int availableSeats;
     private BigDecimal basePrice;

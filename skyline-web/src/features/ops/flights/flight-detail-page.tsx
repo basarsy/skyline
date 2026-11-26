@@ -195,6 +195,9 @@ function StatusCard({ flight, manifest }: { flight: FlightResponse; manifest: Fl
 
 /** Statuses in which a delay can be set or lifted (the schedule service's rule). */
 const DELAYABLE: readonly FlightStatus[] = ['SCHEDULED', 'DELAYED', 'BOARDING']
+/** Statuses in which crew can be assigned, and removed (the crew service's rules). */
+const ROSTERABLE: readonly FlightStatus[] = ['SCHEDULED', 'DELAYED', 'BOARDING']
+const CREW_REMOVABLE: readonly FlightStatus[] = ['SCHEDULED', 'DELAYED']
 const GATE_CLOSED: readonly FlightStatus[] = ['DEPARTED', 'ARRIVED', 'CANCELLED']
 const DELAY_PRESETS = [15, 30, 60, 120] as const
 const GATE = /^[A-Za-z]{0,2}[0-9]{1,3}[A-Za-z]?$/
@@ -487,11 +490,7 @@ function CrewCard({
         <h2 id="crew-title" className="text-h3 font-semibold">
           Crew manifest
         </h2>
-        <Button
-          size="sm"
-          onClick={() => setAssignOpen(true)}
-          disabled={flight.status === 'ARRIVED' || flight.status === 'CANCELLED'}
-        >
+        <Button size="sm" onClick={() => setAssignOpen(true)} disabled={!ROSTERABLE.includes(flight.status)}>
           <Plus strokeWidth={1.75} aria-hidden />
           Assign crew
         </Button>
@@ -515,14 +514,17 @@ function CrewCard({
                 <span className="ml-2 font-mono text-muted-foreground">{member.employeeNumber}</span>
               </span>
               <span className="text-muted-foreground">{crewRoleLabel[member.assignedRole]}</span>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={`Remove ${member.firstName} ${member.lastName} from the flight`}
-                onClick={() => setRemoving(member)}
-              >
-                <Trash2 strokeWidth={1.75} aria-hidden />
-              </Button>
+              {/* From boarding on, the manifest is the record of who flew (the crew service refuses changes). */}
+              {CREW_REMOVABLE.includes(flight.status) && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`Remove ${member.firstName} ${member.lastName} from the flight`}
+                  onClick={() => setRemoving(member)}
+                >
+                  <Trash2 strokeWidth={1.75} aria-hidden />
+                </Button>
+              )}
             </li>
           ))}
         </ul>

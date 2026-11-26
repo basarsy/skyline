@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -21,6 +22,7 @@ import com.basarsy.skyline.crew.entity.CrewMember;
 import com.basarsy.skyline.crew.entity.CrewRole;
 import com.basarsy.skyline.crew.entity.FlightCrew;
 import com.basarsy.skyline.crew.mapper.CrewMapperImpl;
+import com.basarsy.skyline.crew.repository.CrewLock;
 import com.basarsy.skyline.crew.repository.CrewMemberRepository;
 import com.basarsy.skyline.crew.repository.FlightCrewRepository;
 import java.time.LocalDate;
@@ -38,7 +40,8 @@ class CrewServiceImplTest {
     private final CrewMemberRepository members = mock(CrewMemberRepository.class);
     private final FlightCrewRepository assignments = mock(FlightCrewRepository.class);
     private final ScheduleClient scheduleClient = mock(ScheduleClient.class);
-    private final CrewServiceImpl service = new CrewServiceImpl(members, assignments, scheduleClient,
+    private final CrewLock crewLock = mock(CrewLock.class);
+    private final CrewServiceImpl service = new CrewServiceImpl(members, assignments, crewLock, scheduleClient,
             new CrewMapperImpl());
 
     private static final LocalDateTime DEPARTURE = LocalDateTime.of(2030, 6, 1, 9, 0);
@@ -56,31 +59,84 @@ class CrewServiceImplTest {
     }
 
     @Test
-    void cancelledAndArrivedFlightsDoNotBlockAnOverlappingAssignment() {
+    void theWholeRosterIsCheckedInOneCallAtTheFlightsExpectedTimesUnderTheMembersLock() {
         CrewMember captain = crewMember(CrewRole.CAPTAIN);
-        UUID flightId = stubFlight(FlightStatus.SCHEDULED, DEPARTURE);
-        UUID cancelled = stubFlight(FlightStatus.CANCELLED, DEPARTURE.plusHours(1));
-        UUID arrived = stubFlight(FlightStatus.ARRIVED, DEPARTURE.minusHours(1));
+        UUID flightId = UUID.randomUUID();
+        when(scheduleClient.getFlight(flightId)).thenReturn(FlightResponse.builder().id(flightId)
+                .status(FlightStatus.DELAYED).departureTime(DEPARTURE).arrivalTime(DEPARTURE.plusHours(4))
+                .estimatedDepartureTime(DEPARTURE.plusHours(2)).estimatedArrivalTime(DEPARTURE.plusHours(6)).build());
+        UUID earlier = UUID.randomUUID();
+        UUID later = UUID.randomUUID();
         when(assignments.findByCrewMemberId(captain.getId()))
-                .thenReturn(List.of(assignment(cancelled, captain), assignment(arrived, captain)));
+                .thenReturn(List.of(assignment(earlier, captain), assignment(later, captain)));
         when(assignments.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         service.assignCrewToFlight(flightId, new FlightCrewAssignmentRequest(captain.getId(), CrewRole.CAPTAIN));
 
+        var order = inOrder(crewLock, scheduleClient);
+        order.verify(crewLock).lock(captain.getId());
+        order.verify(scheduleClient).overlapping(new ScheduleClient.Overlap(List.of(earlier, later),
+                DEPARTURE.plusHours(2), DEPARTURE.plusHours(6)));
+        verify(scheduleClient, never()).getFlight(earlier);
         verify(assignments).save(any());
     }
 
     @Test
-    void anOperatingOverlappingFlightStillBlocksTheAssignment() {
+    void anOverlappingFlightBlocksTheAssignmentAndIsNamed() {
         CrewMember captain = crewMember(CrewRole.CAPTAIN);
         UUID flightId = stubFlight(FlightStatus.SCHEDULED, DEPARTURE);
-        UUID delayed = stubFlight(FlightStatus.DELAYED, DEPARTURE.plusHours(1));
-        when(assignments.findByCrewMemberId(captain.getId())).thenReturn(List.of(assignment(delayed, captain)));
+        when(assignments.findByCrewMemberId(captain.getId()))
+                .thenReturn(List.of(assignment(UUID.randomUUID(), captain)));
+        when(scheduleClient.overlapping(any())).thenReturn(List.of("SK777"));
 
         assertThatThrownBy(() -> service.assignCrewToFlight(flightId,
                 new FlightCrewAssignmentRequest(captain.getId(), CrewRole.CAPTAIN)))
+                .isInstanceOfSatisfying(SkylineException.class, ex -> {
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+                    assertThat(ex.getMessage()).isEqualTo("Crew member already flies SK777 at that time");
+                });
+        verify(assignments, never()).save(any());
+    }
+
+    @Test
+    void aFirstAssignmentNeedsNoOverlapCheck() {
+        CrewMember captain = crewMember(CrewRole.CAPTAIN);
+        UUID flightId = stubFlight(FlightStatus.SCHEDULED, DEPARTURE);
+        when(assignments.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        service.assignCrewToFlight(flightId, new FlightCrewAssignmentRequest(captain.getId(), CrewRole.CAPTAIN));
+
+        verify(scheduleClient, never()).overlapping(any());
+    }
+
+    @Test
+    void crewIsNotRosteredOnAFlightThatIsOver() {
+        CrewMember captain = crewMember(CrewRole.CAPTAIN);
+        for (FlightStatus over : new FlightStatus[] {FlightStatus.CANCELLED, FlightStatus.DEPARTED,
+                FlightStatus.ARRIVED}) {
+            UUID flightId = stubFlight(over, DEPARTURE);
+
+            assertThatThrownBy(() -> service.assignCrewToFlight(flightId,
+                    new FlightCrewAssignmentRequest(captain.getId(), CrewRole.CAPTAIN)))
+                    .isInstanceOfSatisfying(SkylineException.class,
+                            ex -> assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT));
+        }
+        verify(assignments, never()).save(any());
+    }
+
+    @Test
+    void theManifestIsFixedFromBoardingOn() {
+        UUID boarding = stubFlight(FlightStatus.BOARDING, DEPARTURE);
+        UUID scheduled = stubFlight(FlightStatus.SCHEDULED, DEPARTURE);
+        UUID member = UUID.randomUUID();
+
+        assertThatThrownBy(() -> service.removeCrewFromFlight(boarding, member))
                 .isInstanceOfSatisfying(SkylineException.class,
                         ex -> assertThat(ex.getStatus()).isEqualTo(HttpStatus.CONFLICT));
+        verify(assignments, never()).deleteByFlightIdAndCrewMemberId(boarding, member);
+
+        service.removeCrewFromFlight(scheduled, member);
+        verify(assignments).deleteByFlightIdAndCrewMemberId(scheduled, member);
     }
 
     private CrewMember crewMember(CrewRole role) {
