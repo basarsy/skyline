@@ -288,7 +288,9 @@ GET    /flights/board              Operations flight board, every status [STAFF,
 GET    /flights/{id}               Flight detail
 POST   /flights                    Create flight (aircraft must be ACTIVE and free then) [STAFF, ADMIN]
 PUT    /flights/{id}               Update flight (aircraft must be ACTIVE) [STAFF, ADMIN]; send the
-                                   editVersion it was opened at: 409 if someone edited it since
+                                   editVersion it was opened at: 409 if someone edited it since.
+                                   Once passengers are booked: the route is fixed (cancel instead) and
+                                   the aircraft changes only to one of the same type (409 otherwise)
 PATCH  /flights/{id}/status        Update flight status (not DELAYED: use /delay) [STAFF, ADMIN; CANCELLED: ADMIN only,
                                    same full cancellation as DELETE]
 PUT    /flights/{id}/delay         Delay: set estimatedDepartureTime (after the scheduled departure,
@@ -468,13 +470,13 @@ All endpoints return a consistent `ApiResponse<T>`:
 - A flight without a gate falls back to a stable placeholder gate on its boarding pass
 
 **Flight change events**
-- Every change a passenger should hear about is recorded through the same outbox as a `FlightChangedEvent` on `skyline.flight.changed` (keyed by flight id, so in order per flight): `STATUS_CHANGED`, `DELAYED`, `DELAY_CLEARED`, `RESCHEDULED`, `GATE_CHANGED`, `CANCELLED`
+- Every change a passenger should hear about is recorded through the same outbox as a `FlightChangedEvent` on `skyline.flight.changed` (keyed by flight id, so in order per flight): `STATUS_CHANGED`, `DELAYED`, `DELAY_CLEARED`, `RESCHEDULED`, `GATE_CHANGED`, `CANCELLED`, `FLIGHT_NUMBER_CHANGED` (with the previous number)
 - Each event is self-contained (flight number, route IATA codes, current and previous status, times and gate), so a consumer can describe the change without calling the schedule service back. Nothing is recorded when an operation changes nothing
 - It is a separate topic from `skyline.flight.cancelled` on purpose: the reservation service cancels bookings for any record on that topic
 
 **Notifications**
 - The notification service keeps its own projection of who is booked on which flight, from the booking events (`BOOKED` once per booking with every reservation, `CANCELLED` per reservation a passenger cancels), so a flight change needs no call back to the reservation service. Bookings made before the service first ran are not in it
-- Email and in-app: booking confirmed or cancelled, delay (new local time), delay lifted, reschedule, gate change, airline cancellation, and "check-in is open" once per booking when the 48h window opens. In-app only: boarding started. Nothing for departed or arrived
+- Email and in-app: booking confirmed or cancelled, delay (new local time), delay lifted, reschedule, gate change, new flight number, airline cancellation, and "check-in is open" once per booking when the 48h window opens. In-app only: boarding started. Nothing for departed or arrived
 - One email per contact address and one inbox entry per account, listing the passengers they cover: a family booked together gets one message, not one each
 - Events arrive at least once; every message has a dedupe key (event + recipient, the address as a SHA-256 digest), so a redelivery sends nothing new. A record that can't be handled is retried with growing waits adding up to 5 minutes (enough to ride out a database or broker restart; the records behind it on its partition wait), then parked on `<topic>.DLT` with a `KAFKA_RECORD_PARKED` log line; malformed JSON and constraint violations are parked at once (see [Dead-lettered records](#dead-lettered-records))
 - A reschedule moves the check-in reminder with the flight: one already sent before the new window opened goes out again when it does
