@@ -133,9 +133,9 @@ public class FlightServiceImpl implements FlightService {
         }
         boolean routeChanges = !route.id().equals(flight.getRouteId());
         boolean aircraftChanges = !aircraft.id().equals(flight.getAircraftId());
-        if (routeChanges || aircraftChanges) {
-            flight.setAvailableSeats(seatsAfterPlanChange(flight, aircraft, routeChanges));
-        }
+        int availableSeats = routeChanges || aircraftChanges
+                ? seatsAfterPlanChange(flight, aircraft, routeChanges, aircraftChanges)
+                : flight.getAvailableSeats();
 
         Snapshot before = Snapshot.of(flight);
         Plan planBefore = Plan.of(flight);
@@ -153,6 +153,7 @@ public class FlightServiceImpl implements FlightService {
         // Last before saving: the aircraft's lock is held from here to commit, with no remote call in between
         // other than the response's enrichment.
         requireAircraftFree(aircraft, id, effectiveDeparture(flight), effectiveArrival(flight));
+        flight.setAvailableSeats(availableSeats); // every check passed
 
         return saveAndAnnounce(flight, before);
     }
@@ -412,6 +413,10 @@ public class FlightServiceImpl implements FlightService {
      * change, in that order of precedence) and one for the gate. Nothing is appended when nothing changed.
      */
     private void announce(Snapshot before, Flight flight, RouteResponse route) {
+        // First: every later event already carries the new number, which passengers should hear about first.
+        if (!Objects.equals(before.flightNumber(), flight.getFlightNumber())) {
+            append(FlightChangeType.FLIGHT_NUMBER_CHANGED, before, flight, route);
+        }
         FlightChangeType type = null;
         if (flight.getStatus() == FlightStatus.CANCELLED && before.status() != FlightStatus.CANCELLED) {
             type = FlightChangeType.CANCELLED;
@@ -428,9 +433,6 @@ public class FlightServiceImpl implements FlightService {
         }
         if (!Objects.equals(before.gate(), flight.getGate())) {
             append(FlightChangeType.GATE_CHANGED, before, flight, route);
-        }
-        if (!Objects.equals(before.flightNumber(), flight.getFlightNumber())) {
-            append(FlightChangeType.FLIGHT_NUMBER_CHANGED, before, flight, route);
         }
     }
 
@@ -538,8 +540,9 @@ public class FlightServiceImpl implements FlightService {
      *       and cabin already sold still exists (a smaller or other type could leave sold seats on no map).</li>
      * </ul>
      */
-    private int seatsAfterPlanChange(Flight flight, AircraftResponse newAircraft, boolean routeChanges) {
-        AircraftResponse current = fleetClient.getAircraft(flight.getAircraftId());
+    private int seatsAfterPlanChange(Flight flight, AircraftResponse newAircraft, boolean routeChanges,
+            boolean aircraftChanges) {
+        AircraftResponse current = aircraftChanges ? fleetClient.getAircraft(flight.getAircraftId()) : newAircraft;
         int booked = current.aircraftType().totalSeats() - flight.getAvailableSeats();
         if (booked > 0 && routeChanges) {
             throw new SkylineException(booked + " passenger(s) are booked on this flight, so its route can't "

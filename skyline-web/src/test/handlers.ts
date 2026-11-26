@@ -794,7 +794,12 @@ export const handlers = [
     if (!plane) return fail(404, 'Aircraft not found')
     if (plane.status !== 'ACTIVE') return fail(400, `Aircraft ${plane.tailNumber} is not active`)
     // Like the server: once passengers are booked, the route stays and the aircraft changes only within its type.
-    const booked = (flight.aircraft?.aircraftType.totalSeats ?? 0) - flight.availableSeats
+    const newRoute = db.routes.find((r) => r.id === body.routeId)
+    if (!newRoute) return fail(404, 'Route not found')
+    const booked = Math.max(
+      0,
+      (flight.aircraft?.aircraftType.totalSeats ?? flight.availableSeats) - flight.availableSeats,
+    )
     if (booked > 0 && body.routeId !== flight.route?.id)
       return fail(
         409,
@@ -819,7 +824,7 @@ export const handlers = [
       Number(body.basePrice) !== flight.basePrice
     Object.assign(flight, {
       flightNumber: String(body.flightNumber),
-      route: db.routes.find((r) => r.id === body.routeId) ?? flight.route,
+      route: newRoute,
       aircraft: plane,
       departureTime: String(body.departureTime),
       arrivalTime: String(body.arrivalTime),

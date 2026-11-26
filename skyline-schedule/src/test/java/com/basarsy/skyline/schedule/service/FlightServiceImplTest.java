@@ -616,6 +616,20 @@ class FlightServiceImplTest {
     }
 
     @Test
+    void aNewNumberIsAnnouncedBeforeTheChangesThatAlreadyUseIt() {
+        Flight flight = flight(FlightStatus.SCHEDULED);
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+
+        service.updateFlight(flight.getId(), new FlightRequest("SK900", ROUTE_ID, AIRCRAFT_ID,
+                flight.getDepartureTime().plusHours(1), flight.getArrivalTime().plusHours(1), flight.getBasePrice()));
+
+        ArgumentCaptor<Object> events = ArgumentCaptor.forClass(Object.class);
+        verify(outbox, times(2)).append(eq(KafkaTopicConfig.FLIGHT_CHANGED_TOPIC), any(UUID.class), events.capture());
+        assertThat(events.getAllValues()).extracting(e -> ((FlightChangedEvent) e).type())
+                .containsExactly(FlightChangeType.FLIGHT_NUMBER_CHANGED, FlightChangeType.RESCHEDULED);
+    }
+
+    @Test
     void aNewFlightNumberIsAnnouncedWithTheOldOne() {
         Flight flight = flight(FlightStatus.SCHEDULED);
         when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));

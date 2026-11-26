@@ -72,6 +72,9 @@ final class Messages {
                             + " refunded.\n\n" + who,
                     path, true);
             case FlightChange.FLIGHT_NUMBER_CHANGED -> {
+                if (change.flightNumber() == null) {
+                    yield null; // Nothing to tell without the new number.
+                }
                 String was = change.previousFlightNumber() == null ? "Your flight" : change.previousFlightNumber();
                 yield new Message("FLIGHT_NUMBER_CHANGED", was + " is now " + flight,
                         "Same flight, new number: " + flight + ".",

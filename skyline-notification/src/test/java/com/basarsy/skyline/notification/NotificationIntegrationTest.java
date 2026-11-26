@@ -195,6 +195,24 @@ class NotificationIntegrationTest {
     }
 
     @Test
+    void aReplayedOlderRenumberLeavesTheCurrentNumber() {
+        bookingEvents.handle(booked(UUID.randomUUID(), "ada@example.com", item("Ada"))); // SK100
+        flightChanges.handle(renumber("SK100", "SK200", 3));
+        flightChanges.handle(renumber("SK200", "SK300", 2));
+
+        flightChanges.handle(renumber("SK100", "SK200", 3)); // redelivered, or replayed from the DLT
+
+        assertThat(recipients.activeOnFlight(flightId)).singleElement()
+                .satisfies(r -> assertThat(r.flightNumber()).isEqualTo("SK300"));
+    }
+
+    FlightChange renumber(String from, String to, int daysBefore) {
+        return new FlightChange(FlightChange.FLIGHT_NUMBER_CHANGED, flightId, to, "IST", "LHR", "Europe/Istanbul",
+                "Europe/London", "SCHEDULED", "SCHEDULED", DEPARTURE, DEPARTURE, DEPARTURE.plusHours(4), null, null,
+                null, null, DEPARTURE.minusDays(daysBefore), from);
+    }
+
+    @Test
     void anAirlineCancellationTellsPassengersAndEndsTheirBookings() {
         bookingEvents.handle(booked(UUID.randomUUID(), "ada@example.com", item("Ada")));
         clearMessages();
