@@ -4,6 +4,7 @@ import com.basarsy.skyline.user.entity.User;
 import com.basarsy.skyline.user.entity.UserRole;
 import com.basarsy.skyline.user.repository.UserRepository;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -55,7 +56,7 @@ public class AdminBootstrap implements ApplicationRunner {
                     "skyline.bootstrap.admin.password must be at most " + MAX_PASSWORD_BYTES + " bytes (UTF-8)");
         }
 
-        String email = adminEmail.trim().toLowerCase();
+        String email = adminEmail.trim().toLowerCase(Locale.ROOT);
         if (userRepository.existsByEmail(email)) {
             log.info("Admin bootstrap skipped: user {} already exists", email);
             return;

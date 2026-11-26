@@ -186,7 +186,10 @@ class RouteControllersSecurityTest {
             "{\"iataCode\":\"SAWX\",\"icaoCode\":\"LTFJ\",\"name\":\"n\",\"city\":\"c\",\"country\":\"c\",\"timezone\":\"UTC\"}",
             "{\"iataCode\":\"SAW\",\"icaoCode\":\"LTF\",\"name\":\"n\",\"city\":\"c\",\"country\":\"c\",\"timezone\":\"UTC\"}",
             "{\"iataCode\":\"SAW\",\"icaoCode\":\"LTFJ\",\"name\":\" \",\"city\":\"c\",\"country\":\"c\",\"timezone\":\"UTC\"}",
-            "{\"iataCode\":\"SAW\",\"icaoCode\":\"LTFJ\",\"name\":\"n\",\"city\":\"c\",\"country\":\"c\"}"})
+            "{\"iataCode\":\"SAW\",\"icaoCode\":\"LTFJ\",\"name\":\"n\",\"city\":\"c\",\"country\":\"c\"}",
+            // An unknown zone was stored, then silently read as UTC; a fixed offset knows no daylight saving.
+            "{\"iataCode\":\"SAW\",\"icaoCode\":\"LTFJ\",\"name\":\"n\",\"city\":\"c\",\"country\":\"c\",\"timezone\":\"Europe/Istambul\"}",
+            "{\"iataCode\":\"SAW\",\"icaoCode\":\"LTFJ\",\"name\":\"n\",\"city\":\"c\",\"country\":\"c\",\"timezone\":\"UTC+3\"}"})
     void invalidAirportIsA400(String body) throws Exception {
         mvc.perform(json(post("/api/v1/airports"), body).header(HttpHeaders.AUTHORIZATION, bearer("ROLE_ADMIN")))
                 .andExpect(status().isBadRequest())

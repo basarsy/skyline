@@ -4,7 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.basarsy.skyline.common.exception.SkylineException;
@@ -24,6 +28,7 @@ import com.basarsy.skyline.user.security.SkylineUserDetailsService;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.HashMap;
@@ -38,6 +43,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -94,6 +100,55 @@ class AuthServiceImplTest {
                     assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED);
                     assertThat(ex.getMessage()).isEqualTo("Invalid email or password");
                 });
+    }
+
+    @Test
+    void everyAttemptIsClaimedBeforeItsPasswordIsChecked() {
+        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user(true)));
+        when(userRepository.claimLoginAttempt(any(), anyInt(), any(), any())).thenReturn(1);
+        when(authenticationManager.authenticate(any())).thenThrow(new BadCredentialsException("bad"));
+
+        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, "wrong-password")))
+                .hasMessage("Invalid email or password");
+
+        var order = inOrder(userRepository, authenticationManager);
+        order.verify(userRepository).claimLoginAttempt(USER_ID, AuthServiceImpl.MAX_LOGIN_ATTEMPTS,
+                LocalDateTime.now(clock), LocalDateTime.now(clock).plus(AuthServiceImpl.LOCKOUT));
+        order.verify(authenticationManager).authenticate(any());
+        verify(userRepository, never()).clearFailedLogins(any(), any());
+    }
+
+    @Test
+    void aLockedAccountGetsTheSameAnswerWithoutItsPasswordBeingChecked() {
+        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user(true)));
+        when(userRepository.claimLoginAttempt(any(), anyInt(), any(), any())).thenReturn(0); // locked
+
+        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, "Passw0rd!!")))
+                .isInstanceOfSatisfying(SkylineException.class, ex -> {
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED);
+                    assertThat(ex.getMessage()).isEqualTo("Invalid email or password");
+                });
+        verify(authenticationManager, never()).authenticate(any());
+    }
+
+    @Test
+    void aSuccessfulLoginGivesBackItsAttempt() {
+        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user(true)));
+        when(userRepository.claimLoginAttempt(any(), anyInt(), any(), any())).thenReturn(1);
+
+        authService.login(new LoginRequest(EMAIL, "Passw0rd!!"));
+
+        verify(userRepository).clearFailedLogins(USER_ID, LocalDateTime.now(clock));
+    }
+
+    @Test
+    void anUnknownEmailIsAnsweredTheSameAndCountsNothing() {
+        when(userRepository.findByEmail("nobody@test.local")).thenReturn(Optional.empty());
+        when(authenticationManager.authenticate(any())).thenThrow(new BadCredentialsException("bad"));
+
+        assertThatThrownBy(() -> authService.login(new LoginRequest("nobody@test.local", "whatever-it-is")))
+                .hasMessage("Invalid email or password");
+        verify(userRepository, never()).claimLoginAttempt(any(), anyInt(), any(), any());
     }
 
     @Test
