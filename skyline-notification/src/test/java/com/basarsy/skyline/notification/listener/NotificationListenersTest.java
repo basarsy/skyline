@@ -44,6 +44,18 @@ class NotificationListenersTest {
     }
 
     @Test
+    void readsANewFlightNumberWithTheOldOne() throws JsonProcessingException {
+        listeners.onFlightChange("""
+                {"type":"FLIGHT_NUMBER_CHANGED","flightId":"7b0c3f7e-2f1a-4c39-9a52-3c1b8f0c1d11",
+                 "flightNumber":"SK900","previousFlightNumber":"SK100"}""");
+
+        ArgumentCaptor<FlightChange> change = ArgumentCaptor.forClass(FlightChange.class);
+        verify(flightChanges).handle(change.capture());
+        assertThat(change.getValue().flightNumber()).isEqualTo("SK900");
+        assertThat(change.getValue().previousFlightNumber()).isEqualTo("SK100");
+    }
+
+    @Test
     void anUnknownChangeTypeStillParses() throws JsonProcessingException {
         listeners.onFlightChange("{\"type\":\"DIVERTED\",\"flightId\":\"7b0c3f7e-2f1a-4c39-9a52-3c1b8f0c1d11\"}");
 

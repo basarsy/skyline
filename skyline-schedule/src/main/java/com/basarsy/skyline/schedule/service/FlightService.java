@@ -33,6 +33,9 @@ public interface FlightService {
     /** Up to {@code limit} flight numbers of the aircraft's flights that are not cancelled or arrived yet. */
     List<String> flightsOnAircraft(UUID aircraftId, int limit);
 
+    /** Flight numbers of the flights among {@code flightIds} that occupy their crew while {@code flightId} flies. */
+    List<String> overlapping(UUID flightId, List<UUID> flightIds);
+
     void decrementSeat(UUID id);
 
     void incrementSeat(UUID id);

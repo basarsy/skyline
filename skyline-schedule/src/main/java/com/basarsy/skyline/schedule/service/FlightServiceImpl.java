@@ -131,9 +131,11 @@ public class FlightServiceImpl implements FlightService {
         if (request.departureTime().isAfter(request.arrivalTime()) || request.departureTime().isEqual(request.arrivalTime())) {
             throw new SkylineException("Departure time must be before arrival time", HttpStatus.BAD_REQUEST);
         }
-        if (!aircraft.id().equals(flight.getAircraftId())) {
-            flight.setAvailableSeats(seatsOnNewAircraft(flight, aircraft));
-        }
+        boolean routeChanges = !route.id().equals(flight.getRouteId());
+        boolean aircraftChanges = !aircraft.id().equals(flight.getAircraftId());
+        int availableSeats = routeChanges || aircraftChanges
+                ? seatsAfterPlanChange(flight, aircraft, routeChanges, aircraftChanges)
+                : flight.getAvailableSeats();
 
         Snapshot before = Snapshot.of(flight);
         Plan planBefore = Plan.of(flight);
@@ -151,6 +153,7 @@ public class FlightServiceImpl implements FlightService {
         // Last before saving: the aircraft's lock is held from here to commit, with no remote call in between
         // other than the response's enrichment.
         requireAircraftFree(aircraft, id, effectiveDeparture(flight), effectiveArrival(flight));
+        flight.setAvailableSeats(availableSeats); // every check passed
 
         return saveAndAnnounce(flight, before);
     }
@@ -410,6 +413,10 @@ public class FlightServiceImpl implements FlightService {
      * change, in that order of precedence) and one for the gate. Nothing is appended when nothing changed.
      */
     private void announce(Snapshot before, Flight flight, RouteResponse route) {
+        // First: every later event already carries the new number, which passengers should hear about first.
+        if (!Objects.equals(before.flightNumber(), flight.getFlightNumber())) {
+            append(FlightChangeType.FLIGHT_NUMBER_CHANGED, before, flight, route);
+        }
         FlightChangeType type = null;
         if (flight.getStatus() == FlightStatus.CANCELLED && before.status() != FlightStatus.CANCELLED) {
             type = FlightChangeType.CANCELLED;
@@ -438,17 +445,17 @@ public class FlightServiceImpl implements FlightService {
                 flight.getStatus(), before.status(),
                 flight.getDepartureTime(), before.departureTime(), flight.getArrivalTime(),
                 flight.getEstimatedDepartureTime(), before.estimatedDepartureTime(),
-                flight.getGate(), before.gate(), LocalDateTime.now());
+                flight.getGate(), before.gate(), LocalDateTime.now(), before.flightNumber());
         outbox.append(KafkaTopicConfig.FLIGHT_CHANGED_TOPIC, flight.getId(), event);
     }
 
     /** What a flight looked like before an operation, to tell what the operation changed. */
-    private record Snapshot(FlightStatus status, LocalDateTime departureTime, LocalDateTime arrivalTime,
-            LocalDateTime estimatedDepartureTime, String gate) {
+    private record Snapshot(String flightNumber, FlightStatus status, LocalDateTime departureTime,
+            LocalDateTime arrivalTime, LocalDateTime estimatedDepartureTime, String gate) {
 
         static Snapshot of(Flight flight) {
-            return new Snapshot(flight.getStatus(), flight.getDepartureTime(), flight.getArrivalTime(),
-                    flight.getEstimatedDepartureTime(), flight.getGate());
+            return new Snapshot(flight.getFlightNumber(), flight.getStatus(), flight.getDepartureTime(),
+                    flight.getArrivalTime(), flight.getEstimatedDepartureTime(), flight.getGate());
         }
 
         boolean timesDifferFrom(Flight flight) {
@@ -487,6 +494,16 @@ public class FlightServiceImpl implements FlightService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<String> overlapping(UUID flightId, List<UUID> flightIds) {
+        // The target's window is read here, at check time, with the same rule as the query's (one source of truth).
+        Flight flight = getFlightEntity(flightId);
+        List<UUID> others = flightIds.stream().filter(id -> !id.equals(flightId)).toList();
+        return others.isEmpty() ? List.of()
+                : flightRepository.overlapping(others, effectiveDeparture(flight), effectiveArrival(flight));
+    }
+
+    @Override
     @Transactional
     public void claimSeat(UUID flightId, UUID claimId) {
         if (!seatClaims.insert(claimId, flightId)) {
@@ -513,17 +530,30 @@ public class FlightServiceImpl implements FlightService {
     }
 
     /**
-     * Seats left after moving a flight to another aircraft: the bookings it already holds stay, so the new
-     * capacity minus those bookings. Refused when the new aircraft can't seat everyone already booked.
+     * Seats left after a change of route or aircraft. With nobody booked, anything goes. Once passengers are
+     * booked, the flight is what they bought:
+     * <ul>
+     *   <li>its route can't change: a new origin or destination is another flight, which takes rebooking or a
+     *       refund, not a message. Cancelling the flight does that (bookings cancelled, add-ons refunded,
+     *       passengers told); then create the new one;</li>
+     *   <li>its aircraft can change only for one of the same type: the same cabins and seat map, so every seat
+     *       and cabin already sold still exists (a smaller or other type could leave sold seats on no map).</li>
+     * </ul>
      */
-    private int seatsOnNewAircraft(Flight flight, AircraftResponse newAircraft) {
-        int booked = fleetClient.getAircraft(flight.getAircraftId()).aircraftType().totalSeats() - flight.getAvailableSeats();
-        int available = newAircraft.aircraftType().totalSeats() - booked;
-        if (available < 0) {
-            throw new SkylineException("Aircraft " + newAircraft.tailNumber() + " has fewer seats than the "
-                    + booked + " already booked on this flight", HttpStatus.CONFLICT);
+    private int seatsAfterPlanChange(Flight flight, AircraftResponse newAircraft, boolean routeChanges,
+            boolean aircraftChanges) {
+        AircraftResponse current = aircraftChanges ? fleetClient.getAircraft(flight.getAircraftId()) : newAircraft;
+        int booked = current.aircraftType().totalSeats() - flight.getAvailableSeats();
+        if (booked > 0 && routeChanges) {
+            throw new SkylineException(booked + " passenger(s) are booked on this flight, so its route can't "
+                    + "change: cancel it (they are told and refunded) and create the new flight", HttpStatus.CONFLICT);
         }
-        return available;
+        if (booked > 0 && !current.aircraftType().id().equals(newAircraft.aircraftType().id())) {
+            throw new SkylineException(booked + " passenger(s) are booked on this flight: it can move only to "
+                    + "another " + current.aircraftType().manufacturer() + " " + current.aircraftType().model()
+                    + ", so their seats and cabins stay the same", HttpStatus.CONFLICT);
+        }
+        return newAircraft.aircraftType().totalSeats() - booked;
     }
 
     /** Aircraft in maintenance or retired can't be scheduled. */

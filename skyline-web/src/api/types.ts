@@ -355,7 +355,7 @@ export interface GroupReservationRequest {
 /** An entry of the in-app inbox (skyline-notification). */
 export interface NotificationResponse {
   id: UUID
-  /** FLIGHT_DELAYED, FLIGHT_ON_TIME, FLIGHT_RESCHEDULED, FLIGHT_GATE, FLIGHT_CANCELLED, FLIGHT_BOARDING,
+  /** FLIGHT_DELAYED, FLIGHT_ON_TIME, FLIGHT_RESCHEDULED, FLIGHT_GATE, FLIGHT_CANCELLED, FLIGHT_BOARDING, FLIGHT_NUMBER_CHANGED,
    *  BOOKING_CONFIRMED, BOOKING_CANCELLED, CHECK_IN_OPEN; others may be added. */
   kind: string
   title: string

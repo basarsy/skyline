@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { formatDistanceToNowStrict } from 'date-fns'
-import { Bell, CalendarClock, CheckCheck, Clock, DoorOpen, PlaneTakeoff, Ticket, XCircle } from 'lucide-react'
+import { Bell, CalendarClock, CheckCheck, Clock, DoorOpen, Hash, PlaneTakeoff, Ticket, XCircle } from 'lucide-react'
 import { useNavigate } from 'react-router'
 
 import type { NotificationResponse } from '@/api/types'
@@ -17,6 +17,7 @@ const ICONS: Record<string, typeof Bell> = {
   FLIGHT_GATE: DoorOpen,
   FLIGHT_CANCELLED: XCircle,
   FLIGHT_BOARDING: PlaneTakeoff,
+  FLIGHT_NUMBER_CHANGED: Hash,
   BOOKING_CONFIRMED: Ticket,
   BOOKING_CANCELLED: XCircle,
   CHECK_IN_OPEN: Ticket,

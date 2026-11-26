@@ -695,6 +695,8 @@ export const handlers = [
     const member = db.crew.find((c) => c.id === body.crewMemberId)
     const flight = findFlight(String(params.id))
     if (!member || !flight) return fail(404, 'Crew member not found')
+    if (!['SCHEDULED', 'DELAYED', 'BOARDING'].includes(flight.status))
+      return fail(409, `Crew can't be assigned to a flight that is ${flight.status}`)
     if (member.licenseExpiryDate < flight.departureTime.slice(0, 10)) {
       return fail(400, 'Crew member license is expired or will expire before flight')
     }
@@ -714,6 +716,9 @@ export const handlers = [
   http.delete(`${API}/flights/:flightId/crew/:crewMemberId`, ({ request, params }) => {
     const { denied } = guard(request, ['STAFF', 'ADMIN'])
     if (denied) return denied
+    const flight = findFlight(String(params.flightId))
+    if (flight && !['SCHEDULED', 'DELAYED', 'BOARDING'].includes(flight.status))
+      return fail(409, `Crew can't be removed from a flight that is ${flight.status}`)
     const manifest = db.manifests.get(String(params.flightId)) ?? []
     db.manifests.set(
       String(params.flightId),
@@ -788,25 +793,58 @@ export const handlers = [
     const plane = db.aircraft.find((a) => a.id === body.aircraftId)
     if (!plane) return fail(404, 'Aircraft not found')
     if (plane.status !== 'ACTIVE') return fail(400, `Aircraft ${plane.tailNumber} is not active`)
+    // Like the server: once passengers are booked, the route stays and the aircraft changes only within its type.
+    const newRoute = db.routes.find((r) => r.id === body.routeId)
+    if (!newRoute) return fail(404, 'Route not found')
+    const booked = Math.max(
+      0,
+      (flight.aircraft?.aircraftType.totalSeats ?? flight.availableSeats) - flight.availableSeats,
+    )
+    if (booked > 0 && body.routeId !== flight.route?.id)
+      return fail(
+        409,
+        `${booked} passenger(s) are booked on this flight, so its route can't change: cancel it (they are told and refunded) and create the new flight`,
+      )
+    const currentType = flight.aircraft?.aircraftType
+    if (booked > 0 && currentType && plane.aircraftType.id !== currentType.id)
+      return fail(
+        409,
+        `${booked} passenger(s) are booked on this flight: it can move only to another ${currentType.manufacturer} ${currentType.model}, so their seats and cabins stay the same`,
+      )
     const busy = aircraftConflict(plane, flight.id, String(body.departureTime), String(body.arrivalTime))
     if (busy) return busy
     // New times are the plan now: like the server, a reschedule lifts the delay.
     const rescheduled = body.departureTime !== flight.departureTime || body.arrivalTime !== flight.arrivalTime
+    const previousNumber = flight.flightNumber
+    const changed =
+      rescheduled ||
+      String(body.flightNumber) !== flight.flightNumber ||
+      body.routeId !== flight.route?.id ||
+      plane.id !== flight.aircraft?.id ||
+      Number(body.basePrice) !== flight.basePrice
     Object.assign(flight, {
       flightNumber: String(body.flightNumber),
-      route: db.routes.find((r) => r.id === body.routeId) ?? flight.route,
+      route: newRoute,
       aircraft: plane,
       departureTime: String(body.departureTime),
       arrivalTime: String(body.arrivalTime),
       basePrice: Number(body.basePrice),
       updatedAt: now(),
-      editVersion: flight.editVersion + 1,
+      availableSeats: plane.aircraftType.totalSeats - booked,
+      editVersion: changed ? flight.editVersion + 1 : flight.editVersion,
       ...(rescheduled && {
         status: flight.status === 'DELAYED' ? 'SCHEDULED' : flight.status,
         estimatedDepartureTime: null,
         estimatedArrivalTime: null,
       }),
     })
+    if (flight.flightNumber !== previousNumber)
+      notifyFlight(
+        flight,
+        'FLIGHT_NUMBER_CHANGED',
+        `${previousNumber} is now ${flight.flightNumber}`,
+        `Same flight, new number: ${flight.flightNumber}.`,
+      )
     return ok(flight, 'Flight updated successfully')
   }),
   http.patch(`${API}/flights/:id/status`, async ({ request, params }) => {

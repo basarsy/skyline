@@ -465,6 +465,18 @@ class FlightServiceImplTest {
     }
 
     @Test
+    void crewOverlapIsCheckedAtTheTargetFlightsExpectedTimesWithoutItself() {
+        Flight flight = delayed(LocalDateTime.of(2030, 6, 1, 11, 0)); // 09:00 → 13:00, now 11:00 → 15:00
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+        UUID other = UUID.randomUUID();
+        when(repository.overlapping(List.of(other), LocalDateTime.of(2030, 6, 1, 11, 0),
+                LocalDateTime.of(2030, 6, 1, 15, 0))).thenReturn(List.of("SK777"));
+
+        assertThat(service.overlapping(flight.getId(), List.of(flight.getId(), other))).containsExactly("SK777");
+        assertThat(service.overlapping(flight.getId(), List.of(flight.getId()))).as("only itself").isEmpty();
+    }
+
+    @Test
     void anUpdateIsCheckedAgainstTheAircraftsOtherFlightsOnly() {
         Flight flight = flight(FlightStatus.SCHEDULED);
         when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
@@ -556,15 +568,79 @@ class FlightServiceImplTest {
     }
 
     @Test
-    void changingAircraftKeepsExistingBookingsAgainstTheNewCapacity() {
-        Flight flight = flight(FlightStatus.SCHEDULED); // 180 seats, 150 available: 30 booked
+    void aFlightNobodyBookedMovesToAnyAircraft() {
+        Flight flight = flight(FlightStatus.SCHEDULED);
+        flight.setAvailableSeats(180);
         when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
         UUID bigger = UUID.randomUUID();
         when(fleetClient.getAircraft(bigger)).thenReturn(aircraft(bigger, AircraftStatus.ACTIVE, 220));
 
         service.updateFlight(flight.getId(), request(bigger));
 
-        assertThat(flight.getAvailableSeats()).isEqualTo(190);
+        assertThat(flight.getAvailableSeats()).isEqualTo(220);
+    }
+
+    @Test
+    void aBookedFlightMovesOnlyToAnAircraftOfTheSameType() {
+        Flight flight = flight(FlightStatus.SCHEDULED); // 180 seats, 150 available: 30 booked
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+        UUID bigger = UUID.randomUUID();
+        when(fleetClient.getAircraft(bigger)).thenReturn(aircraft(bigger, AircraftStatus.ACTIVE, 220));
+
+        assertThatThrownBy(() -> service.updateFlight(flight.getId(), request(bigger)))
+                .isInstanceOf(SkylineException.class)
+                .hasMessageContaining("it can move only to another Airbus A320neo")
+                .extracting(e -> ((SkylineException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(flight.getAircraftId()).isEqualTo(AIRCRAFT_ID);
+        assertThat(flight.getAvailableSeats()).isEqualTo(150);
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void aBookedFlightKeepsItsRoute() {
+        Flight flight = flight(FlightStatus.SCHEDULED); // 30 booked
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+        UUID otherRoute = UUID.randomUUID();
+        when(routeClient.getRoute(otherRoute)).thenReturn(new RouteResponse(otherRoute, route().origin(),
+                new AirportSummary(UUID.randomUUID(), "JFK", "John F. Kennedy", "New York", "USA", "America/New_York"),
+                8000, 600));
+        FlightRequest base = request(AIRCRAFT_ID);
+
+        assertThatThrownBy(() -> service.updateFlight(flight.getId(), new FlightRequest(base.flightNumber(),
+                otherRoute, AIRCRAFT_ID, base.departureTime(), base.arrivalTime(), base.basePrice())))
+                .isInstanceOf(SkylineException.class)
+                .hasMessageContaining("its route can't change")
+                .extracting(e -> ((SkylineException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(flight.getRouteId()).isEqualTo(ROUTE_ID);
+        verifyNoInteractions(outbox);
+    }
+
+    @Test
+    void aNewNumberIsAnnouncedBeforeTheChangesThatAlreadyUseIt() {
+        Flight flight = flight(FlightStatus.SCHEDULED);
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+
+        service.updateFlight(flight.getId(), new FlightRequest("SK900", ROUTE_ID, AIRCRAFT_ID,
+                flight.getDepartureTime().plusHours(1), flight.getArrivalTime().plusHours(1), flight.getBasePrice()));
+
+        ArgumentCaptor<Object> events = ArgumentCaptor.forClass(Object.class);
+        verify(outbox, times(2)).append(eq(KafkaTopicConfig.FLIGHT_CHANGED_TOPIC), any(UUID.class), events.capture());
+        assertThat(events.getAllValues()).extracting(e -> ((FlightChangedEvent) e).type())
+                .containsExactly(FlightChangeType.FLIGHT_NUMBER_CHANGED, FlightChangeType.RESCHEDULED);
+    }
+
+    @Test
+    void aNewFlightNumberIsAnnouncedWithTheOldOne() {
+        Flight flight = flight(FlightStatus.SCHEDULED);
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+
+        service.updateFlight(flight.getId(), new FlightRequest("SK900", ROUTE_ID, AIRCRAFT_ID,
+                flight.getDepartureTime(), flight.getArrivalTime(), flight.getBasePrice()));
+
+        FlightChangedEvent event = singleChange();
+        assertThat(event.type()).isEqualTo(FlightChangeType.FLIGHT_NUMBER_CHANGED);
+        assertThat(event.flightNumber()).isEqualTo("SK900");
+        assertThat(event.previousFlightNumber()).isEqualTo("SK100");
     }
 
     @Test
@@ -575,21 +651,6 @@ class FlightServiceImplTest {
         service.updateFlight(flight.getId(), request(AIRCRAFT_ID));
 
         assertThat(flight.getAvailableSeats()).isEqualTo(150);
-    }
-
-    @Test
-    void anAircraftTooSmallForTheExistingBookingsIsRefused() {
-        Flight flight = flight(FlightStatus.SCHEDULED); // 30 booked
-        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
-        UUID small = UUID.randomUUID();
-        when(fleetClient.getAircraft(small)).thenReturn(aircraft(small, AircraftStatus.ACTIVE, 20));
-
-        assertThatThrownBy(() -> service.updateFlight(flight.getId(), request(small)))
-                .isInstanceOf(SkylineException.class)
-                .extracting(e -> ((SkylineException) e).getStatus()).isEqualTo(HttpStatus.CONFLICT);
-        assertThat(flight.getAircraftId()).isEqualTo(AIRCRAFT_ID);
-        assertThat(flight.getAvailableSeats()).isEqualTo(150);
-        verify(repository, never()).save(any());
     }
 
     @Test
@@ -727,13 +788,17 @@ class FlightServiceImplTest {
                 new AirportSummary(UUID.randomUUID(), "LHR", "Heathrow", "London", "UK", "Europe/London"), 2500, 240);
     }
 
+    static final AircraftTypeSummary A320NEO = new AircraftTypeSummary(UUID.randomUUID(), "Airbus", "A320neo", 180);
+
+    /** An A320neo: every aircraft built this way is of the same type. */
     static AircraftResponse aircraft(UUID id, AircraftStatus status) {
-        return aircraft(id, status, 180);
+        return new AircraftResponse(id, "TC-JFA", A320NEO, status, 2020);
     }
 
+    /** An aircraft of another type, with {@code totalSeats} seats. */
     static AircraftResponse aircraft(UUID id, AircraftStatus status, int totalSeats) {
-        return new AircraftResponse(id, "TC-JFA", new AircraftTypeSummary(UUID.randomUUID(), "Airbus", "A320neo", totalSeats),
-                status, 2020);
+        return new AircraftResponse(id, "TC-JFB", new AircraftTypeSummary(UUID.randomUUID(), "Boeing", "737-8",
+                totalSeats), status, 2020);
     }
 
     static Flight flight(FlightStatus status) {
