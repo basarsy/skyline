@@ -16,6 +16,11 @@ public class Outbox {
 
     private final OutboxRepository repository;
     private final ObjectMapper objectMapper;
+    private final OutboxTracing tracing;
+
+    public Outbox(OutboxRepository repository, ObjectMapper objectMapper) {
+        this(repository, objectMapper, OutboxTracing.NONE);
+    }
 
     /**
      * Stores {@code event} as JSON, to be sent to {@code topic} with {@code aggregateId} as the record key. The
@@ -24,8 +29,9 @@ public class Outbox {
     @Transactional(propagation = Propagation.MANDATORY)
     public void append(String topic, UUID aggregateId, Object event) {
         try {
+            // With the current trace, so the event's Kafka record continues it (see OutboxTracing).
             repository.insert(aggregateId, event.getClass().getSimpleName(), topic,
-                    objectMapper.writeValueAsString(event));
+                    objectMapper.writeValueAsString(event), tracing.currentTraceParent());
         } catch (JsonProcessingException e) {
             throw new IllegalArgumentException("Cannot serialize " + event.getClass().getSimpleName(), e);
         }

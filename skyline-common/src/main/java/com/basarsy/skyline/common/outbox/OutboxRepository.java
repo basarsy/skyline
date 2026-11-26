@@ -24,8 +24,14 @@ class OutboxRepository {
     private final JdbcTemplate jdbc;
 
     void insert(UUID aggregateId, String eventType, String topic, String payload) {
-        jdbc.update("INSERT INTO outbox_events (id, aggregate_id, event_type, topic, payload) VALUES (?, ?, ?, ?, ?)",
-                UUID.randomUUID(), aggregateId, eventType, topic, payload);
+        insert(aggregateId, eventType, topic, payload, null);
+    }
+
+    void insert(UUID aggregateId, String eventType, String topic, String payload, String traceParent) {
+        jdbc.update("""
+                INSERT INTO outbox_events (id, aggregate_id, event_type, topic, payload, trace_parent)
+                VALUES (?, ?, ?, ?, ?, ?)""",
+                UUID.randomUUID(), aggregateId, eventType, topic, payload, traceParent);
     }
 
     /**
@@ -39,7 +45,7 @@ class OutboxRepository {
      */
     List<OutboxEvent> claimBatch(int limit) {
         return jdbc.query("""
-                SELECT e.id, e.aggregate_id, e.topic, e.payload, e.attempts FROM outbox_events e
+                SELECT e.id, e.aggregate_id, e.topic, e.payload, e.attempts, e.trace_parent FROM outbox_events e
                 WHERE e.published_at IS NULL AND e.next_attempt_at <= now()
                   AND NOT EXISTS (
                       SELECT 1 FROM outbox_events older
@@ -48,7 +54,8 @@ class OutboxRepository {
                 LIMIT ?
                 FOR UPDATE OF e SKIP LOCKED""",
                 (rs, row) -> new OutboxEvent(rs.getObject("id", UUID.class), rs.getObject("aggregate_id", UUID.class),
-                        rs.getString("topic"), rs.getString("payload"), rs.getInt("attempts")),
+                        rs.getString("topic"), rs.getString("payload"), rs.getInt("attempts"),
+                        rs.getString("trace_parent")),
                 limit);
     }
 

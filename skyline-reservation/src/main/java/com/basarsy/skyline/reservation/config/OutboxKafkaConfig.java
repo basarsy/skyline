@@ -26,6 +26,9 @@ public class OutboxKafkaConfig {
         Map<String, Object> config = new HashMap<>(properties.buildProducerProperties(sslBundles.getIfAvailable()));
         config.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
         config.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        return new KafkaTemplate<>(new DefaultKafkaProducerFactory<>(config));
+        KafkaTemplate<String, String> template = new KafkaTemplate<>(new DefaultKafkaProducerFactory<>(config));
+        // Traced like Boot's own template (spring.kafka.template.observation-enabled covers only that one).
+        template.setObservationEnabled(true);
+        return template;
     }
 }
