@@ -68,6 +68,12 @@ public class RecipientRepository {
                 timestamp(departureTime), rearmReminder, flightId);
     }
 
+    /** The flight flies under a new number. */
+    public void renumberFlight(UUID flightId, String flightNumber) {
+        jdbc.update("UPDATE booking_recipients SET flight_number = ?, updated_at = now() WHERE flight_id = ?",
+                flightNumber, flightId);
+    }
+
     /**
      * Locks up to {@code limit} active bookings whose check-in window ({@code opensBefore} → {@code closesBefore}
      * before departure) is open at {@code now} and that were not reminded yet, until the transaction ends.
