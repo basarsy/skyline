@@ -13,5 +13,7 @@ public enum FlightChangeType {
     /** A gate was assigned or changed. */
     GATE_CHANGED,
     /** The airline cancelled the flight. */
-    CANCELLED
+    CANCELLED,
+    /** The flight has a new flight number (previousFlightNumber is the old one). */
+    FLIGHT_NUMBER_CHANGED
 }
