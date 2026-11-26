@@ -46,6 +46,10 @@ public class SecurityConfig {
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**", "/actuator/info")
                         .permitAll()
+                        // For a Prometheus server on the services' private network: no route of the gateway leads
+                        // to a service's /actuator, and the services' published ports are bound to localhost.
+                        .requestMatchers(HttpMethod.GET, "/actuator/prometheus")
+                        .permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/**")
                         .permitAll()
                         .requestMatchers(

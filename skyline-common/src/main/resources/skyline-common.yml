@@ -5,8 +5,9 @@ management:
   endpoints:
     web:
       exposure:
-        # Only health (incl. the liveness/readiness groups) and info are reachable over HTTP.
-        include: health, info
+        # Health (incl. the liveness/readiness groups), info and metrics for Prometheus. The gateway, the one
+        # public entry point, routes nothing to a service's /actuator.
+        include: health, info, prometheus
   endpoint:
     health:
       show-details: never
@@ -15,11 +16,23 @@ management:
       group:
         readiness:
           include: readinessState, db
+  # Traces: every request carries a W3C traceparent through Feign and Kafka (and the outbox), and every log line
+  # its trace and span ids. Spans are exported over OTLP only when MANAGEMENT_OTLP_TRACING_ENDPOINT is set
+  # (the compose "observability" profile sets it); otherwise nothing is sent anywhere.
+  tracing:
+    sampling:
+      probability: ${SKYLINE_TRACING_SAMPLING_PROBABILITY:0.1}
 
 # Calls between services fail fast instead of holding a request thread, a DB connection and (for bookings) the
 # cabin lock for OpenFeign's 60s default. A booking's seat claim is safe to time out: its release is registered
 # before the call.
 spring:
+  kafka:
+    # Kafka records carry the trace too (producer and listener spans), for the services that use Kafka.
+    template:
+      observation-enabled: true
+    listener:
+      observation-enabled: true
   cloud:
     openfeign:
       client:
