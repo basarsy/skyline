@@ -18,10 +18,6 @@ public class Outbox {
     private final ObjectMapper objectMapper;
     private final OutboxTracing tracing;
 
-    public Outbox(OutboxRepository repository, ObjectMapper objectMapper) {
-        this(repository, objectMapper, OutboxTracing.NONE);
-    }
-
     /**
      * Stores {@code event} as JSON, to be sent to {@code topic} with {@code aggregateId} as the record key. The
      * stored JSON is sent as is: the value on the wire is exactly this serialization, with no type headers.

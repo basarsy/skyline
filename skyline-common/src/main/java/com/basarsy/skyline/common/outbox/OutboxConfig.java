@@ -1,6 +1,7 @@
 package com.basarsy.skyline.common.outbox;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.tracing.Tracer;
 import io.micrometer.tracing.propagation.Propagator;
 import org.springframework.beans.factory.ObjectProvider;
@@ -32,10 +33,12 @@ public class OutboxConfig {
 
     /** Trace context across the outbox when tracing is on (Micrometer Tracing), else nothing. */
     @Bean
-    OutboxTracing outboxTracing(ObjectProvider<Tracer> tracer, ObjectProvider<Propagator> propagator) {
+    OutboxTracing outboxTracing(ObjectProvider<Tracer> tracer, ObjectProvider<Propagator> propagator,
+            ObjectProvider<ObservationRegistry> observations) {
         Tracer t = tracer.getIfAvailable();
         Propagator p = propagator.getIfAvailable();
-        return t == null || p == null ? OutboxTracing.NONE : new OutboxTracing(t, p);
+        ObservationRegistry o = observations.getIfAvailable();
+        return t == null || p == null || o == null ? OutboxTracing.NONE : new OutboxTracing(t, p, o);
     }
 
     @Bean

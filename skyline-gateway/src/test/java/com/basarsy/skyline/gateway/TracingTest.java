@@ -59,6 +59,19 @@ class TracingTest {
     }
 
     @Test
+    void aClientCannotChooseTheTrace() throws Exception {
+        String chosen = "4bf92f3577b34da6a3ce929d0e0e4736";
+        HttpResponse<String> response = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/api/v1/flights/board"))
+                        .header("traceparent", "00-" + chosen + "-00f067aa0ba902b7-01").build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        String traceId = response.headers().firstValue(TraceIdResponseHeader.HEADER).orElseThrow();
+        assertThat(traceId).isNotEqualTo(chosen);
+        assertThat(RECEIVED_TRACEPARENT.get()).startsWith("00-" + traceId + "-").doesNotContain(chosen);
+    }
+
+    @Test
     void theGatewaysOwnMetricsAreNotPublic() throws Exception {
         HttpResponse<Void> response = HttpClient.newHttpClient().send(
                 HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/actuator/prometheus")).build(),

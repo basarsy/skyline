@@ -191,8 +191,8 @@ class OutboxIntegrationTest {
     @Test
     void concurrentPublishersClaimDisjointRows() throws Exception {
         transactions.executeWithoutResult(status -> {
-            outboxRepository.insert(UUID.randomUUID(), "Test", "t", "{}");
-            outboxRepository.insert(UUID.randomUUID(), "Test", "t", "{}");
+            outboxRepository.insert(UUID.randomUUID(), "Test", "t", "{}", null);
+            outboxRepository.insert(UUID.randomUUID(), "Test", "t", "{}", null);
         });
         CountDownLatch claimed = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
@@ -222,9 +222,9 @@ class OutboxIntegrationTest {
         UUID other = UUID.randomUUID();
         transactions.executeWithoutResult(status -> {
             // Not a valid topic name, so Kafka rejects the send.
-            outboxRepository.insert(aggregate, "Test", "not a valid topic!", "{\"n\":1}");
-            outboxRepository.insert(aggregate, "Test", KafkaTopicConfig.FLIGHT_CANCELLED_TOPIC, "{\"n\":2}");
-            outboxRepository.insert(other, "Test", KafkaTopicConfig.FLIGHT_CANCELLED_TOPIC, "{\"n\":3}");
+            outboxRepository.insert(aggregate, "Test", "not a valid topic!", "{\"n\":1}", null);
+            outboxRepository.insert(aggregate, "Test", KafkaTopicConfig.FLIGHT_CANCELLED_TOPIC, "{\"n\":2}", null);
+            outboxRepository.insert(other, "Test", KafkaTopicConfig.FLIGHT_CANCELLED_TOPIC, "{\"n\":3}", null);
         });
 
         // Only the head of each aggregate is claimable.
@@ -248,10 +248,10 @@ class OutboxIntegrationTest {
     void cleanupDeletesOnlyExpiredPublishedRowsInChunks() {
         transactions.executeWithoutResult(status -> {
             for (int i = 0; i < 5; i++) {
-                outboxRepository.insert(UUID.randomUUID(), "Test", "t", "{\"expired\":true}");
+                outboxRepository.insert(UUID.randomUUID(), "Test", "t", "{\"expired\":true}", null);
             }
-            outboxRepository.insert(UUID.randomUUID(), "Test", "t", "{\"recent\":true}");
-            outboxRepository.insert(UUID.randomUUID(), "Test", "t", "{\"pending\":true}");
+            outboxRepository.insert(UUID.randomUUID(), "Test", "t", "{\"recent\":true}", null);
+            outboxRepository.insert(UUID.randomUUID(), "Test", "t", "{\"pending\":true}", null);
         });
         jdbc.update("UPDATE outbox_events SET published_at = now() - INTERVAL '8 days' WHERE payload LIKE '%expired%'");
         jdbc.update("UPDATE outbox_events SET published_at = now() WHERE payload LIKE '%recent%'");

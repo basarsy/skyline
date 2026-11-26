@@ -2,6 +2,9 @@ server:
   port: 8000
 
 spring:
+  reactor:
+    # Trace and span ids in the gateway's own log lines too, also inside Reactor operators.
+    context-propagation: auto
   application:
     name: skyline-gateway
   data:
@@ -117,3 +120,8 @@ management:
   tracing:
     sampling:
       probability: ${SKYLINE_TRACING_SAMPLING_PROBABILITY:0.1}
+    propagation:
+      # The public entry point: a trace always starts here. A traceparent sent by a client is ignored, so no one
+      # can choose their requests' trace id (or reuse someone else's) or force them to be sampled.
+      consume: []
+      produce: w3c

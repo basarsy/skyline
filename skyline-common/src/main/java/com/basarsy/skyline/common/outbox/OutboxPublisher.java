@@ -42,11 +42,6 @@ public class OutboxPublisher {
     private final OutboxProperties properties;
     private final OutboxTracing tracing;
 
-    public OutboxPublisher(OutboxRepository repository, KafkaTemplate<String, String> kafkaTemplate,
-            TransactionOperations transactions, OutboxProperties properties) {
-        this(repository, kafkaTemplate, transactions, properties, OutboxTracing.NONE);
-    }
-
     /** Publishes one batch of due rows and returns how many were sent. */
     public int publishPending() {
         int published = transactions.execute(status -> {

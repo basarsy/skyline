@@ -23,10 +23,6 @@ class OutboxRepository {
 
     private final JdbcTemplate jdbc;
 
-    void insert(UUID aggregateId, String eventType, String topic, String payload) {
-        insert(aggregateId, eventType, topic, payload, null);
-    }
-
     void insert(UUID aggregateId, String eventType, String topic, String payload, String traceParent) {
         jdbc.update("""
                 INSERT INTO outbox_events (id, aggregate_id, event_type, topic, payload, trace_parent)

@@ -53,7 +53,11 @@ public class KafkaErrorHandlingConfig {
         Map<String, Object> config = new HashMap<>(properties.buildProducerProperties(sslBundles.getIfAvailable()));
         // Consumers bind to their own DTOs: don't leak this service's class names into headers.
         config.put(JsonSerializer.ADD_TYPE_INFO_HEADERS, false);
-        return new KafkaTemplate<>(new DefaultKafkaProducerFactory<>(config,
+        KafkaTemplate<Object, Object> template = new KafkaTemplate<>(new DefaultKafkaProducerFactory<>(config,
                 new DelegatingByTypeSerializer(byType, true), new DelegatingByTypeSerializer(byType, true)));
+        // A parked record keeps the trace of the record that failed (only Boot's own template is observed by
+        // spring.kafka.template.observation-enabled).
+        template.setObservationEnabled(true);
+        return template;
     }
 }

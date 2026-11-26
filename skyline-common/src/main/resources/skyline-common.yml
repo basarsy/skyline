@@ -18,7 +18,7 @@ management:
           include: readinessState, db
   # Traces: every request carries a W3C traceparent through Feign and Kafka (and the outbox), and every log line
   # its trace and span ids. Spans are exported over OTLP only when MANAGEMENT_OTLP_TRACING_ENDPOINT is set
-  # (the compose "observability" profile sets it); otherwise nothing is sent anywhere.
+  # (docker-compose.observability.yml sets it); otherwise nothing is sent anywhere.
   tracing:
     sampling:
       probability: ${SKYLINE_TRACING_SAMPLING_PROBABILITY:0.1}

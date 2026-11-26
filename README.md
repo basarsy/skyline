@@ -585,10 +585,11 @@ The Docker image's healthcheck polls `/actuator/health/readiness`, and compose s
 
 Every request is one trace, from the gateway through every service it reaches:
 
-- **Tracing** (Micrometer Tracing on OpenTelemetry): the gateway starts the trace and sends it on as a W3C `traceparent`; OpenFeign calls and Kafka records carry it on. Events sent through the outbox keep the trace of the request that recorded them (`outbox_events.trace_parent`), so a booking can be followed to the email its event causes
+- **Tracing** (Micrometer Tracing on OpenTelemetry): the gateway starts the trace (a `traceparent` sent by a client is ignored, so no one can pick their trace id or force sampling) and sends it on as a W3C `traceparent`; OpenFeign calls and Kafka records carry it on. Events sent through the outbox keep the trace of the request that recorded them (`outbox_events.trace_parent`), so a booking can be followed to the email its event causes
 - **Logs**: every line logged while handling a request carries its trace and span ids
-- **`X-Trace-Id`**: every response carries its trace id. The web app shows it as a reference on a server error, for support to find that exact request in every service's logs
-- **Metrics**: each service exposes Prometheus metrics at `/actuator/prometheus` (on the private network only, like all of `/actuator`)
+- **`X-Trace-Id`**: every response carries its trace id. The web app shows it as a reference on a server error, for support to find that exact request in every service's logs (always) and in Jaeger (when the request was sampled)
+- **Metrics**: each service exposes Prometheus metrics at `/actuator/prometheus`, unauthenticated like the rest of `/actuator`: it relies on service ports being private (the gateway routes nothing to `/actuator`, and compose binds them to localhost). In a deployment where they aren't, put them behind a network policy
+- **Not traced**: requests to `/actuator` (health probes, scrapes) and scheduled job runs (the outbox and email pollers), which would bury real requests
 
 Nothing is exported by default: spans go out over OTLP only when `MANAGEMENT_OTLP_TRACING_ENDPOINT` is set. To see traces and metrics locally, start the stack with the observability overlay, which adds Jaeger and Prometheus and traces every request:
 
