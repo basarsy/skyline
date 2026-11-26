@@ -1,5 +1,6 @@
 package com.basarsy.skyline.route.dto;
 
+import com.basarsy.skyline.route.validation.IanaTimeZone;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
@@ -9,5 +10,5 @@ public record AirportRequest(
         @NotBlank String name,
         @NotBlank String city,
         @NotBlank String country,
-        @NotBlank String timezone) {
+        @NotBlank @IanaTimeZone String timezone) {
 }
