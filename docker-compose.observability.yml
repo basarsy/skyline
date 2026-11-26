@@ -1,0 +1,46 @@
+# Traces and metrics for the whole stack, on top of docker-compose.yml:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml up --build
+#
+# Jaeger (traces, UI on http://localhost:16686) receives every span over OTLP, and Prometheus (UI on
+# http://localhost:9090) scrapes every service's metrics. Without this file nothing is exported: the services
+# only export spans when MANAGEMENT_OTLP_TRACING_ENDPOINT is set, and only this file sets it.
+
+x-traced: &traced
+  MANAGEMENT_OTLP_TRACING_ENDPOINT: http://jaeger:4318/v1/traces
+  # Every request, so any one can be looked up (the default without this file is 10%).
+  SKYLINE_TRACING_SAMPLING_PROBABILITY: "1.0"
+
+services:
+  jaeger:
+    image: jaegertracing/jaeger:2.5.0
+    container_name: skyline-jaeger
+    ports:
+      - "127.0.0.1:16686:16686"
+
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    container_name: skyline-prometheus
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  gateway-service:
+    environment: *traced
+  auth-service:
+    environment: *traced
+  fleet-service:
+    environment: *traced
+  route-service:
+    environment: *traced
+  crew-service:
+    environment: *traced
+  schedule-service:
+    environment: *traced
+  reservation-service:
+    environment: *traced
+  checkin-service:
+    environment: *traced
+  notification-service:
+    environment: *traced
