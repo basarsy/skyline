@@ -84,6 +84,7 @@ class NotificationIntegrationTest {
         jdbc.update("DELETE FROM notifications");
         jdbc.update("DELETE FROM email_outbox");
         jdbc.update("DELETE FROM booking_recipients");
+        jdbc.update("DELETE FROM flight_states");
         userId = UUID.randomUUID();
         flightId = UUID.randomUUID();
         reset(mailSender);
@@ -123,6 +124,55 @@ class NotificationIntegrationTest {
         assertThat(recipients.activeOnFlight(flightId)).isEmpty();
         assertThat(jdbc.queryForList("SELECT kind FROM notifications ORDER BY created_at", String.class))
                 .containsExactlyInAnyOrder("BOOKING_CANCELLED", "BOOKING_CONFIRMED");
+    }
+
+    // ------------------------------------------------------------------ bookings handled after a flight change
+
+    @Test
+    void aBookingHandledAfterARescheduleItPrecededTakesTheNewTime() {
+        LocalDateTime later = DEPARTURE.plusHours(3);
+        flightChanges.handle(reschedule(later, DEPARTURE.minusDays(4))); // after the booking (T-5d), handled first
+
+        bookingEvents.handle(booked(UUID.randomUUID(), "ada@example.com", item("Ada")));
+
+        assertThat(recipients.activeOnFlight(flightId)).singleElement()
+                .satisfies(r -> assertThat(r.departureTime()).isEqualTo(later));
+        assertThat(jdbc.queryForObject("SELECT body FROM email_outbox WHERE subject LIKE 'Booking confirmed%'",
+                String.class)).contains("15:00").doesNotContain("12:00");
+    }
+
+    @Test
+    void aBookingHandledAfterARenumberItPrecededTakesTheNewNumber() {
+        flightChanges.handle(renumber("SK100", "SK900", 4));
+
+        bookingEvents.handle(booked(UUID.randomUUID(), "ada@example.com", item("Ada")));
+
+        assertThat(recipients.activeOnFlight(flightId)).singleElement()
+                .satisfies(r -> assertThat(r.flightNumber()).isEqualTo("SK900"));
+    }
+
+    @Test
+    void aBookingHandledAfterTheFlightWasCancelledIsInactiveAndToldOfTheCancellation() {
+        flightChanges.handle(new FlightChange(FlightChange.CANCELLED, flightId, "SK100", "IST", "LHR",
+                "Europe/Istanbul", "Europe/London", "CANCELLED", "SCHEDULED", DEPARTURE, DEPARTURE,
+                DEPARTURE.plusHours(4), null, null, null, null, DEPARTURE.minusDays(4)));
+
+        bookingEvents.handle(booked(UUID.randomUUID(), "ada@example.com", item("Ada")));
+
+        assertThat(recipients.activeOnFlight(flightId)).isEmpty();
+        assertThat(jdbc.queryForList("SELECT subject FROM email_outbox", String.class))
+                .containsExactly("SK100 is cancelled");
+        assertThat(remind(DEPARTURE.minusHours(47))).as("no reminder for a cancelled flight").isZero();
+    }
+
+    @Test
+    void aBookingMadeAfterTheLatestChangeKeepsItsOwnDetails() {
+        flightChanges.handle(renumber("SK050", "SK100", 6)); // before the booking (T-5d): already in its details
+
+        bookingEvents.handle(booked(UUID.randomUUID(), "ada@example.com", item("Ada")));
+
+        assertThat(recipients.activeOnFlight(flightId)).singleElement()
+                .satisfies(r -> assertThat(r.flightNumber()).isEqualTo("SK100"));
     }
 
     // ------------------------------------------------------------------ flight changes

@@ -1,6 +1,7 @@
 package com.basarsy.skyline.notification.service;
 
 import com.basarsy.skyline.notification.event.FlightChange;
+import com.basarsy.skyline.notification.repository.FlightStateRepository;
 import com.basarsy.skyline.notification.repository.Recipient;
 import com.basarsy.skyline.notification.repository.RecipientRepository;
 import java.util.ArrayList;
@@ -23,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class FlightChangeHandler {
 
     private final RecipientRepository recipients;
+    private final FlightStateRepository flightStates;
     private final Inbox inbox;
 
     @Transactional
@@ -30,6 +32,12 @@ public class FlightChangeHandler {
         if (change.type() == null || change.flightId() == null) {
             log.warn("Ignoring a flight change without type or flight id: {}", change);
             return;
+        }
+        if (change.occurredAt() != null) {
+            // For bookings of this flight handled after this change (see BookingEventHandler).
+            flightStates.record(change.flightId(), new FlightStateRepository.FlightState(change.flightNumber(),
+                    change.departureTime(), FlightChange.CANCELLED.equals(change.type())
+                            || "CANCELLED".equals(change.status()), change.occurredAt()));
         }
         List<Recipient> booked = recipients.activeOnFlight(change.flightId());
         if (FlightChange.RESCHEDULED.equals(change.type()) && change.departureTime() != null) {
