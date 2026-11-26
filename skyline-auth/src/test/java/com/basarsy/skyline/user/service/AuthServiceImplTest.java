@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -101,22 +103,25 @@ class AuthServiceImplTest {
     }
 
     @Test
-    void aWrongPasswordIsCountedAgainstTheAccount() {
+    void everyAttemptIsClaimedBeforeItsPasswordIsChecked() {
         when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user(true)));
+        when(userRepository.claimLoginAttempt(any(), anyInt(), any(), any())).thenReturn(1);
         when(authenticationManager.authenticate(any())).thenThrow(new BadCredentialsException("bad"));
 
         assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, "wrong-password")))
                 .hasMessage("Invalid email or password");
 
-        verify(userRepository).recordFailedLogin(USER_ID, AuthServiceImpl.MAX_FAILED_LOGINS,
-                LocalDateTime.now(clock).plus(AuthServiceImpl.LOCKOUT));
+        var order = inOrder(userRepository, authenticationManager);
+        order.verify(userRepository).claimLoginAttempt(USER_ID, AuthServiceImpl.MAX_LOGIN_ATTEMPTS,
+                LocalDateTime.now(clock), LocalDateTime.now(clock).plus(AuthServiceImpl.LOCKOUT));
+        order.verify(authenticationManager).authenticate(any());
+        verify(userRepository, never()).clearFailedLogins(any(), any());
     }
 
     @Test
     void aLockedAccountGetsTheSameAnswerWithoutItsPasswordBeingChecked() {
-        User locked = user(true);
-        locked.setLockedUntil(LocalDateTime.now(clock).plusMinutes(5));
-        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(locked));
+        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user(true)));
+        when(userRepository.claimLoginAttempt(any(), anyInt(), any(), any())).thenReturn(0); // locked
 
         assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, "Passw0rd!!")))
                 .isInstanceOfSatisfying(SkylineException.class, ex -> {
@@ -127,15 +132,13 @@ class AuthServiceImplTest {
     }
 
     @Test
-    void aLoginAfterTheLockEndsSucceedsAndClearsTheCount() {
-        User wasLocked = user(true);
-        wasLocked.setFailedLogins(3);
-        wasLocked.setLockedUntil(LocalDateTime.now(clock).minusMinutes(1));
-        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(wasLocked));
+    void aSuccessfulLoginGivesBackItsAttempt() {
+        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user(true)));
+        when(userRepository.claimLoginAttempt(any(), anyInt(), any(), any())).thenReturn(1);
 
         authService.login(new LoginRequest(EMAIL, "Passw0rd!!"));
 
-        verify(userRepository).clearFailedLogins(USER_ID);
+        verify(userRepository).clearFailedLogins(USER_ID, LocalDateTime.now(clock));
     }
 
     @Test
@@ -145,7 +148,7 @@ class AuthServiceImplTest {
 
         assertThatThrownBy(() -> authService.login(new LoginRequest("nobody@test.local", "whatever-it-is")))
                 .hasMessage("Invalid email or password");
-        verify(userRepository, never()).recordFailedLogin(any(), org.mockito.ArgumentMatchers.anyInt(), any());
+        verify(userRepository, never()).claimLoginAttempt(any(), anyInt(), any(), any());
     }
 
     @Test

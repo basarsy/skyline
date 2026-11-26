@@ -187,7 +187,7 @@ class RouteControllersSecurityTest {
             "{\"iataCode\":\"SAW\",\"icaoCode\":\"LTF\",\"name\":\"n\",\"city\":\"c\",\"country\":\"c\",\"timezone\":\"UTC\"}",
             "{\"iataCode\":\"SAW\",\"icaoCode\":\"LTFJ\",\"name\":\" \",\"city\":\"c\",\"country\":\"c\",\"timezone\":\"UTC\"}",
             "{\"iataCode\":\"SAW\",\"icaoCode\":\"LTFJ\",\"name\":\"n\",\"city\":\"c\",\"country\":\"c\"}",
-            // Time zones the JVM doesn't know: they were stored, then silently read as UTC.
+            // An unknown zone was stored, then silently read as UTC; a fixed offset knows no daylight saving.
             "{\"iataCode\":\"SAW\",\"icaoCode\":\"LTFJ\",\"name\":\"n\",\"city\":\"c\",\"country\":\"c\",\"timezone\":\"Europe/Istambul\"}",
             "{\"iataCode\":\"SAW\",\"icaoCode\":\"LTFJ\",\"name\":\"n\",\"city\":\"c\",\"country\":\"c\",\"timezone\":\"UTC+3\"}"})
     void invalidAirportIsA400(String body) throws Exception {

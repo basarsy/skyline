@@ -40,8 +40,14 @@ public class AuthServiceImpl implements AuthService {
      * this stops one account being guessed at from many addresses. Short enough that someone locking another
      * person's account out on purpose only delays them.
      */
-    static final int MAX_FAILED_LOGINS = 10;
+    static final int MAX_LOGIN_ATTEMPTS = 10;
     static final Duration LOCKOUT = Duration.ofMinutes(15);
+
+    /**
+     * A hash of nothing in particular, made by this service's own encoder (so the same cost as a real check):
+     * checked against while an account is locked. Made on first use.
+     */
+    private volatile String timingHash;
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -71,15 +77,25 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
-    // Not rolled back on a 401: the failed attempt it counts must stick.
+    // Not rolled back on a 401: the attempt it claimed must stay counted.
     @Transactional(noRollbackFor = SkylineException.class)
     public AuthResponse login(LoginRequest request) {
         var email = request.email().trim().toLowerCase(Locale.ROOT);
         var now = LocalDateTime.now(clock);
         var account = userRepository.findByEmail(email);
-        // A locked account gets the same answer as a wrong password (no enumeration of accounts or of locks),
-        // and its password isn't even checked, so guessing on goes nowhere until the lock ends.
-        if (account.map(User::getLockedUntil).filter(now::isBefore).isPresent()) {
+        // Each attempt is claimed (counted) before its password is checked, atomically, so a burst of parallel
+        // guesses can't all be checked before the lock is written: at most MAX_LOGIN_ATTEMPTS per lock.
+        boolean allowed = account
+                .map(user -> userRepository.claimLoginAttempt(user.getId(), MAX_LOGIN_ATTEMPTS, now,
+                        now.plus(LOCKOUT)) == 1)
+                .orElse(true);
+        if (!allowed) {
+            // Locked: the same answer as a wrong password, after a password hash's worth of work, so neither the
+            // account nor its lock shows (not even in the response time). The password itself isn't checked.
+            if (timingHash == null) {
+                timingHash = passwordEncoder.encode(UUID.randomUUID().toString());
+            }
+            passwordEncoder.matches(request.password(), timingHash);
             throw invalidCredentials();
         }
         try {
@@ -88,12 +104,9 @@ public class AuthServiceImpl implements AuthService {
         } catch (AuthenticationException ex) {
             // Bad password, unknown user and disabled account all get the same answer (no account enumeration).
             // BadCredentialsException alone let DisabledException escape.
-            account.ifPresent(user -> userRepository.recordFailedLogin(user.getId(), MAX_FAILED_LOGINS,
-                    now.plus(LOCKOUT)));
             throw invalidCredentials();
         }
-        account.filter(user -> user.getFailedLogins() > 0 || user.getLockedUntil() != null)
-                .ifPresent(user -> userRepository.clearFailedLogins(user.getId()));
+        account.ifPresent(user -> userRepository.clearFailedLogins(user.getId(), now));
 
         // A login starts a new token family.
         return issueTokens(userDetailsService.loadUserByUsername(email), UUID.randomUUID(), now);

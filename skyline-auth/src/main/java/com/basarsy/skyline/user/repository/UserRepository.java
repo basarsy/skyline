@@ -17,21 +17,24 @@ public interface UserRepository extends JpaRepository<User, UUID>, JpaSpecificat
     boolean existsByEmail(String email);
 
     /**
-     * Counts a wrong password, in one statement so concurrent attempts can't slip past the limit: the
-     * {@code maxFailures}-th in a row locks the account until {@code lockUntil} and starts the count again.
+     * Claims one login attempt before its password is checked: counted unless the account is locked at
+     * {@code now}, and the {@code maxAttempts}-th in a row locks it until {@code lockUntil} (the count starts
+     * again). One statement, so however many attempts arrive at once, at most {@code maxAttempts} passwords are
+     * checked per lock. Returns 0 when the account is locked (no attempt allowed), 1 otherwise.
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             UPDATE User u
-            SET u.lockedUntil = CASE WHEN u.failedLogins + 1 >= :maxFailures THEN :lockUntil ELSE u.lockedUntil END,
-                u.failedLogins = CASE WHEN u.failedLogins + 1 >= :maxFailures THEN 0 ELSE u.failedLogins + 1 END
-            WHERE u.id = :id
+            SET u.lockedUntil = CASE WHEN u.failedLogins + 1 >= :maxAttempts THEN :lockUntil ELSE u.lockedUntil END,
+                u.failedLogins = CASE WHEN u.failedLogins + 1 >= :maxAttempts THEN 0 ELSE u.failedLogins + 1 END,
+                u.updatedAt = :now
+            WHERE u.id = :id AND (u.lockedUntil IS NULL OR u.lockedUntil <= :now)
             """)
-    int recordFailedLogin(@Param("id") UUID id, @Param("maxFailures") int maxFailures,
-            @Param("lockUntil") LocalDateTime lockUntil);
+    int claimLoginAttempt(@Param("id") UUID id, @Param("maxAttempts") int maxAttempts,
+            @Param("now") LocalDateTime now, @Param("lockUntil") LocalDateTime lockUntil);
 
-    /** A successful login: the count starts again. */
+    /** A successful login: the attempts it claimed are given back, and any lock that ended is cleared. */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("UPDATE User u SET u.failedLogins = 0, u.lockedUntil = null WHERE u.id = :id")
-    int clearFailedLogins(@Param("id") UUID id);
+    @Query("UPDATE User u SET u.failedLogins = 0, u.lockedUntil = null, u.updatedAt = :now WHERE u.id = :id")
+    int clearFailedLogins(@Param("id") UUID id, @Param("now") LocalDateTime now);
 }

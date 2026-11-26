@@ -34,27 +34,30 @@ class UserRepositoryTest {
     private UserRepository users;
 
     @Test
-    void theLastAllowedFailureLocksTheAccountAndStartsTheCountAgain() {
+    void theLastAllowedAttemptLocksTheAccountAndNoMoreAreAllowedUntilTheLockEnds() {
         UUID id = user().getId();
 
         for (int i = 1; i < 3; i++) {
-            users.recordFailedLogin(id, 3, NOW.plusMinutes(15));
+            assertThat(users.claimLoginAttempt(id, 3, NOW, NOW.plusMinutes(15))).isEqualTo(1);
             assertThat(reload(id).getFailedLogins()).isEqualTo(i);
             assertThat(reload(id).getLockedUntil()).isNull();
         }
-        users.recordFailedLogin(id, 3, NOW.plusMinutes(15));
-
+        assertThat(users.claimLoginAttempt(id, 3, NOW, NOW.plusMinutes(15))).as("the third, still checked").isEqualTo(1);
         User locked = reload(id);
         assertThat(locked.getLockedUntil()).isEqualTo(NOW.plusMinutes(15));
         assertThat(locked.getFailedLogins()).isZero();
+
+        assertThat(users.claimLoginAttempt(id, 3, NOW.plusMinutes(5), NOW.plusMinutes(20))).as("locked").isZero();
+        assertThat(users.claimLoginAttempt(id, 3, NOW.plusMinutes(15), NOW.plusMinutes(30))).as("lock over")
+                .isEqualTo(1);
     }
 
     @Test
     void aSuccessfulLoginClearsTheCountAndTheLock() {
         UUID id = user().getId();
-        users.recordFailedLogin(id, 1, NOW.plusMinutes(15));
+        users.claimLoginAttempt(id, 1, NOW, NOW.plusMinutes(15));
 
-        users.clearFailedLogins(id);
+        users.clearFailedLogins(id, NOW);
 
         assertThat(reload(id).getLockedUntil()).isNull();
         assertThat(reload(id).getFailedLogins()).isZero();
