@@ -49,16 +49,18 @@ public class BookingEventHandler {
      * A new booking. Its flights' details are as the reservation service saw them when it booked; a flight change
      * that happened after that but was handled first (another topic, no common order) is applied here: the
      * current number and departure, and for a flight cancelled since, an inactive reservation and the
-     * cancellation notice its passengers would otherwise never get.
+     * cancellation notice its passengers would otherwise never get. The confirmation shows each flight's delay
+     * and gate in force, whose notices went out before these passengers were recipients.
      *
      * <p>The latest handled change is applied whatever its time: timestamps from two services can't say which came
      * first. Should the booking be newer than it (a later change still on its way), that change updates the
-     * booking's details when it is handled, as it does every booking of the flight. Not carried over yet: a delay
-     * or gate change handled before the booking (the next change, or the boarding pass, shows it).
+     * booking's details when it is handled, as it does every booking of the flight.
      */
     private void booked(BookingEvent event) {
-        Map<UUID, FlightState> states = flightStates.find(
-                event.reservations().stream().map(BookingEvent.Item::flightId).filter(Objects::nonNull).toList());
+        List<UUID> flightIds =
+                event.reservations().stream().map(BookingEvent.Item::flightId).filter(Objects::nonNull).toList();
+        flightStates.lock(flightIds); // against a change of these flights handled meanwhile
+        Map<UUID, FlightState> states = flightStates.find(flightIds);
         List<BookingEvent.Item> live = new ArrayList<>();
         Map<UUID, List<BookingEvent.Item>> cancelledFlights = new LinkedHashMap<>();
         for (BookingEvent.Item booked : event.reservations()) {
@@ -79,7 +81,7 @@ public class BookingEventHandler {
         if (!live.isEmpty()) {
             BookingEvent current = new BookingEvent(event.type(), event.bookingId(), event.userId(),
                     event.contactEmail(), live, event.occurredAt());
-            Message message = Messages.booked(current, "/trips/" + live.get(0).reservationId());
+            Message message = Messages.booked(current, "/trips/" + live.get(0).reservationId(), states);
             String key = "booking:" + event.bookingId() + ":BOOKED";
             inbox.toUser(event.userId(), message, key);
             inbox.toEmail(event.contactEmail(), message, key);
