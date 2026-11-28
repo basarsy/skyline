@@ -135,7 +135,7 @@ services:
 
   # Catches every email the notification service sends: nothing leaves this machine. Inbox UI on :8025.
   mailpit:
-    image: axllent/mailpit:v1.27
+    image: axllent/mailpit:v1.34
     container_name: skyline-mailpit
     ports:
       - "127.0.0.1:8025:8025"
@@ -147,7 +147,7 @@ services:
       retries: 10
 
   kafka:
-    image: confluentinc/cp-kafka:7.9.10
+    image: confluentinc/cp-kafka:7.9.11
     container_name: skyline-kafka
     ports:
       - "127.0.0.1:9092:9092"

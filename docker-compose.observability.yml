@@ -13,13 +13,13 @@ x-traced: &traced
 
 services:
   jaeger:
-    image: jaegertracing/jaeger:2.5.0
+    image: jaegertracing/jaeger:2.23.0
     container_name: skyline-jaeger
     ports:
       - "127.0.0.1:16686:16686"
 
   prometheus:
-    image: prom/prometheus:v3.2.1
+    image: prom/prometheus:v3.16.0
     container_name: skyline-prometheus
     volumes:
       - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
