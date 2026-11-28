@@ -12,6 +12,7 @@ import com.basarsy.skyline.common.exception.ResourceNotFoundException;
 import com.basarsy.skyline.common.exception.SkylineException;
 import com.basarsy.skyline.route.dto.AirportRequest;
 import com.basarsy.skyline.route.dto.AirportResponse;
+import com.basarsy.skyline.route.entity.Airport;
 import com.basarsy.skyline.route.mapper.AirportMapperImpl;
 import com.basarsy.skyline.route.repository.AirportRepository;
 import java.util.Optional;
@@ -26,6 +27,27 @@ class AirportServiceImplTest {
 
     private final AirportRequest request =
             new AirportRequest("saw", "ltfj", "Sabiha Gokcen", "Istanbul", "Turkey", "Europe/Istanbul");
+
+    @Test
+    void aTimeZoneStoredBeforeValidationIsFlaggedAndCanBeCorrected() {
+        Airport bad = airport("SAW", "Europe/Istambul");
+        Airport good = airport("IST", "Europe/Istanbul");
+        when(airports.findAll()).thenReturn(java.util.List.of(bad, good));
+
+        assertThat(new AirportTimezoneCheck(airports).invalid()).containsExactly(bad);
+
+        when(airports.findById(bad.getId())).thenReturn(Optional.of(bad));
+        when(airports.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        assertThat(service.updateTimezone(bad.getId(), "Europe/Istanbul").timezone()).isEqualTo("Europe/Istanbul");
+    }
+
+    private static Airport airport(String iata, String timezone) {
+        Airport airport = new Airport();
+        airport.setId(UUID.randomUUID());
+        airport.setIataCode(iata);
+        airport.setTimezone(timezone);
+        return airport;
+    }
 
     @Test
     void createUppercasesTheCodesAndKeepsTheRest() {

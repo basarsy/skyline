@@ -13,6 +13,7 @@ import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -57,6 +58,21 @@ public class AirportServiceImpl implements AirportService {
         var airport = airportMapper.toEntity(request);
         airport.setIataCode(iataCode);
         airport.setIcaoCode(normalizeCode(request.icaoCode()));
+        return airportMapper.toResponse(airportRepository.save(airport));
+    }
+
+    /**
+     * Routes carry their airports (time zones included), so both caches go. Search days and every local time
+     * worked out from this airport follow from the next request on.
+     */
+    @Override
+    @Transactional
+    @Caching(evict = {@CacheEvict(value = "airports", allEntries = true),
+            @CacheEvict(value = "routes", allEntries = true)})
+    public AirportResponse updateTimezone(UUID id, String timezone) {
+        var airport = airportRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Airport not found: " + id));
+        airport.setTimezone(timezone);
         return airportMapper.toResponse(airportRepository.save(airport));
     }
 

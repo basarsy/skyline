@@ -38,7 +38,12 @@ public @interface IanaTimeZone {
 
         @Override
         public boolean isValid(String value, ConstraintValidatorContext context) {
-            return value == null || REGIONS.contains(value);
+            return value == null || isRegion(value);
+        }
+
+        /** Whether {@code zone} is an IANA region id this JVM knows. */
+        public static boolean isRegion(String zone) {
+            return REGIONS.contains(zone);
         }
     }
 }

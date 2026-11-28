@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -168,6 +169,23 @@ class RouteControllersSecurityTest {
         mvc.perform(json(post("/api/v1/airports"), VALID_AIRPORT).header(HttpHeaders.AUTHORIZATION, bearer("ROLE_ADMIN")))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.id").value(AIRPORT_ID.toString()));
+    }
+
+    @Test
+    void onlyAnAdminCorrectsATimeZoneAndOnlyToAValidOne() throws Exception {
+        when(airportService.updateTimezone(AIRPORT_ID, "Europe/Istanbul")).thenReturn(airport);
+        String path = "/api/v1/airports/" + AIRPORT_ID + "/timezone";
+
+        mvc.perform(json(patch(path), "{\"timezone\":\"Europe/Istanbul\"}")
+                        .header(HttpHeaders.AUTHORIZATION, bearer("ROLE_STAFF")))
+                .andExpect(status().isForbidden());
+        mvc.perform(json(patch(path), "{\"timezone\":\"Europe/Istambul\"}")
+                        .header(HttpHeaders.AUTHORIZATION, bearer("ROLE_ADMIN")))
+                .andExpect(status().isBadRequest());
+        mvc.perform(json(patch(path), "{\"timezone\":\"Europe/Istanbul\"}")
+                        .header(HttpHeaders.AUTHORIZATION, bearer("ROLE_ADMIN")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.timezone").value("Europe/Istanbul"));
     }
 
     @Test

@@ -322,6 +322,9 @@ GET    /aircraft-types/{id}/seat-layout Every seat, expanded       [STAFF, ADMIN
 GET    /airports                   List airports               [PUBLIC]
 GET    /airports/{id}              Airport detail              [PUBLIC]
 POST   /airports                   Create airport (timezone: an IANA id, e.g. Europe/Istanbul) [ADMIN]
+PATCH  /airports/{id}/timezone      Correct an airport's time zone (IANA id); the service logs
+                                   AIRPORT_TIMEZONE_INVALID at startup for each one stored before
+                                   zones were validated  [ADMIN]
 GET    /routes                     List routes                 [PUBLIC]
 GET    /routes/{id}                Route detail                [PUBLIC]
 GET    /routes/search              Search routes (originIata, destinationIata) [PUBLIC]
