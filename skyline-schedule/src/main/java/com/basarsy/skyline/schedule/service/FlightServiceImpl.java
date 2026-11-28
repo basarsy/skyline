@@ -462,9 +462,9 @@ public class FlightServiceImpl implements FlightService {
             return !departureTime.equals(flight.getDepartureTime()) || !arrivalTime.equals(flight.getArrivalTime());
         }
     }
-    @Override
-    @Transactional
-    public void decrementSeat(UUID id) {
+
+    /** Takes one seat: only as part of a claim (claimSeat), which can be given back safely. */
+    void decrementSeat(UUID id) {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime earliestDeparture = now.plus(SALES_CLOSE_BEFORE);
         int updated = flightRepository.decrementSeat(id, BOOKABLE_STATUSES, earliestDeparture, now);

@@ -36,13 +36,12 @@ public interface FlightService {
     /** Flight numbers of the flights among {@code flightIds} that occupy their crew while {@code flightId} flies. */
     List<String> overlapping(UUID flightId, List<UUID> flightIds);
 
-    void decrementSeat(UUID id);
-
     void incrementSeat(UUID id);
 
     /**
      * Holds one seat for {@code claimId}, once: claiming the same id again changes nothing, so a call whose
-     * response was lost can be repeated. Refused like {@link #decrementSeat} (full, sales closed, not bookable).
+     * response was lost can be repeated. Refused when the flight is full, its sales have closed or it isn't
+     * bookable.
      */
     void claimSeat(UUID flightId, UUID claimId);
 

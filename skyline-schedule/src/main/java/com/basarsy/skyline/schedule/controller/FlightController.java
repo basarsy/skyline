@@ -158,17 +158,6 @@ public class FlightController {
                 flightService.overlapping(request.flightId(), request.flightIds()));
     }
 
-    /**
-     * Takes a seat without a claim, so it can't be given back safely.
-     * @deprecated only for reservation services deployed before seat claims; remove once none are left.
-     */
-    @Deprecated(forRemoval = true)
-    @PutMapping("/{id}/inventory/decrement")
-    @PreAuthorize("hasRole('SERVICE')")
-    public void decrementSeat(@PathVariable UUID id) {
-        flightService.decrementSeat(id);
-    }
-
     /** Gives a seat back without a claim: for bookings made before seat claims existed. */
     @PutMapping("/{id}/inventory/increment")
     @PreAuthorize("hasRole('SERVICE')")
