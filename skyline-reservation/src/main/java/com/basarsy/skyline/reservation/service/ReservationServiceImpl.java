@@ -22,6 +22,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -234,7 +235,7 @@ public class ReservationServiceImpl implements ReservationService {
      * never see), the claim is released, which gives back nothing if the claim never landed.
      */
     private List<UUID> takeInventory(FlightResponse flight, int seats) {
-        List<UUID> claimIds = java.util.stream.Stream.generate(UUID::randomUUID).limit(seats).toList();
+        List<UUID> claimIds = Stream.generate(UUID::randomUUID).limit(seats).toList();
         AtomicBoolean mayHoldSeats = new AtomicBoolean(true);
         releaseSeatsUnlessCommitted(flight.getId(), claimIds, mayHoldSeats);
         try {
@@ -447,12 +448,7 @@ public class ReservationServiceImpl implements ReservationService {
                     return;
                 }
                 if (status == STATUS_ROLLED_BACK) {
-                    try {
-                        scheduleClient.releaseSeats(flightId, new ScheduleClient.SeatClaims(claimIds));
-                    } catch (Exception ex) {
-                        log.error("SEAT_RELEASE_FAILED flightId={} claimIds={} reason=booking transaction did not"
-                                + " commit: seat inventory needs reconciliation", flightId, claimIds, ex);
-                    }
+                    releaseSeats(flightId, claimIds, "booking transaction did not commit");
                 } else if (status == STATUS_UNKNOWN) {
                     // The booking may exist. Giving its seats back could oversell the flight for good; keeping them
                     // costs at most those seats, and orphan claims (no reservation with their id) can be found.
@@ -474,17 +470,28 @@ public class ReservationServiceImpl implements ReservationService {
 
     /** By claim when there is one; bookings made before claims existed give the seat back with an increment. */
     private void releaseSeat(UUID flightId, UUID claimId, String reason) {
-        try {
+        release(flightId, claimId, reason, () -> {
             if (claimId != null) {
                 scheduleClient.releaseSeat(flightId, claimId);
             } else {
                 scheduleClient.incrementSeat(flightId);
             }
+        });
+    }
+
+    private void releaseSeats(UUID flightId, List<UUID> claimIds, String reason) {
+        release(flightId, claimIds, reason,
+                () -> scheduleClient.releaseSeats(flightId, new ScheduleClient.SeatClaims(claimIds)));
+    }
+
+    private void release(UUID flightId, Object claims, String reason, Runnable call) {
+        try {
+            call.run();
         } catch (Exception ex) {
             // Runs after the transaction finished, so there is nothing left to roll back. Log loudly with a
             // stable marker so the seat count can be reconciled; releasing a claim again is safe.
-            log.error("SEAT_RELEASE_FAILED flightId={} claimId={} reason={}: seat inventory needs reconciliation",
-                    flightId, claimId, reason, ex);
+            log.error("SEAT_RELEASE_FAILED flightId={} claims={} reason={}: seat inventory needs reconciliation",
+                    flightId, claims, reason, ex);
         }
     }
 

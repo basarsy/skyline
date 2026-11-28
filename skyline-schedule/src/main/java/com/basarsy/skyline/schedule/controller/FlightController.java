@@ -166,7 +166,12 @@ public class FlightController {
         flightService.incrementSeat(id);
     }
 
-    /** Holds a seat for a booking, idempotently: the same claim id holds one seat however often it is sent. */
+    /**
+     * Holds a seat for a booking, idempotently: the same claim id holds one seat however often it is sent.
+     * @deprecated reservation services now claim a leg's seats in one call ({@link #claimSeats}); kept for those
+     *     deployed before it, remove once none are left.
+     */
+    @Deprecated(forRemoval = true)
     @PutMapping("/{id}/inventory/claims/{claimId}")
     @PreAuthorize("hasRole('SERVICE')")
     public void claimSeat(@PathVariable UUID id, @PathVariable UUID claimId) {

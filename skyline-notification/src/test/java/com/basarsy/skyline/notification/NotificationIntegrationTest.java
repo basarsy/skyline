@@ -166,7 +166,7 @@ class NotificationIntegrationTest {
     }
 
     @Test
-    void aBookingMadeAfterTheLatestChangeKeepsItsOwnDetails() {
+    void aBookingAgreeingWithTheLatestChangeKeepsItsDetails() {
         flightChanges.handle(renumber("SK050", "SK100", 6)); // before the booking (T-5d): already in its details
 
         bookingEvents.handle(booked(UUID.randomUUID(), "ada@example.com", item("Ada")));

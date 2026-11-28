@@ -5,7 +5,6 @@ import com.basarsy.skyline.notification.event.FlightChange;
 import com.basarsy.skyline.notification.repository.FlightStateRepository;
 import com.basarsy.skyline.notification.repository.FlightStateRepository.FlightState;
 import com.basarsy.skyline.notification.repository.RecipientRepository;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -51,6 +50,11 @@ public class BookingEventHandler {
      * that happened after that but was handled first (another topic, no common order) is applied here: the
      * current number and departure, and for a flight cancelled since, an inactive reservation and the
      * cancellation notice its passengers would otherwise never get.
+     *
+     * <p>The latest handled change is applied whatever its time: timestamps from two services can't say which came
+     * first. Should the booking be newer than it (a later change still on its way), that change updates the
+     * booking's details when it is handled, as it does every booking of the flight. Not carried over yet: a delay
+     * or gate change handled before the booking (the next change, or the boarding pass, shows it).
      */
     private void booked(BookingEvent event) {
         Map<UUID, FlightState> states = flightStates.find(
@@ -58,13 +62,13 @@ public class BookingEventHandler {
         List<BookingEvent.Item> live = new ArrayList<>();
         Map<UUID, List<BookingEvent.Item>> cancelledFlights = new LinkedHashMap<>();
         for (BookingEvent.Item booked : event.reservations()) {
-            FlightState since = changedSince(states.get(booked.flightId()), event.occurredAt());
-            BookingEvent.Item item = since == null ? booked : new BookingEvent.Item(booked.reservationId(),
+            FlightState state = states.get(booked.flightId());
+            BookingEvent.Item item = state == null ? booked : new BookingEvent.Item(booked.reservationId(),
                     booked.pnr(), booked.passengerName(), booked.flightId(),
-                    since.flightNumber() != null ? since.flightNumber() : booked.flightNumber(), booked.origin(),
+                    state.flightNumber() != null ? state.flightNumber() : booked.flightNumber(), booked.origin(),
                     booked.destination(), booked.originTimezone(),
-                    since.departureTime() != null ? since.departureTime() : booked.departureTime());
-            if (since != null && since.cancelled()) {
+                    state.departureTime() != null ? state.departureTime() : booked.departureTime());
+            if (state != null && state.cancelled()) {
                 recipients.cancelled(event.bookingId(), event.userId(), event.contactEmail(), item);
                 cancelledFlights.computeIfAbsent(item.flightId(), id -> new ArrayList<>()).add(item);
             } else {
@@ -82,22 +86,18 @@ public class BookingEventHandler {
         }
         cancelledFlights.forEach((flightId, items) -> {
             BookingEvent.Item first = items.get(0);
-            LocalDateTime cancelledAt = states.get(flightId).changedAt();
+            FlightState state = states.get(flightId);
             FlightChange cancellation = new FlightChange(FlightChange.CANCELLED, flightId, first.flightNumber(),
                     first.origin(), first.destination(), first.originTimezone(), null, "CANCELLED", null,
-                    first.departureTime(), first.departureTime(), null, null, null, null, null, cancelledAt);
+                    first.departureTime(), first.departureTime(), null, null, null, null, null, state.changedAt());
             Message message = Messages.flightChange(cancellation,
                     items.stream().map(BookingEvent.Item::passengerName).distinct().toList(),
                     "/trips/" + first.reservationId());
-            // The flight change's own key: whoever it already reached gets nothing twice.
-            String key = "flight:" + flightId + ":" + FlightChange.CANCELLED + ":" + cancelledAt;
+            // The flight change's own key, as it built it: whoever it already reached gets nothing twice.
+            String key = state.cancellationKey() != null ? state.cancellationKey()
+                    : FlightChangeHandler.key(cancellation);
             inbox.toUser(event.userId(), message, key);
             inbox.toEmail(event.contactEmail(), message, key);
         });
-    }
-
-    /** The flight's state when it changed after {@code bookedAt} (the booking's details are stale), else null. */
-    private static FlightState changedSince(FlightState state, LocalDateTime bookedAt) {
-        return state != null && bookedAt != null && state.changedAt().isAfter(bookedAt) ? state : null;
     }
 }

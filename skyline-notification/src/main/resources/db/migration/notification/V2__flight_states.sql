@@ -8,5 +8,8 @@ CREATE TABLE flight_states (
     flight_number   VARCHAR(16),
     departure_time  TIMESTAMP,
     cancelled       BOOLEAN NOT NULL,
-    changed_at      TIMESTAMP NOT NULL
+    changed_at      TIMESTAMP NOT NULL,
+    -- The dedupe key of the cancellation notice when the flight is cancelled, exactly as the flight change built
+    -- it, so a late booking's passengers who already got it get nothing twice.
+    cancellation_key VARCHAR(255)
 );

@@ -17,7 +17,6 @@ public interface ScheduleClient {
     @GetMapping("/api/v1/flights/{id}")
     FlightResponse getFlight(@PathVariable("id") UUID id);
 
-
     /** Gives back the seat {@code claimId} holds; nothing when it holds none. */
     @DeleteMapping("/api/v1/flights/{id}/inventory/claims/{claimId}")
     void releaseSeat(@PathVariable("id") UUID id, @PathVariable("claimId") UUID claimId);
