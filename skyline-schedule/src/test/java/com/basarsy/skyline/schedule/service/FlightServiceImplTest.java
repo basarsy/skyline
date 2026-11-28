@@ -687,6 +687,22 @@ class FlightServiceImplTest {
     }
 
     @Test
+    void aBookingsClaimsOnAFlightAreHeldInOneCallOrNotAtAll() {
+        Flight flight = flight(FlightStatus.SCHEDULED);
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        when(seatClaims.insert(any(), eq(flight.getId()))).thenReturn(true);
+        when(repository.decrementSeat(eq(flight.getId()), any(), any(), any())).thenReturn(1, 0); // the last seat
+        when(repository.findById(flight.getId())).thenReturn(Optional.of(flight));
+
+        // The second claim finds the flight full: the call fails, and its transaction takes the first back too.
+        assertThatThrownBy(() -> service.claimSeats(flight.getId(), List.of(first, second)))
+                .hasMessage("Flight is fully booked");
+        verify(seatClaims).insert(first, flight.getId());
+        verify(seatClaims).insert(second, flight.getId());
+    }
+
+    @Test
     void aClaimHoldsOneSeatHoweverOftenItIsSent() {
         UUID flightId = UUID.randomUUID();
         UUID claim = UUID.randomUUID();

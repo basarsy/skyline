@@ -1,6 +1,7 @@
 package com.basarsy.skyline.notification.service;
 
 import com.basarsy.skyline.notification.event.FlightChange;
+import com.basarsy.skyline.notification.repository.FlightStateRepository;
 import com.basarsy.skyline.notification.repository.Recipient;
 import com.basarsy.skyline.notification.repository.RecipientRepository;
 import java.util.ArrayList;
@@ -23,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class FlightChangeHandler {
 
     private final RecipientRepository recipients;
+    private final FlightStateRepository flightStates;
     private final Inbox inbox;
 
     @Transactional
@@ -30,6 +32,15 @@ public class FlightChangeHandler {
         if (change.type() == null || change.flightId() == null) {
             log.warn("Ignoring a flight change without type or flight id: {}", change);
             return;
+        }
+        String key = key(change);
+        // One rule for "the flight is cancelled", here and for bookings handled later.
+        boolean cancelled = FlightChange.CANCELLED.equals(change.type()) || "CANCELLED".equals(change.status());
+        if (change.occurredAt() != null) {
+            // For bookings of this flight handled after this change (see BookingEventHandler).
+            flightStates.record(change.flightId(), new FlightStateRepository.FlightState(change.flightNumber(),
+                    change.departureTime(), cancelled, change.occurredAt(),
+                    FlightChange.CANCELLED.equals(change.type()) ? key : null));
         }
         List<Recipient> booked = recipients.activeOnFlight(change.flightId());
         if (FlightChange.RESCHEDULED.equals(change.type()) && change.departureTime() != null) {
@@ -39,7 +50,7 @@ public class FlightChangeHandler {
                     || change.occurredAt().isBefore(change.departureTime().minus(CheckInReminders.OPENS_BEFORE));
             recipients.rescheduleFlight(change.flightId(), change.departureTime(), rearm);
         }
-        if (FlightChange.CANCELLED.equals(change.type())) {
+        if (cancelled) {
             recipients.deactivateFlight(change.flightId());
         }
         if (FlightChange.FLIGHT_NUMBER_CHANGED.equals(change.type()) && change.flightNumber() != null) {
@@ -50,7 +61,6 @@ public class FlightChangeHandler {
             return; // Departed, arrived, or a change passengers aren't told about.
         }
 
-        String key = "flight:" + change.flightId() + ":" + change.type() + ":" + change.occurredAt();
         List<List<Recipient>> accounts = groupBy(booked, r -> r.userId() == null ? null : r.userId().toString());
         for (List<Recipient> group : accounts) {
             inbox.toUser(group.get(0).userId(), message(change, group), key);
@@ -61,6 +71,11 @@ public class FlightChangeHandler {
         }
         log.info("Flight {} {}: told {} account(s) about {} booking(s)", change.flightNumber(), change.type(),
                 accounts.size(), booked.size());
+    }
+
+    /** The dedupe key of a change's messages (one per change, whoever it reaches). */
+    static String key(FlightChange change) {
+        return "flight:" + change.flightId() + ":" + change.type() + ":" + change.occurredAt();
     }
 
     private static Message message(FlightChange change, List<Recipient> group) {

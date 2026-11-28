@@ -12,4 +12,7 @@ public interface AirportService {
     AirportResponse findById(UUID id);
 
     AirportResponse create(AirportRequest request);
+
+    /** Sets an airport's time zone (an IANA region id, validated by the caller's request). */
+    AirportResponse updateTimezone(UUID id, String timezone);
 }

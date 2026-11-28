@@ -322,6 +322,9 @@ GET    /aircraft-types/{id}/seat-layout Every seat, expanded       [STAFF, ADMIN
 GET    /airports                   List airports               [PUBLIC]
 GET    /airports/{id}              Airport detail              [PUBLIC]
 POST   /airports                   Create airport (timezone: an IANA id, e.g. Europe/Istanbul) [ADMIN]
+PATCH  /airports/{id}/timezone      Correct an airport's time zone (IANA id); the service logs
+                                   AIRPORT_TIMEZONE_INVALID at startup for each one stored before
+                                   zones were validated  [ADMIN]
 GET    /routes                     List routes                 [PUBLIC]
 GET    /routes/{id}                Route detail                [PUBLIC]
 GET    /routes/search              Search routes (originIata, destinationIata) [PUBLIC]
@@ -447,7 +450,7 @@ All endpoints return a consistent `ApiResponse<T>`:
 **Seat Availability**
 - Optimistic locking (`@Version`) prevents double-booking under concurrent requests
 - Atomic decrement via `@Modifying` JPQL query
-- Cross-service seat management via internal OpenFeign calls (schedule ↔ reservation). Each booking holds its seat under a **claim** id the reservation service chooses (`PUT/DELETE /flights/{id}/inventory/claims/{claimId}`, `seat_claims` in schedule): claiming twice takes one seat, releasing a claim that never landed gives nothing back, and a claim that arrives after its own release is refused. The release is registered before the claim call, so a booking that rolls back (even after a timed-out claim) returns its seat, and a cancellation releases it by the id kept on the reservation. When a commit's outcome is unknown the seat is kept and `SEAT_CLAIM_UNKNOWN` is logged; a failed release logs `SEAT_RELEASE_FAILED`, and releasing again is safe
+- Cross-service seat management via internal OpenFeign calls (schedule ↔ reservation). Each booking holds its seat under a **claim** id the reservation service chooses (`PUT /flights/{id}/inventory/claims` with every passenger's claim on that flight, all or none, in one call per leg; `POST …/claims/release` and `DELETE …/claims/{claimId}` give seats back; `seat_claims` in schedule): claiming twice takes one seat, releasing a claim that never landed gives nothing back, and a claim that arrives after its own release is refused. The release is registered before the claim call, so a booking that rolls back (even after a timed-out claim) returns its seat, and a cancellation releases it by the id kept on the reservation. When a commit's outcome is unknown the seat is kept and `SEAT_CLAIM_UNKNOWN` is logged; a failed release logs `SEAT_RELEASE_FAILED`, and releasing again is safe
 - Sales close **1 hour** before the scheduled departure, with check-in and online add-ons: search stops listing the flight and booking it is refused, so every seat sold can still be checked in
 
 **Check-In Window**
@@ -477,6 +480,7 @@ All endpoints return a consistent `ApiResponse<T>`:
 
 **Notifications**
 - The notification service keeps its own projection of who is booked on which flight, from the booking events (`BOOKED` once per booking with every reservation, `CANCELLED` per reservation a passenger cancels), so a flight change needs no call back to the reservation service. Bookings made before the service first ran are not in it
+- It also keeps each flight's latest state (number, departure, cancelled) from the flight changes. Booking events and flight changes come on different topics in no common order, so a booking made just before a flight was renumbered, rescheduled or cancelled can be handled after that change: it then takes the flight's current details, and on a flight cancelled since, its passengers get the cancellation notice instead of a confirmation
 - Email and in-app: booking confirmed or cancelled, delay (new local time), delay lifted, reschedule, gate change, new flight number, airline cancellation, and "check-in is open" once per booking when the 48h window opens. In-app only: boarding started. Nothing for departed or arrived
 - One email per contact address and one inbox entry per account, listing the passengers they cover: a family booked together gets one message, not one each
 - Events arrive at least once; every message has a dedupe key (event + recipient, the address as a SHA-256 digest), so a redelivery sends nothing new. A record that can't be handled is retried with growing waits adding up to 5 minutes (enough to ride out a database or broker restart; the records behind it on its partition wait), then parked on `<topic>.DLT` with a `KAFKA_RECORD_PARKED` log line; malformed JSON and constraint violations are parked at once (see [Dead-lettered records](#dead-lettered-records))

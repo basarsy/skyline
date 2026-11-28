@@ -6,6 +6,7 @@ import com.basarsy.skyline.schedule.dto.FlightDelayRequest;
 import com.basarsy.skyline.schedule.dto.FlightGateRequest;
 import com.basarsy.skyline.schedule.dto.FlightRequest;
 import com.basarsy.skyline.schedule.dto.OverlapRequest;
+import com.basarsy.skyline.schedule.dto.SeatClaimsRequest;
 import com.basarsy.skyline.schedule.dto.FlightResponse;
 import com.basarsy.skyline.schedule.dto.UpdateFlightStatusRequest;
 import com.basarsy.skyline.schedule.entity.FlightStatus;
@@ -158,17 +159,6 @@ public class FlightController {
                 flightService.overlapping(request.flightId(), request.flightIds()));
     }
 
-    /**
-     * Takes a seat without a claim, so it can't be given back safely.
-     * @deprecated only for reservation services deployed before seat claims; remove once none are left.
-     */
-    @Deprecated(forRemoval = true)
-    @PutMapping("/{id}/inventory/decrement")
-    @PreAuthorize("hasRole('SERVICE')")
-    public void decrementSeat(@PathVariable UUID id) {
-        flightService.decrementSeat(id);
-    }
-
     /** Gives a seat back without a claim: for bookings made before seat claims existed. */
     @PutMapping("/{id}/inventory/increment")
     @PreAuthorize("hasRole('SERVICE')")
@@ -176,7 +166,12 @@ public class FlightController {
         flightService.incrementSeat(id);
     }
 
-    /** Holds a seat for a booking, idempotently: the same claim id holds one seat however often it is sent. */
+    /**
+     * Holds a seat for a booking, idempotently: the same claim id holds one seat however often it is sent.
+     * @deprecated reservation services now claim a leg's seats in one call ({@link #claimSeats}); kept for those
+     *     deployed before it, remove once none are left.
+     */
+    @Deprecated(forRemoval = true)
     @PutMapping("/{id}/inventory/claims/{claimId}")
     @PreAuthorize("hasRole('SERVICE')")
     public void claimSeat(@PathVariable UUID id, @PathVariable UUID claimId) {
@@ -188,5 +183,19 @@ public class FlightController {
     @PreAuthorize("hasRole('SERVICE')")
     public void releaseSeat(@PathVariable UUID id, @PathVariable UUID claimId) {
         flightService.releaseSeat(id, claimId);
+    }
+
+    /** Holds a seat for each claim (one booking's passengers on this flight), all or none, idempotently. */
+    @PutMapping("/{id}/inventory/claims")
+    @PreAuthorize("hasRole('SERVICE')")
+    public void claimSeats(@PathVariable UUID id, @Valid @RequestBody SeatClaimsRequest request) {
+        flightService.claimSeats(id, request.claimIds());
+    }
+
+    /** Gives back the seats the claims hold; claims that never landed give nothing back. */
+    @PostMapping("/{id}/inventory/claims/release")
+    @PreAuthorize("hasRole('SERVICE')")
+    public void releaseSeats(@PathVariable UUID id, @Valid @RequestBody SeatClaimsRequest request) {
+        flightService.releaseSeats(id, request.claimIds());
     }
 }

@@ -462,9 +462,9 @@ public class FlightServiceImpl implements FlightService {
             return !departureTime.equals(flight.getDepartureTime()) || !arrivalTime.equals(flight.getArrivalTime());
         }
     }
-    @Override
-    @Transactional
-    public void decrementSeat(UUID id) {
+
+    /** Takes one seat: only as part of a claim (claimSeat), which can be given back safely. */
+    void decrementSeat(UUID id) {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime earliestDeparture = now.plus(SALES_CLOSE_BEFORE);
         int updated = flightRepository.decrementSeat(id, BOOKABLE_STATUSES, earliestDeparture, now);
@@ -527,6 +527,22 @@ public class FlightServiceImpl implements FlightService {
         if (seatClaims.release(claimId, flightId)) {
             incrementSeat(flightId);
         }
+    }
+
+    /**
+     * One call per leg of a group booking instead of one per passenger: one transaction, so a refused claim (the
+     * last seat went, sales closed) rolls back the ones before it and the booking holds all its seats or none.
+     */
+    @Override
+    @Transactional
+    public void claimSeats(UUID flightId, List<UUID> claimIds) {
+        claimIds.forEach(claimId -> claimSeat(flightId, claimId));
+    }
+
+    @Override
+    @Transactional
+    public void releaseSeats(UUID flightId, List<UUID> claimIds) {
+        claimIds.forEach(claimId -> releaseSeat(flightId, claimId));
     }
 
     /**

@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
+import { infiniteQueryOptions, useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { networkApi } from '@/api/endpoints/network'
 import { scheduleApi, type FlightSearchParams } from '@/api/endpoints/schedule'
@@ -13,26 +13,28 @@ function searchPage(params: SearchKey, page: number, signal?: AbortSignal) {
   return scheduleApi.search({ ...params, page, size: SEARCH_PAGE_SIZE }, signal)
 }
 
+/** One definition of a search's paged query, shared by the hook and the prefetch so they can't drift apart. */
+function searchOptions(params: SearchKey) {
+  return infiniteQueryOptions({
+    queryKey: flightKeys.search(params),
+    queryFn: ({ pageParam, signal }) => searchPage(params, pageParam, signal),
+    initialPageParam: 0,
+    getNextPageParam: (last) => (last.last ? undefined : last.number + 1),
+  })
+}
+
 /** Flight search with "Load more" pagination. Disabled until all three parameters are present. */
 export function useFlightSearch(params: SearchKey | null) {
   return useInfiniteQuery({
-    queryKey: flightKeys.search(params ?? { origin: '', destination: '', date: '' }),
-    queryFn: ({ pageParam, signal }) => searchPage(params!, pageParam, signal),
-    initialPageParam: 0,
-    getNextPageParam: (last) => (last.last ? undefined : last.number + 1),
+    ...searchOptions(params ?? { origin: '', destination: '', date: '' }),
     enabled: !!params,
   })
 }
 
-/** Warms the cache for a neighbouring day (date strip hover). */
+/** Warms the cache for a neighbouring day (date strip hover): its first page. */
 export function usePrefetchSearch() {
   const queryClient = useQueryClient()
-  return (params: SearchKey) =>
-    queryClient.prefetchInfiniteQuery({
-      queryKey: flightKeys.search(params),
-      queryFn: ({ signal }) => searchPage(params, 0, signal),
-      initialPageParam: 0,
-    })
+  return (params: SearchKey) => queryClient.prefetchInfiniteQuery(searchOptions(params))
 }
 
 export function useFlight(id: string | undefined, options: { refetchInterval?: number } = {}) {
