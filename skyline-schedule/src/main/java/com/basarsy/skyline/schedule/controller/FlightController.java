@@ -6,6 +6,7 @@ import com.basarsy.skyline.schedule.dto.FlightDelayRequest;
 import com.basarsy.skyline.schedule.dto.FlightGateRequest;
 import com.basarsy.skyline.schedule.dto.FlightRequest;
 import com.basarsy.skyline.schedule.dto.OverlapRequest;
+import com.basarsy.skyline.schedule.dto.SeatClaimsRequest;
 import com.basarsy.skyline.schedule.dto.FlightResponse;
 import com.basarsy.skyline.schedule.dto.UpdateFlightStatusRequest;
 import com.basarsy.skyline.schedule.entity.FlightStatus;
@@ -177,5 +178,19 @@ public class FlightController {
     @PreAuthorize("hasRole('SERVICE')")
     public void releaseSeat(@PathVariable UUID id, @PathVariable UUID claimId) {
         flightService.releaseSeat(id, claimId);
+    }
+
+    /** Holds a seat for each claim (one booking's passengers on this flight), all or none, idempotently. */
+    @PutMapping("/{id}/inventory/claims")
+    @PreAuthorize("hasRole('SERVICE')")
+    public void claimSeats(@PathVariable UUID id, @Valid @RequestBody SeatClaimsRequest request) {
+        flightService.claimSeats(id, request.claimIds());
+    }
+
+    /** Gives back the seats the claims hold; claims that never landed give nothing back. */
+    @PostMapping("/{id}/inventory/claims/release")
+    @PreAuthorize("hasRole('SERVICE')")
+    public void releaseSeats(@PathVariable UUID id, @Valid @RequestBody SeatClaimsRequest request) {
+        flightService.releaseSeats(id, request.claimIds());
     }
 }

@@ -96,40 +96,40 @@ class ReservationServiceImplTest {
         when(reservationRepository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("dup"));
 
         assertThatThrownBy(() -> service.bookFlight(request())).isInstanceOf(DataIntegrityViolationException.class);
-        var claim = org.mockito.ArgumentCaptor.forClass(UUID.class);
-        verify(scheduleClient).claimSeat(org.mockito.ArgumentMatchers.eq(FLIGHT_ID), claim.capture());
-        verify(scheduleClient, never()).releaseSeat(any(), any());
+        var claim = org.mockito.ArgumentCaptor.forClass(ScheduleClient.SeatClaims.class);
+        verify(scheduleClient).claimSeats(org.mockito.ArgumentMatchers.eq(FLIGHT_ID), claim.capture());
+        verify(scheduleClient, never()).releaseSeats(any(), any());
 
         completeTransaction(TransactionSynchronization.STATUS_ROLLED_BACK);
 
-        verify(scheduleClient).releaseSeat(FLIGHT_ID, claim.getValue());
+        verify(scheduleClient).releaseSeats(FLIGHT_ID, claim.getValue());
     }
 
     @Test
     void aClaimWhoseResponseWasLostIsStillReleasedOnRollback() {
         // The schedule service may have taken the seat before the connection dropped.
         org.mockito.Mockito.doThrow(new RuntimeException("Read timed out"))
-                .when(scheduleClient).claimSeat(any(), any());
+                .when(scheduleClient).claimSeats(any(), any());
 
         assertThatThrownBy(() -> service.bookFlight(request())).hasMessage("Read timed out");
-        var claim = org.mockito.ArgumentCaptor.forClass(UUID.class);
-        verify(scheduleClient).claimSeat(org.mockito.ArgumentMatchers.eq(FLIGHT_ID), claim.capture());
+        var claim = org.mockito.ArgumentCaptor.forClass(ScheduleClient.SeatClaims.class);
+        verify(scheduleClient).claimSeats(org.mockito.ArgumentMatchers.eq(FLIGHT_ID), claim.capture());
 
         completeTransaction(TransactionSynchronization.STATUS_ROLLED_BACK);
 
-        verify(scheduleClient).releaseSeat(FLIGHT_ID, claim.getValue());
+        verify(scheduleClient).releaseSeats(FLIGHT_ID, claim.getValue());
     }
 
     @Test
     void aClaimTheScheduleRefusedIsNotReleased() {
         org.mockito.Mockito.doThrow(new com.basarsy.skyline.common.exception.SkylineException(
                 "Flight is fully booked", org.springframework.http.HttpStatus.CONFLICT))
-                .when(scheduleClient).claimSeat(any(), any());
+                .when(scheduleClient).claimSeats(any(), any());
 
         assertThatThrownBy(() -> service.bookFlight(request())).hasMessage("Flight is fully booked");
         completeTransaction(TransactionSynchronization.STATUS_ROLLED_BACK);
 
-        verify(scheduleClient, never()).releaseSeat(any(), any());
+        verify(scheduleClient, never()).releaseSeats(any(), any());
     }
 
     @Test
@@ -140,7 +140,7 @@ class ReservationServiceImplTest {
         service.bookFlight(request());
         completeTransaction(TransactionSynchronization.STATUS_UNKNOWN);
 
-        verify(scheduleClient, never()).releaseSeat(any(), any());
+        verify(scheduleClient, never()).releaseSeats(any(), any());
         verify(scheduleClient, never()).incrementSeat(any());
     }
 
@@ -152,7 +152,7 @@ class ReservationServiceImplTest {
 
         assertThatThrownBy(() -> service.bookFlight(request()))
                 .hasMessage("Sales for this flight have closed");
-        verify(scheduleClient, never()).claimSeat(any(), any());
+        verify(scheduleClient, never()).claimSeats(any(), any());
     }
 
     @Test
@@ -164,11 +164,11 @@ class ReservationServiceImplTest {
         service.bookFlight(request());
         completeTransaction(TransactionSynchronization.STATUS_COMMITTED);
 
-        var claim = org.mockito.ArgumentCaptor.forClass(UUID.class);
-        verify(scheduleClient).claimSeat(org.mockito.ArgumentMatchers.eq(FLIGHT_ID), claim.capture());
-        verify(scheduleClient, never()).releaseSeat(any(), any());
+        var claim = org.mockito.ArgumentCaptor.forClass(ScheduleClient.SeatClaims.class);
+        verify(scheduleClient).claimSeats(org.mockito.ArgumentMatchers.eq(FLIGHT_ID), claim.capture());
+        verify(scheduleClient, never()).releaseSeats(any(), any());
         verify(reservationRepository).saveAndFlush(saved.capture());
-        assertThat(saved.getValue().getSeatClaimId()).isEqualTo(claim.getValue());
+        assertThat(claim.getValue().claimIds()).containsExactly(saved.getValue().getSeatClaimId());
     }
 
     @Test

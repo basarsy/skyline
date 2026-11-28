@@ -47,4 +47,10 @@ public interface FlightService {
 
     /** Gives back the seat {@code claimId} holds; nothing when it holds none (never landed, already released). */
     void releaseSeat(UUID flightId, UUID claimId);
+
+    /** Holds one seat per claim id, all or none (a refused one takes none), each like {@link #claimSeat}. */
+    void claimSeats(UUID flightId, List<UUID> claimIds);
+
+    /** Gives back the seats the claims hold, like {@link #releaseSeat} for each. */
+    void releaseSeats(UUID flightId, List<UUID> claimIds);
 }

@@ -530,6 +530,22 @@ public class FlightServiceImpl implements FlightService {
     }
 
     /**
+     * One call per leg of a group booking instead of one per passenger: one transaction, so a refused claim (the
+     * last seat went, sales closed) rolls back the ones before it and the booking holds all its seats or none.
+     */
+    @Override
+    @Transactional
+    public void claimSeats(UUID flightId, List<UUID> claimIds) {
+        claimIds.forEach(claimId -> claimSeat(flightId, claimId));
+    }
+
+    @Override
+    @Transactional
+    public void releaseSeats(UUID flightId, List<UUID> claimIds) {
+        claimIds.forEach(claimId -> releaseSeat(flightId, claimId));
+    }
+
+    /**
      * Seats left after a change of route or aircraft. With nobody booked, anything goes. Once passengers are
      * booked, the flight is what they bought:
      * <ul>
