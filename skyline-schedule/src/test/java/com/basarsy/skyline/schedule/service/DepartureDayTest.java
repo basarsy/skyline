@@ -17,20 +17,21 @@ import org.springframework.boot.test.system.OutputCaptureExtension;
 
 class DepartureDayTest {
 
-    private static final LocalDate JUNE_1 = LocalDate.of(2030, 6, 1);
+    // Past dates throughout: future offsets change with the JDK's time zone data, past ones don't.
+    private static final LocalDate JUNE_1 = LocalDate.of(2025, 6, 1);
 
     @Test
     void istanbulDayStartsAt21UtcTheEveningBefore() {
         DepartureDay day = DepartureDay.of(JUNE_1, "Europe/Istanbul");
 
-        assertThat(day.start()).isEqualTo(LocalDateTime.of(2030, 5, 31, 21, 0));
-        assertThat(day.end()).isEqualTo(LocalDateTime.of(2030, 6, 1, 21, 0));
+        assertThat(day.start()).isEqualTo(LocalDateTime.of(2025, 5, 31, 21, 0));
+        assertThat(day.end()).isEqualTo(LocalDateTime.of(2025, 6, 1, 21, 0));
     }
 
     @Test
     void aNightDepartureFromIstanbulBelongsToTheLocalDateNotTheUtcOne() {
         // 01:30 in Istanbul on 1 June is 22:30 UTC on 31 May.
-        LocalDateTime departure = LocalDateTime.of(2030, 5, 31, 22, 30);
+        LocalDateTime departure = LocalDateTime.of(2025, 5, 31, 22, 30);
 
         assertThat(contains(DepartureDay.of(JUNE_1, "Europe/Istanbul"), departure)).isTrue();
         assertThat(contains(DepartureDay.of(JUNE_1.minusDays(1), "Europe/Istanbul"), departure)).isFalse();
@@ -38,30 +39,31 @@ class DepartureDayTest {
 
     @Test
     void springForwardDayIs23Hours() {
-        // London moves to BST at 01:00 UTC on 28 March 2027.
-        DepartureDay day = DepartureDay.of(LocalDate.of(2027, 3, 28), "Europe/London");
+        // London moved to BST at 01:00 UTC on 30 March 2025.
+        DepartureDay day = DepartureDay.of(LocalDate.of(2025, 3, 30), "Europe/London");
 
-        assertThat(day.start()).isEqualTo(LocalDateTime.of(2027, 3, 28, 0, 0));
-        assertThat(day.end()).isEqualTo(LocalDateTime.of(2027, 3, 28, 23, 0));
+        assertThat(day.start()).isEqualTo(LocalDateTime.of(2025, 3, 30, 0, 0));
+        assertThat(day.end()).isEqualTo(LocalDateTime.of(2025, 3, 30, 23, 0));
         assertThat(Duration.between(day.start(), day.end())).isEqualTo(Duration.ofHours(23));
     }
 
     @Test
     void fallBackDayIs25Hours() {
-        // New York leaves EDT at 06:00 UTC on 7 November 2027.
-        DepartureDay day = DepartureDay.of(LocalDate.of(2027, 11, 7), "America/New_York");
+        // New York left EDT at 06:00 UTC on 2 November 2025.
+        DepartureDay day = DepartureDay.of(LocalDate.of(2025, 11, 2), "America/New_York");
 
-        assertThat(day.start()).isEqualTo(LocalDateTime.of(2027, 11, 7, 4, 0));
-        assertThat(day.end()).isEqualTo(LocalDateTime.of(2027, 11, 8, 5, 0));
+        assertThat(day.start()).isEqualTo(LocalDateTime.of(2025, 11, 2, 4, 0));
+        assertThat(day.end()).isEqualTo(LocalDateTime.of(2025, 11, 3, 5, 0));
         assertThat(Duration.between(day.start(), day.end())).isEqualTo(Duration.ofHours(25));
     }
 
     @Test
     void aZoneWhoseMidnightFallsInTheDstGapStartsAtTheFirstValidInstant() {
-        // Havana springs forward at local midnight (00:00 → 01:00 CDT) on 14 March 2027: the day starts at 01:00.
-        DepartureDay day = DepartureDay.of(LocalDate.of(2027, 3, 14), "America/Havana");
+        // Havana sprang forward at local midnight (00:00 → 01:00 CDT) on 12 March 2023: the day started at 01:00.
+        // A past date on purpose: future rules change with the JDK's time zone data (Cuba's 2027 ones did).
+        DepartureDay day = DepartureDay.of(LocalDate.of(2023, 3, 12), "America/Havana");
 
-        assertThat(day.start()).isEqualTo(LocalDateTime.of(2027, 3, 14, 5, 0));
+        assertThat(day.start()).isEqualTo(LocalDateTime.of(2023, 3, 12, 5, 0));
     }
 
     @ParameterizedTest
