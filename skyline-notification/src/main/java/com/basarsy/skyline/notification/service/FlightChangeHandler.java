@@ -33,6 +33,7 @@ public class FlightChangeHandler {
             log.warn("Ignoring a flight change without type or flight id: {}", change);
             return;
         }
+        flightStates.lock(List.of(change.flightId())); // against a booking of the flight handled meanwhile
         String key = key(change);
         // One rule for "the flight is cancelled", here and for bookings handled later.
         boolean cancelled = FlightChange.CANCELLED.equals(change.type()) || "CANCELLED".equals(change.status());
@@ -40,7 +41,8 @@ public class FlightChangeHandler {
             // For bookings of this flight handled after this change (see BookingEventHandler).
             flightStates.record(change.flightId(), new FlightStateRepository.FlightState(change.flightNumber(),
                     change.departureTime(), cancelled, change.occurredAt(),
-                    FlightChange.CANCELLED.equals(change.type()) ? key : null));
+                    FlightChange.CANCELLED.equals(change.type()) ? key : null, change.estimatedDepartureTime(),
+                    change.gate()));
         }
         List<Recipient> booked = recipients.activeOnFlight(change.flightId());
         if (FlightChange.RESCHEDULED.equals(change.type()) && change.departureTime() != null) {

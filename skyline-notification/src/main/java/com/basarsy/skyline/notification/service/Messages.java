@@ -2,6 +2,7 @@ package com.basarsy.skyline.notification.service;
 
 import com.basarsy.skyline.notification.event.BookingEvent;
 import com.basarsy.skyline.notification.event.FlightChange;
+import com.basarsy.skyline.notification.repository.FlightStateRepository.FlightState;
 import com.basarsy.skyline.notification.repository.Recipient;
 import java.time.DateTimeException;
 import java.time.Duration;
@@ -11,6 +12,8 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /** The wording of every message. Times are shown in the departure airport's local time. */
@@ -98,14 +101,18 @@ final class Messages {
         };
     }
 
-    /** A confirmed booking: every passenger on every flight of it. */
-    static Message booked(BookingEvent event, String path) {
+    /**
+     * A confirmed booking: every passenger on every flight of it, with the delay and gate in force from
+     * {@code flights} (the flights' latest states, by id; those without one show neither).
+     */
+    static Message booked(BookingEvent event, String path, Map<UUID, FlightState> flights) {
         List<BookingEvent.Item> items = event.reservations();
         String pnrs = items.stream().map(BookingEvent.Item::pnr).distinct().collect(Collectors.joining(", "));
         String lines = items.stream()
                 .map(item -> "- " + nullToDash(item.flightNumber()) + route(item.origin(), item.destination())
                         + ", " + day(item.departureTime(), item.originTimezone()) + " "
-                        + time(item.departureTime(), item.originTimezone()) + ": " + item.passengerName()
+                        + time(item.departureTime(), item.originTimezone())
+                        + inForce(flights.get(item.flightId()), item.originTimezone()) + ": " + item.passengerName()
                         + " (booking reference " + item.pnr() + ")")
                 .collect(Collectors.joining("\n"));
         return new Message("BOOKING_CONFIRMED", "Booking confirmed: " + pnrs,
@@ -113,6 +120,16 @@ final class Messages {
                 "Thank you for booking with Skyline. Your booking is confirmed:\n\n" + lines
                         + "\n\nCheck-in opens 48 hours before departure; we'll remind you.",
                 path, true);
+    }
+
+    /** ", delayed to 13:35, gate B12": what a flight's state adds to its scheduled time, or nothing. */
+    private static String inForce(FlightState flight, String zone) {
+        if (flight == null) {
+            return "";
+        }
+        return (flight.estimatedDepartureTime() == null ? ""
+                        : ", delayed to " + time(flight.estimatedDepartureTime(), zone))
+                + (flight.gate() == null ? "" : ", gate " + flight.gate());
     }
 
     static Message cancelled(BookingEvent.Item item, String path) {

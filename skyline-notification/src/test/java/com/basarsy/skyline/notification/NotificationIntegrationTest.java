@@ -175,6 +175,46 @@ class NotificationIntegrationTest {
                 .satisfies(r -> assertThat(r.flightNumber()).isEqualTo("SK100"));
     }
 
+    @Test
+    void aBookingHandledAfterADelayShowsTheDelayAndGateInItsConfirmation() {
+        flightChanges.handle(change(FlightChange.DELAYED, DEPARTURE.plusMinutes(95), null)); // gate B12
+
+        bookingEvents.handle(booked(UUID.randomUUID(), "ada@example.com", item("Ada")));
+
+        assertThat(jdbc.queryForObject("SELECT body FROM email_outbox", String.class))
+                .contains("Sat 1 Jun 12:00, delayed to 13:35, gate B12: Ada Lovelace");
+        assertThat(jdbc.queryForList("SELECT kind FROM notifications", String.class))
+                .as("the confirmation tells it all").containsExactly("BOOKING_CONFIRMED");
+    }
+
+    @Test
+    void aLateConfirmationShowsTheLatestDelayAndGateNotAReplayedOlderOne() {
+        FlightChange delay = change(FlightChange.DELAYED, DEPARTURE.plusMinutes(95), null); // T-3h, gate B12
+        flightChanges.handle(delay);
+        flightChanges.handle(new FlightChange(FlightChange.GATE_CHANGED, flightId, "SK100", "IST", "LHR",
+                "Europe/Istanbul", "Europe/London", "DELAYED", "DELAYED", DEPARTURE, DEPARTURE,
+                DEPARTURE.plusHours(4), DEPARTURE.plusMinutes(95), DEPARTURE.plusMinutes(95), "C7", "B12",
+                DEPARTURE.minusHours(2)));
+        flightChanges.handle(delay); // redelivered, or replayed from the DLT
+        clearMessages();
+
+        bookingEvents.handle(booked(UUID.randomUUID(), "ada@example.com", item("Ada")));
+
+        assertThat(jdbc.queryForObject("SELECT body FROM email_outbox", String.class))
+                .contains("12:00, delayed to 13:35, gate C7:").doesNotContain("B12");
+    }
+
+    @Test
+    void aDelayLiftedBeforeTheBookingIsHandledIsNotShown() {
+        flightChanges.handle(change(FlightChange.DELAYED, DEPARTURE.plusMinutes(95), null));
+        flightChanges.handle(change(FlightChange.DELAY_CLEARED, null, null)); // same time: the later one wins
+
+        bookingEvents.handle(booked(UUID.randomUUID(), "ada@example.com", item("Ada")));
+
+        assertThat(jdbc.queryForObject("SELECT body FROM email_outbox", String.class))
+                .contains("Sat 1 Jun 12:00, gate B12: Ada Lovelace").doesNotContain("delayed");
+    }
+
     // ------------------------------------------------------------------ flight changes
 
     @Test
